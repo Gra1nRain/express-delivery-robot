@@ -11,6 +11,7 @@
 - 新比赛工作区是：`/home/agilex/competition_ws`。
 - `competition_bringup` 是新项目 Day 1 的最小 ROS2 包。
 - Day 1 launch 只启动传感器/建图链路，不发送运动目标。
+- 当前 Livox 驱动为 FAST-LIO 发布 `livox_ros_driver2/msg/CustomMsg`；2D 建图使用 FAST-LIO 输出的 `/cloud_registered_body` 转 `/scan`，坐标链路为 `map -> camera_init -> body`。
 
 ## 启动前检查
 
@@ -32,7 +33,7 @@ source ~/competition_ws/install/setup.bash
 ros2 launch competition_bringup day1_mapping.launch.py
 ```
 
-需要底盘 `/odom` 和 2D 栅格建图时：
+需要底盘 CAN 审计和 2D 栅格建图同时运行时：
 
 ```bash
 ros2 launch competition_bringup day1_mapping.launch.py \
@@ -105,7 +106,7 @@ cp ~/competition_ws/maps/debug/semantic_map.template.yaml \
 ## 验收标准
 
 - RViz 能稳定看到点云、2D 地图、机器人位姿和 TF。
-- `map -> odom -> base_link` 及传感器 TF 没有冲突发布者。
+- `map -> camera_init -> body` 及传感器 TF 没有冲突发布者。
 - 2D 地图能被 map server 或 RViz 正常加载。
 - 基线 rosbag 至少覆盖 `/tf`、`/tf_static`、`/odom`、`/cloud_registered`、`/map`。
 - 第一版语义点足够支撑 Day 2 配置细化。

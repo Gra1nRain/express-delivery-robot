@@ -26,6 +26,7 @@ def _launch_setup(context, *args, **kwargs):
     config_path = LaunchConfiguration("config_path").perform(context)
     fast_lio_config = LaunchConfiguration("fast_lio_config").perform(context)
     scan_config = LaunchConfiguration("scan_config").perform(context)
+    scan_cloud_topic = LaunchConfiguration("scan_cloud_topic").perform(context)
     slam_config = LaunchConfiguration("slam_config").perform(context)
     port_name = LaunchConfiguration("port_name").perform(context)
     robot_model = LaunchConfiguration("robot_model").perform(context)
@@ -79,7 +80,7 @@ def _launch_setup(context, *args, **kwargs):
                 output="screen",
                 parameters=[scan_config],
                 remappings=[
-                    ("cloud_in", "/livox/lidar"),
+                    ("cloud_in", scan_cloud_topic),
                     ("scan", "/scan"),
                 ],
             )
@@ -111,6 +112,7 @@ def generate_launch_description():
                 "scan_config",
                 default_value=os.path.join(mapping_config_dir, "pointcloud_to_laserscan_day1.yaml"),
             ),
+            DeclareLaunchArgument("scan_cloud_topic", default_value="/cloud_registered_body"),
             DeclareLaunchArgument(
                 "slam_config",
                 default_value=os.path.join(mapping_config_dir, "slam_toolbox_day1.yaml"),
