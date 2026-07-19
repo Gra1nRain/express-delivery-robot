@@ -108,7 +108,7 @@ cp ~/competition_ws/maps/debug/semantic_map.template.yaml \
 - RViz 能稳定看到点云、2D 地图、机器人位姿和 TF。
 - `map -> camera_init -> body` 及传感器 TF 没有冲突发布者。
 - 2D 地图能被 map server 或 RViz 正常加载。
-- 基线 rosbag 至少覆盖 `/tf`、`/tf_static`、`/odom`、`/cloud_registered`、`/map`。
+- 基线 rosbag 至少覆盖 `/tf`、`/tf_static`、`/odom`、`/cloud_registered`、`/cloud_registered_body`、`/scan`、`/map`。
 - 第一版语义点足够支撑 Day 2 配置细化。
 
 ## 未验证内容

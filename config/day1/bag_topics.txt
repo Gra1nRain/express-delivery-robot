@@ -6,5 +6,6 @@
 /livox/lidar
 /livox/imu
 /cloud_registered
+/cloud_registered_body
 /scan
 /map
