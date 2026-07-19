@@ -1,5 +1,11 @@
 # launch
 
+当前已落地的启动入口：
+
+```bash
+ros2 launch competition_bringup day1_mapping.launch.py
+```
+
 计划拆分：
 
 ```text

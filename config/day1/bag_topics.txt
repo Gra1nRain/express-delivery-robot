@@ -1,0 +1,10 @@
+# Smaller baseline bag topic set. High-bandwidth camera streams stay in the
+# snapshot topic checks unless an operator deliberately adds them here.
+/tf
+/tf_static
+/odom
+/livox/lidar
+/livox/imu
+/cloud_registered
+/scan
+/map

@@ -1,0 +1,17 @@
+# ROS graph topics sampled by day1_collect_evidence.sh.
+/tf
+/tf_static
+/odom
+/livox/lidar
+/livox/imu
+/cloud_registered
+/scan
+/map
+/camera/color/image_raw
+/camera/color/camera_info
+/camera/depth/color/points
+/camera/aligned_depth_to_color/image_raw
+/mission/arm_command
+/mission/arm_event
+/system_state
+/cmd_vel

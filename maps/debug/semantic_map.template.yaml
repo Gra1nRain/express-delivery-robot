@@ -1,0 +1,17 @@
+status: template
+frame_id: map
+source_map: maps/debug/map.yaml
+notes:
+  - Replace all placeholder coordinates after Day 1 RViz marking.
+  - Keep semantic names stable even when the laboratory layout is temporary.
+points:
+  start: null
+  traffic_light_stop_line: null
+  pickup_dock: null
+  drop_dock: null
+  finish_park: null
+lane_centerlines: []
+lane_boundaries: []
+stop_lines: []
+no_go_zones: []
+dock_poses: []
