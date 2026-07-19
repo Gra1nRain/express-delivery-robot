@@ -1,0 +1,70 @@
+interface_version: draft-0
+verified_at: "2026-07-20 01:05 Asia/Shanghai"
+warning: Do not identify cameras by /dev/video* numbers; they can change after replugging.
+ros_driver_note: Current realsense2_camera launch binds these devices by usb_port_id; serial numbers are kept as hardware identity.
+
+common_test_launch:
+  package: realsense2_camera
+  launch_file: rs_launch.py
+  rgb_camera_color_profile: "424,240,15"
+  depth_module_depth_profile: "0,0,0"
+  align_depth_enable: true
+  pointcloud_enable: false
+  publish_tf: false
+
+cameras:
+  front_camera:
+    role: vehicle_front
+    model: Intel RealSense D435
+    serial: "236223021647"
+    observed_usb_path: "2-3.1.1.1"
+    ros_selection:
+      preferred_parameter: usb_port_id
+      value: "2-3.1.1.1"
+      serial_no_status: failed_to_match_device_on_current_driver
+    ros_namespace: /front_camera
+    camera_name: camera
+    color_topic: /front_camera/camera/color/image_raw
+    color_info_topic: /front_camera/camera/color/camera_info
+    aligned_depth_topic: /front_camera/camera/aligned_depth_to_color/image_raw
+    pointcloud_topic: /front_camera/camera/depth/color/points
+    validation:
+      color_topic_verified: true
+      aligned_depth_topic_verified: true
+      pointcloud_topic_verified: false
+      frame_id_verified: false
+      simultaneous_with_left_wrist_camera: true
+    expected_use:
+      - start_flag
+      - traffic_light
+      - parking_sign
+
+  left_wrist_camera:
+    role: arm_wrist
+    model: Intel RealSense D435
+    serial: "152223024925"
+    observed_usb_path: "2-3.3.2"
+    ros_selection:
+      preferred_parameter: usb_port_id
+      value: "2-3.3.2"
+      serial_no_status: failed_to_match_device_on_current_driver
+    ros_namespace: /left_wrist_camera
+    camera_name: camera
+    color_topic: /left_wrist_camera/camera/color/image_raw
+    color_info_topic: /left_wrist_camera/camera/color/camera_info
+    aligned_depth_topic: /left_wrist_camera/camera/aligned_depth_to_color/image_raw
+    pointcloud_topic: /left_wrist_camera/camera/depth/color/points
+    validation:
+      color_topic_verified: true
+      aligned_depth_topic_verified: true
+      pointcloud_topic_verified: false
+      frame_id_verified: false
+      simultaneous_with_front_camera: true
+    expected_use:
+      - pickup_pose_estimation
+      - drop_pose_estimation
+      - arm_hand_eye_perception
+
+legacy_notes:
+  piper_left_camera_serial_default: "151222079131"
+  status: Current hardware check did not find this serial; use left_wrist_camera.serial instead.

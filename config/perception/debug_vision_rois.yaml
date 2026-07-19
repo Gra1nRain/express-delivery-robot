@@ -1,10 +1,13 @@
 profile: debug
 start_flag:
   source: mock
+  camera: front_camera
   roi: null
 traffic_light:
   source: mock
+  camera: front_camera
   roi: null
 parking_sign:
   source: mock
+  camera: front_camera
   roi: null

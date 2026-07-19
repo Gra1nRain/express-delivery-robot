@@ -7,6 +7,7 @@ planning_params_file: config/planning/planning_params.yaml
 optimizer_params_file: config/planning/optimizer_params.yaml
 control_params_file: config/control/control_params.yaml
 avoidance_interface_file: config/avoidance/avoidance_interface.yaml
+camera_devices_file: config/perception/camera_devices.yaml
 vision_roi_file: config/perception/competition_vision_rois.yaml
 dock_params_file: config/docking/competition_dock_params.yaml
 safety_params_file: config/safety/safety_params.yaml

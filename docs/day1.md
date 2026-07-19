@@ -12,6 +12,10 @@
 - `competition_bringup` 是新项目 Day 1 的最小 ROS2 包。
 - Day 1 launch 只启动传感器/建图链路，不发送运动目标。
 - 当前 Livox 驱动为 FAST-LIO 发布 `livox_ros_driver2/msg/CustomMsg`；2D 建图使用 FAST-LIO 输出的 `/cloud_registered_body` 转 `/scan`，坐标链路为 `map -> camera_init -> body`。
+- 两台 D435 已按序列号区分硬件身份：车上相机 `front_camera=236223021647`，机械臂腕部相机 `left_wrist_camera=152223024925`。不要用 `/dev/video*` 编号区分相机。
+- 当前小车端 `realsense2_camera` 使用 `serial_no` 参数未能匹配设备；实测通过 `usb_port_id` 可同时启动两台相机。`front_camera` 为 `2-3.1.1.1`，`left_wrist_camera` 为 `2-3.3.2`。
+- 两台 D435 已验证 color 与 aligned depth topic；点云 topic、相机 TF 和手眼坐标仍未验证。
+- 机械臂 CAN 为 `can2`，已确认 `UP`、`1000000` bitrate，5 秒被动监听有持续反馈；未发送使能或运动命令。
 
 ## 启动前检查
 
@@ -113,6 +117,7 @@ cp ~/competition_ws/maps/debug/semantic_map.template.yaml \
 
 ## 未验证内容
 
-- D435 topic、机械臂 topic 和 `camera_link` 已纳入 Day 1 快照检查，但需要实车节点运行后确认。
+- D435 硬件序列号、ROS 命名空间、color topic 和 aligned depth topic 已确认；`camera_link`/TF、点云 topic 和双相机正式启动脚本仍需确认。
+- 机械臂 CAN 只做了被动反馈确认；机械臂 ROS topic、使能流程和任务 action 仍需联调确认。
 - `/cmd_vel.linear.y` 是否生效、四轮模式或底层转角接口已纳入底盘审计记录，但需要监督下低速运动测试确认。
 - FAST-LIO 保存 PCD 的触发方式需在实车运行时确认。
