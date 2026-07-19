@@ -1,0 +1,11 @@
+safety:
+  command_output_topic: /cmd_vel_safe
+  sensor_timeout_s: 0.50
+  planner_timeout_s: 0.50
+  max_speed_mps: 1.80
+  max_lateral_error_m: 0.15
+  max_heading_error_deg: 5.0
+  require_estop_ready: true
+  require_remote_override: true
+  avoidance_stop_topic: /avoidance/stop_request
+  on_fault: SAFE_HOLD

@@ -1,0 +1,16 @@
+global_planner:
+  plugin: hybrid_a_star
+  planning_timeout_ms: 500
+  corridor_margin_m: 0.20
+  max_speed_mps: 1.80
+  fallback_plugin: state_lattice
+
+semantic_route_graph:
+  lane_centerline_topic: /semantic_map
+  corridor_topic: /planning/corridor
+  keepout_enabled: true
+
+replanning:
+  enabled: true
+  max_retries: 1
+  failure_action: SAFE_HOLD

@@ -1,0 +1,9 @@
+profile: debug
+default_dock_side: RIGHT
+position_tolerance_m: 0.10
+yaw_tolerance_deg: 5.0
+stable_time_s: 1.0
+max_speed_mps: 0.20
+min_speed_mps: 0.05
+max_retries: 2
+arm_max_retries: 3

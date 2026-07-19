@@ -1,0 +1,3 @@
+# Active profile for local development. Change deliberately and record why.
+profile_name: debug
+profile_file: config/profiles/debug_site_profile.yaml

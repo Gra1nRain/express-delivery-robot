@@ -1,0 +1,9 @@
+interface_version: draft-0
+status_topic: /avoidance/status
+objects_topic: /avoidance/objects
+corridor_update_topic: /avoidance/corridor_update
+stop_request_topic: /avoidance/stop_request
+stop_request_ttl_ms: 500
+stale_after_ms: 500
+default_speed_limit_mps: 0.80
+fallback_on_stale: SAFE_HOLD

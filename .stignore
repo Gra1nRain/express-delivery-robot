@@ -1,0 +1,20 @@
+# Git history is maintained only on the development computer.
+.git
+
+# Generated on the industrial PC.
+build
+install
+log
+
+# Large runtime artifacts should not be synchronized.
+recordings
+*.db3
+*.bag
+*.bag.active
+*.log
+
+# Local-only editor and cache files.
+.vscode
+.idea
+__pycache__
+.pytest_cache

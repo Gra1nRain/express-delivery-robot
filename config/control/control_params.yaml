@@ -1,0 +1,18 @@
+trajectory_tracker:
+  plugin: mpc
+  frequency_hz: 40.0
+  max_lateral_error_m: 0.15
+  max_heading_error_deg: 5.0
+  fallback_plugin: pure_pursuit
+
+motion:
+  max_speed_mps: 1.80
+  cruise_speed_mps: 1.40
+  turn_speed_mps: 0.80
+  docking_speed_min_mps: 0.05
+  docking_speed_max_mps: 0.20
+
+chassis:
+  command_topic: /cmd_vel_safe
+  wheel_command_enabled: false
+  lateral_motion_enabled: false

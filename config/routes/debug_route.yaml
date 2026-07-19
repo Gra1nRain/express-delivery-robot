@@ -1,0 +1,53 @@
+route_name: debug_route
+profile: debug
+warning: Laboratory physical layout is temporary; keep official semantic step names.
+steps:
+  - id: wait_flag
+    type: WAIT_FLAG
+  - id: go_traffic_light_1
+    type: RUN_SEGMENT
+    traffic_light_guard: true
+  - id: random_obstacle_1
+    type: RUN_SEGMENT
+    avoidance_required: true
+  - id: pickup_1_dock
+    type: DOCK
+    dock_type: PICKUP
+    cycle_index: 1
+  - id: pickup_1_arm
+    type: ARM_TASK
+    task_type: PICKUP
+    cycle_index: 1
+  - id: cone_1
+    type: CONE_LANE_CHANGE
+  - id: drop_1_dock
+    type: DOCK
+    dock_type: DROP
+    cycle_index: 1
+  - id: drop_1_arm
+    type: ARM_TASK
+    task_type: DROP
+    cycle_index: 1
+  - id: return_to_pickup_area
+    type: RUN_SEGMENT
+    avoidance_required: false
+  - id: pickup_2_dock
+    type: DOCK
+    dock_type: PICKUP
+    cycle_index: 2
+  - id: pickup_2_arm
+    type: ARM_TASK
+    task_type: PICKUP
+    cycle_index: 2
+  - id: cone_2
+    type: CONE_LANE_CHANGE
+  - id: drop_2_dock
+    type: DOCK
+    dock_type: DROP
+    cycle_index: 2
+  - id: drop_2_arm
+    type: ARM_TASK
+    task_type: DROP
+    cycle_index: 2
+  - id: finish_park
+    type: FINISH_PARK

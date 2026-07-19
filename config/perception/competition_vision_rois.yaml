@@ -1,0 +1,11 @@
+profile: competition
+start_flag:
+  source: vision
+  roi: null
+traffic_light:
+  source: vision
+  roi: null
+parking_sign:
+  source: vision
+  roi: null
+warning: Replace null ROIs after official field and camera views are available.

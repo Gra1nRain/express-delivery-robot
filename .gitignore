@@ -1,0 +1,25 @@
+# ROS2 generated files
+build/
+install/
+log/
+
+# Python and editor caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.vscode/
+.idea/
+
+# Runtime data
+recordings/
+*.db3
+*.bag
+*.bag.active
+*.log
+
+# Local machine secrets and calibration exports
+.env
+*.key
+*.pem
+calibration/local/

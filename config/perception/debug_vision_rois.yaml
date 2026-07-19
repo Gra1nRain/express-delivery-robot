@@ -1,0 +1,10 @@
+profile: debug
+start_flag:
+  source: mock
+  roi: null
+traffic_light:
+  source: mock
+  roi: null
+parking_sign:
+  source: mock
+  roi: null

@@ -1,0 +1,14 @@
+trajectory_optimizer:
+  plugin: mpc
+  frequency_hz: 20.0
+  horizon_s: 3.0
+  point_interval_s: 0.10
+  max_speed_mps: 1.80
+  max_acceleration_mps2: 0.50
+  max_curvature: 0.50
+  invalid_trajectory_action: SAFE_HOLD
+
+avoidance_inputs:
+  speed_limit_topic: /avoidance/status
+  corridor_update_topic: /avoidance/corridor_update
+  stop_request_topic: /avoidance/stop_request
