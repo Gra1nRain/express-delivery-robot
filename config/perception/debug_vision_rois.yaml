@@ -1,13 +1,26 @@
 profile: debug
+status: draft
+camera_config_file: config/perception/camera_devices.yaml
+coordinate_space: normalized_image
+warning: ROI rectangles stay null until a supervised front_camera image is captured and reviewed.
 start_flag:
   source: mock
   camera: front_camera
+  camera_namespace: /front_camera
+  image_topic: /front_camera/camera/color/image_raw
   roi: null
+  roi_status: pending_camera_view
 traffic_light:
   source: mock
   camera: front_camera
+  camera_namespace: /front_camera
+  image_topic: /front_camera/camera/color/image_raw
   roi: null
+  roi_status: pending_camera_view
 parking_sign:
   source: mock
   camera: front_camera
+  camera_namespace: /front_camera
+  image_topic: /front_camera/camera/color/image_raw
   roi: null
+  roi_status: pending_camera_view

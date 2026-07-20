@@ -1,0 +1,220 @@
+schema_version: semantic_map_v1
+status: draft
+profile: debug
+frame_id: map
+source_map: maps/debug/map.yaml
+coordinate_source: >-
+  Initial draft points were projected from recordings/day1/map_preview.png.
+  Measured debug points were captured on the car from AMCL/TF in the map frame
+  during supervised low-speed manual marking.
+coordinate_convention:
+  position_unit: m
+  heading_unit: rad
+  polygon_winding: counter_clockwise
+  map_origin: [-2.39, -18.30, 0.0]
+  map_resolution: 0.03
+verification:
+  map_file_load: passed_car_nav2_map_server
+  rviz_pose_check: passed_amcl_tf_pose_capture
+  low_speed_route_check: passed_manual_low_speed_semantic_marking
+  return_to_start_error_check: pending
+
+# The effective area is intentionally narrower than the complete Day 1 map.
+# It represents the laboratory debug region only; it is not the competition map.
+effective_area:
+  id: debug_effective_area
+  type: polygon
+  status: draft
+  vertices:
+    - [0.50, -4.50]
+    - [23.00, -4.50]
+    - [23.00, 6.50]
+    - [18.50, 9.50]
+    - [13.00, 9.50]
+    - [10.00, 7.00]
+    - [6.00, 7.00]
+    - [1.60, 4.30]
+
+points:
+  start:
+    x: 1.23
+    y: -2.00
+    yaw: 0.00
+    role: start_area
+    status: draft
+  traffic_light_stop_line:
+    x: 2.98
+    y: -0.77
+    yaw: 0.43
+    role: traffic_light_stop_line
+    status: measured
+  pickup_dock:
+    x: 8.58
+    y: 0.27
+    yaw: 0.04
+    role: pickup_area
+    status: measured
+  drop_dock:
+    x: 3.28
+    y: 3.82
+    yaw: 3.03
+    role: drop_area
+    status: measured
+  finish_park:
+    x: 2.66
+    y: 4.43
+    yaw: 2.38
+    role: finish_parking_area
+    status: measured
+
+  random_obstacle_entry:
+    x: 4.14
+    y: -0.25
+    yaw: 0.35
+    role: random_obstacle_zone_entry
+    status: measured
+  random_obstacle_exit:
+    x: 6.42
+    y: 0.26
+    yaw: -0.02
+    role: random_obstacle_zone_exit
+    status: measured
+  cone_lane_change_entry:
+    x: 5.96
+    y: 3.42
+    yaw: -2.97
+    role: cone_lane_change_zone_entry
+    status: measured
+  cone_lane_change_exit:
+    x: 1.98
+    y: 2.96
+    yaw: -3.14
+    role: cone_lane_change_zone_exit
+    status: measured
+
+lane_centerlines:
+  - id: start_to_pickup_lane
+    status: draft
+    width_m: 2.40
+    points:
+      - start
+      - traffic_light_stop_line
+      - random_obstacle_entry
+      - random_obstacle_exit
+      - pickup_dock
+  - id: pickup_to_drop_lane
+    status: draft
+    width_m: 2.40
+    points:
+      - pickup_dock
+      - cone_lane_change_entry
+      - cone_lane_change_exit
+      - drop_dock
+  - id: drop_to_pickup_lane
+    status: draft
+    width_m: 2.40
+    points:
+      - drop_dock
+      - cone_lane_change_exit
+      - cone_lane_change_entry
+      - pickup_dock
+  - id: drop_to_finish_lane
+    status: draft
+    width_m: 2.40
+    points:
+      - drop_dock
+      - finish_park
+
+lane_boundaries:
+  - id: debug_outer_boundary
+    status: draft
+    points:
+      - [0.50, -4.50]
+      - [23.00, -4.50]
+      - [23.00, 6.50]
+      - [18.50, 9.50]
+      - [13.00, 9.50]
+      - [10.00, 7.00]
+      - [6.00, 7.00]
+      - [1.60, 4.30]
+      - [0.50, -4.50]
+
+stop_lines:
+  - id: traffic_light_stop_line
+    status: measured
+    center: [2.98, -0.77]
+    heading: 0.43
+    length_m: 2.40
+  - id: pickup_dock_stop_line
+    status: measured
+    center: [8.58, 0.27]
+    heading: 0.04
+    length_m: 2.40
+  - id: drop_dock_stop_line
+    status: measured
+    center: [3.28, 3.82]
+    heading: 3.03
+    length_m: 2.40
+
+obstacle_zones:
+  - id: random_obstacle_zone_1
+    semantic_type: RANDOM_OBSTACLE
+    status: derived_draft
+    boundary:
+      - [3.88, 0.92]
+      - [6.16, 1.43]
+      - [6.68, -0.91]
+      - [4.40, -1.42]
+  - id: cone_lane_change_zone
+    semantic_type: CONE_LANE_CHANGE
+    status: derived_draft
+    boundary:
+      - [6.10, 2.23]
+      - [2.12, 1.77]
+      - [1.84, 4.15]
+      - [5.82, 4.61]
+
+no_go_zones:
+  - id: outside_debug_effective_area
+    semantic_type: KEEP_OUT
+    status: derived_draft
+    geometry: outside_polygon
+    boundary_ref: debug_effective_area
+    reason: Do not plan outside the selected laboratory debug area.
+
+dock_poses:
+  - id: pickup_dock
+    point_ref: pickup_dock
+    dock_type: PICKUP
+    work_side: RIGHT
+    position_tolerance_m: 0.10
+    yaw_tolerance_deg: 5.0
+    status: measured
+  - id: drop_dock
+    point_ref: drop_dock
+    dock_type: DROP
+    work_side: RIGHT
+    position_tolerance_m: 0.10
+    yaw_tolerance_deg: 5.0
+    status: measured
+  - id: finish_park
+    point_ref: finish_park
+    dock_type: FINISH
+    work_side: RIGHT
+    position_tolerance_m: 0.10
+    yaw_tolerance_deg: 5.0
+    status: measured
+
+route_corridors:
+  - id: go_to_pickup
+    centerline_ref: start_to_pickup_lane
+    allowed_steps: [go_traffic_light_1, random_obstacle_1]
+  - id: pickup_to_drop
+    centerline_ref: pickup_to_drop_lane
+    allowed_steps: [static_obstacle_1, static_obstacle_2]
+  - id: return_to_pickup
+    centerline_ref: drop_to_pickup_lane
+    allowed_steps: [return_to_pickup_area]
+  - id: finish_return
+    centerline_ref: drop_to_finish_lane
+    allowed_steps: [finish_park]
