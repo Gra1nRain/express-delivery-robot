@@ -102,9 +102,11 @@ safety_params.yaml
 
 事实：小车视觉任务统一使用 `front_camera`、命名空间 `/front_camera` 和颜色图像 topic `/front_camera/camera/color/image_raw`。设备按 RealSense 序列号记录、按稳定 USB 路径选择，不使用 `/dev/video*` 编号。
 
-建议：待取得受监督的前向相机画面后，再把 `start_flag`、`traffic_light` 和 `parking_sign` 的 ROI 填为 `normalized_image` 坐标。
+事实：定位修复后，车端按 `usb_port_id=2-3.1.1.1` 启动 `front_camera` color-only 节点，`/front_camera/camera/color/image_raw` 可发布 `424x240 rgb8` 图像。
 
-未验证：当前 `config/perception/debug_vision_rois.yaml` 的三个 ROI 都保持 `null`，状态为 `pending_camera_view`；本次不虚构未采集的像素范围。
+建议：待起跑旗、红绿灯和停车牌实际进入前向相机画面后，再把 `start_flag`、`traffic_light` 和 `parking_sign` 的 ROI 填为 `normalized_image` 坐标。
+
+未验证：本次抓到的前向相机画面中没有明确的起跑旗、红绿灯或停车牌目标，因此 `config/perception/debug_vision_rois.yaml` 的三个 ROI 仍保持 `null`，状态为 `pending_camera_view`；本次不虚构未采集的像素范围。
 
 ## Day 2 验收记录
 
@@ -120,12 +122,13 @@ safety_params.yaml
 | 语义点引用完整 | 通过 | lane、dock、route corridor 引用均可解析 |
 | 路线 step 顺序 | 通过 | 15 个 step，覆盖两轮取放和终点停车 |
 | profile 总入口 | 通过 | `debug_site_profile.yaml` 引用 Day 2 四类配置产物 |
-| 相机命名与 topic | 通过 | ROI 配置与 `front_camera` 设备配置交叉校验一致 |
+| 相机命名与 topic | 通过 | ROI 配置与 `front_camera` 设备配置交叉校验一致；车端 `/front_camera/camera/color/image_raw` 抓帧通过 |
 | 低速逐点到位 | 通过 | 语义标点阶段由现场操作员遥控到红绿灯、随机障碍、取货、锥桶、卸货和终点；该阶段 Codex 未发送底盘速度 |
 | FAST-LIO 路线复核 | 通过 | 定位修复后从红绿灯停车线锚定 `map -> camera_init`，人工低速复核整条路线并重写 9 个语义点 |
 | 障碍区边界 | 通过 | 随机障碍区、锥桶变道区由实测入口/出口派生，所有边界点在 `debug_effective_area` 内 |
 | RViz 图形界面 | 部分通过 | `rviz2` 进程可启动，但远程截图为黑屏；本次以 AMCL/TF 采样为准 |
 | 往返定位误差 | 未验证 | 未执行自动往返和误差统计 |
+| 底盘自动闭环控制 | 未纳入 Day 2 | 只做过一次临时 `/cmd_vel` 低速初测，到红绿灯附近约 0.18-0.23 m 后因航向误差安全停车；用户确认今天不继续实现这块 |
 
 本次配置验收命令及结果：
 
@@ -140,7 +143,7 @@ debug_route_yaml: valid
 steps: 15 refs checked
 fastlio_route_review: points: 9 measured, refs checked, all points inside effective_area
 car_sync: semantic_map.yaml sha256 matched
-debug_vision_rois_yaml: valid; roi_status: pending_camera_view
+debug_vision_rois_yaml: valid; image_topic_validation: passed; roi_status: pending_camera_view
 ```
 
 ## 定位稳定性补充验收
@@ -180,8 +183,8 @@ debug_vision_rois_yaml: valid; roi_status: pending_camera_view
 
 仍需在小车端完成：
 
-1. 采集前向相机画面，把 `debug_vision_rois.yaml` 的 `start_flag`、`traffic_light` 和 `parking_sign` 从 `pending_camera_view` 更新为实际 ROI。
-2. 在安全监督下执行自动或半自动低速路线，统计到点误差、停车误差和终点误差。
+1. 摆放起跑旗、红绿灯和停车牌并采集前向相机画面，把 `debug_vision_rois.yaml` 的 `start_flag`、`traffic_light` 和 `parking_sign` 从 `pending_camera_view` 更新为实际 ROI。
+2. 后续导航日再实现正式底盘控制/Nav2 路线闭环，并在安全监督下统计到点误差、停车误差和终点误差。
 3. 正式场地开放后重新采集地图和语义点，更新正式 profile、semantic map、mission route 和 vision ROI；不要把实验室临时物理布局写死到正式配置。
 
 安全边界：本次 Codex 没有发送机械臂使能/运动命令。语义标点阶段车辆移动由现场操作员遥控完成；定位修复阶段在用户确认空旷安全后，Codex 仅发送两次短距离低速 `cmd_vel` 验证命令，并在脚本结束时连续发送零速。未删除车上录包或日志。

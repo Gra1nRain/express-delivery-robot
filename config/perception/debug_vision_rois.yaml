@@ -2,7 +2,12 @@ profile: debug
 status: draft
 camera_config_file: config/perception/camera_devices.yaml
 coordinate_space: normalized_image
-warning: ROI rectangles stay null until a supervised front_camera image is captured and reviewed.
+warning: ROI rectangles stay null until the target sign/light is visible in a supervised front_camera image.
+image_topic_validation:
+  status: passed
+  captured_at: "2026-07-20 19:43 Asia/Shanghai"
+  evidence: /front_camera/camera/color/image_raw published 424x240 rgb8 frames at the debug color profile.
+  target_visibility: start flag, traffic light, and parking sign were not visible in the captured frame.
 start_flag:
   source: mock
   camera: front_camera
