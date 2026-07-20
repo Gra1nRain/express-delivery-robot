@@ -1,7 +1,6 @@
-from glob import glob
 from setuptools import setup
 
-package_name = "competition_bringup"
+package_name = "competition_localization"
 
 setup(
     name=package_name,
@@ -10,12 +9,16 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
-        (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
+    entry_points={
+        "console_scripts": [
+            "fastlio_anchor_node = competition_localization.fastlio_anchor_node:main",
+        ],
+    },
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="agilex",
     maintainer_email="agilex@todo.todo",
-    description="Launch and field-validation entry points for the competition car.",
+    description="Localization adapters for the competition car.",
     license="Apache-2.0",
 )

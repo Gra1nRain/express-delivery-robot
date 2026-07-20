@@ -143,19 +143,16 @@ lane_boundaries:
 
 stop_lines:
   - id: traffic_light_stop_line
+    point_ref: traffic_light_stop_line
     status: measured
-    center: [2.98, -0.77]
-    heading: 0.43
     length_m: 2.40
   - id: pickup_dock_stop_line
+    point_ref: pickup_dock
     status: measured
-    center: [9.11, 1.74]
-    heading: 0.41
     length_m: 2.40
   - id: drop_dock_stop_line
+    point_ref: drop_dock
     status: measured
-    center: [1.55, 2.14]
-    heading: -2.77
     length_m: 2.40
 
 obstacle_zones:
@@ -213,7 +210,7 @@ route_corridors:
     allowed_steps: [go_traffic_light_1, random_obstacle_1]
   - id: pickup_to_drop
     centerline_ref: pickup_to_drop_lane
-    allowed_steps: [static_obstacle_1, static_obstacle_2]
+    allowed_steps: [cone_lane_change_1, cone_lane_change_2]
   - id: return_to_pickup
     centerline_ref: drop_to_pickup_lane
     allowed_steps: [return_to_pickup_area]

@@ -28,6 +28,7 @@
 |---|---|
 | `competition_interfaces` | 自定义 msg/action/srv；字段冻结前只允许草案 |
 | `competition_bringup` | 总启动入口和模块启动编排 |
+| `competition_localization` | FAST-LIO/全局坐标锚定等定位适配 |
 | `competition_mapping` | 语义地图、路线图和规划走廊 |
 | `competition_planning` | 目标选择、Hybrid A*/State Lattice、轨迹优化 |
 | `competition_control` | tracker、运动模式、四轮运动学和底盘适配 |

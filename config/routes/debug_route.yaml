@@ -26,7 +26,7 @@ steps:
     task_type: PICKUP
     cycle_index: 1
     dock_pose_ref: pickup_dock
-  - id: static_obstacle_1
+  - id: cone_lane_change_1
     type: CONE_LANE_CHANGE
     corridor_ref: pickup_to_drop
     entry_ref: cone_lane_change_entry
@@ -56,7 +56,7 @@ steps:
     task_type: PICKUP
     cycle_index: 2
     dock_pose_ref: pickup_dock
-  - id: static_obstacle_2
+  - id: cone_lane_change_2
     type: CONE_LANE_CHANGE
     corridor_ref: pickup_to_drop
     entry_ref: cone_lane_change_entry

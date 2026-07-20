@@ -18,7 +18,7 @@ steps:
     type: ARM_TASK
     task_type: PICKUP
     cycle_index: 1
-  - id: static_obstacle_1
+  - id: cone_lane_change_1
     type: CONE_LANE_CHANGE
   - id: drop_1_dock
     type: DOCK
@@ -39,7 +39,7 @@ steps:
     type: ARM_TASK
     task_type: PICKUP
     cycle_index: 2
-  - id: static_obstacle_2
+  - id: cone_lane_change_2
     type: CONE_LANE_CHANGE
   - id: drop_2_dock
     type: DOCK

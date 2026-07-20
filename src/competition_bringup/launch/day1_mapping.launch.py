@@ -93,7 +93,7 @@ def _launch_setup(context, *args, **kwargs):
     if _is_true(start_anchor):
         actions.append(
             Node(
-                package="competition_bringup",
+                package="competition_localization",
                 executable="fastlio_anchor_node",
                 name="fastlio_anchor",
                 output="screen",

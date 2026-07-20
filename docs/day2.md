@@ -33,7 +33,7 @@ Day 2 使用 Day 1 已选定的 `maps/debug/map.yaml`，只整理实际有效的
 - `lane_centerlines`：起点到取货、取货到投放、投放返程和取货到终点四条调试走廊。
 - `lane_boundaries`：有效区域外边界。
 - `no_go_zones`：把有效区域外声明为派生 keep-out，防止规划越出调试区域；不伪造未测量的实体障碍轮廓。
-- `stop_lines`：红绿灯、取货和投放的停止线，随语义点同步更新。
+- `stop_lines`：红绿灯、取货和投放的停止线，通过 `point_ref` 引用语义点，避免坐标重复写入。
 - `obstacle_zones`：随机障碍区和锥桶主动变道区，入口/出口实测，边界由 2.40 m 调试走廊宽度派生。
 - `dock_poses`：取货、投放和终点停车的语义 dock 引用。
 - `route_corridors`：路线 step 到走廊的配置化映射。
@@ -106,6 +106,8 @@ safety_params.yaml
 
 事实：现场把车辆从红绿灯停车线后退后，红绿灯可完整进入前向相机右上视野；`debug_vision_rois.yaml` 已写入实验室调试用 `traffic_light` ROI。
 
+证据图像保存在 `docs/evidence/day2/day2_stopline_front_camera_early.png`；同目录下保留停车线附近的边缘视野图像用于对比。
+
 未验证：`start_flag` 和 `parking_sign` 目标尚未入画，因此对应 ROI 仍保持 `null`，状态为 `pending_camera_view`。`traffic_light` ROI 只适用于当前实验室提前停车视角；停车点、红绿灯位置或相机角度变化后需要复核。
 
 ## Day 2 验收记录
@@ -126,7 +128,7 @@ safety_params.yaml
 | 低速逐点到位 | 通过 | 语义标点阶段由现场操作员遥控到红绿灯、随机障碍、取货、锥桶、卸货和终点；该阶段 Codex 未发送底盘速度 |
 | FAST-LIO 路线复核 | 通过 | 定位修复后从红绿灯停车线锚定 `map -> camera_init`，人工低速复核整条路线并重写 9 个语义点 |
 | 障碍区边界 | 通过 | 随机障碍区、锥桶变道区由实测入口/出口派生，所有边界点在 `debug_effective_area` 内 |
-| RViz 图形界面 | 部分通过 | `rviz2` 进程可启动，但远程截图为黑屏；本次以 AMCL/TF 采样为准 |
+| RViz 图形界面 | 通过（截图证据不足） | 现场操作端可见 RViz；Codex 远程截图未成功留证，本次以现场目视、TF 采样和 YAML 校验为准 |
 | 往返定位误差 | 未验证 | 未执行自动往返和误差统计 |
 | 底盘自动闭环控制 | 未纳入 Day 2 | 只做过一次临时 `/cmd_vel` 低速初测，到红绿灯附近约 0.18-0.23 m 后因航向误差安全停车；用户确认今天不继续实现这块 |
 
@@ -156,7 +158,7 @@ debug_vision_rois_yaml: valid; image_topic_validation: passed; traffic_light_roi
 
 - `filter_size_surf` / `filter_size_map` 从 `0.15` 恢复为 `0.5`。
 - `extrinsic_est_en` 设为 `false`，使用配置中的固定 LiDAR-IMU 外参。
-- 新增 `fastlio_anchor_node`，默认不启动；需要全局 map 位姿时，通过 `start_anchor:=true` 启动并发布 `/initialpose`。
+- 新增 `competition_localization` 包中的 `fastlio_anchor_node`，默认不启动；需要全局 map 位姿时，通过 `start_anchor:=true` 启动并发布 `/initialpose`。
 
 验证事实：
 
@@ -178,7 +180,7 @@ debug_vision_rois_yaml: valid; image_topic_validation: passed; traffic_light_roi
 - `config/routes/debug_route.yaml` 的语义引用
 - `config/perception/debug_vision_rois.yaml` 的相机命名与 ROI 状态
 - `config/mapping/fast_lio_mid360_day1.yaml` 的定位稳定性配置
-- `fastlio_anchor_node` 可选 FAST-LIO 全局锚定节点
+- `competition_localization/fastlio_anchor_node` 可选 FAST-LIO 全局锚定节点
 - 本文档的 Day 2 事实、验收和遗留风险记录
 
 仍需在小车端完成：

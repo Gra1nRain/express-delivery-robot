@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Anchor FAST-LIO's local frame to the configured map after /initialpose.
 
-FAST-LIO publishes ``camera_init -> body`` as a local odometry transform.  A
+FAST-LIO publishes ``camera_init -> body`` as a local odometry transform. A
 known initial pose is enough to derive the fixed ``map -> camera_init``
-transform without introducing a second pose estimator.  The anchor is
+transform without introducing a second pose estimator. The anchor is
 deliberately opt-in; AMCL and this node must not publish the same TF chain at
 the same time.
 """
@@ -18,50 +18,15 @@ from rclpy.duration import Duration
 from rclpy.node import Node
 from tf2_ros import Buffer, TransformBroadcaster, TransformException, TransformListener
 
-
-def _finite(*values: float) -> bool:
-    return all(math.isfinite(value) for value in values)
+from competition_localization.planar_transform import PlanarTransform, yaw_from_quaternion
 
 
-def _yaw_from_quaternion(x: float, y: float, z: float, w: float) -> float:
-    return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
-
-
-def _wrap_angle(angle: float) -> float:
-    return math.atan2(math.sin(angle), math.cos(angle))
-
-
-def _compose(first: tuple[float, float, float], second: tuple[float, float, float]) -> tuple[float, float, float]:
-    """Compose planar transforms first * second."""
-
-    x1, y1, yaw1 = first
-    x2, y2, yaw2 = second
-    cos_yaw = math.cos(yaw1)
-    sin_yaw = math.sin(yaw1)
-    return (
-        x1 + cos_yaw * x2 - sin_yaw * y2,
-        y1 + sin_yaw * x2 + cos_yaw * y2,
-        _wrap_angle(yaw1 + yaw2),
-    )
-
-
-def _inverse(transform: tuple[float, float, float]) -> tuple[float, float, float]:
-    x, y, yaw = transform
-    cos_yaw = math.cos(yaw)
-    sin_yaw = math.sin(yaw)
-    return (
-        -cos_yaw * x - sin_yaw * y,
-        sin_yaw * x - cos_yaw * y,
-        _wrap_angle(-yaw),
-    )
-
-
-def _pose_to_planar(message: PoseWithCovarianceStamped) -> tuple[float, float, float]:
+def _pose_to_planar(message: PoseWithCovarianceStamped) -> PlanarTransform:
     pose = message.pose.pose
-    return (
-        float(pose.position.x),
-        float(pose.position.y),
-        _yaw_from_quaternion(
+    return PlanarTransform(
+        x=float(pose.position.x),
+        y=float(pose.position.y),
+        yaw=yaw_from_quaternion(
             float(pose.orientation.x),
             float(pose.orientation.y),
             float(pose.orientation.z),
@@ -83,8 +48,8 @@ class FastLioAnchor(Node):
         self._tf_buffer = Buffer(cache_time=Duration(seconds=10.0))
         self._tf_listener = TransformListener(self._tf_buffer, self)
         self._tf_broadcaster = TransformBroadcaster(self)
-        self._target_map_base: tuple[float, float, float] | None = None
-        self._map_to_odom: tuple[float, float, float] | None = None
+        self._target_map_base: PlanarTransform | None = None
+        self._map_to_odom: PlanarTransform | None = None
         self._warned_waiting_tf = False
 
         self._initialpose_subscription = self.create_subscription(
@@ -108,7 +73,7 @@ class FastLioAnchor(Node):
             return
 
         target = _pose_to_planar(message)
-        if not _finite(*target):
+        if not target.is_finite():
             self.get_logger().warning("Ignoring non-finite /initialpose")
             return
 
@@ -117,10 +82,10 @@ class FastLioAnchor(Node):
         self._warned_waiting_tf = False
         self.get_logger().info(
             "Received initial pose: "
-            f"x={target[0]:.3f}, y={target[1]:.3f}, yaw={target[2]:.3f}"
+            f"x={target.x:.3f}, y={target.y:.3f}, yaw={target.yaw:.3f}"
         )
 
-    def _lookup_odom_to_base(self) -> tuple[float, float, float] | None:
+    def _lookup_odom_to_base(self) -> PlanarTransform | None:
         try:
             transform = self._tf_buffer.lookup_transform(
                 self.odom_frame,
@@ -138,17 +103,17 @@ class FastLioAnchor(Node):
 
         translation = transform.transform.translation
         rotation = transform.transform.rotation
-        result = (
-            float(translation.x),
-            float(translation.y),
-            _yaw_from_quaternion(
+        result = PlanarTransform(
+            x=float(translation.x),
+            y=float(translation.y),
+            yaw=yaw_from_quaternion(
                 float(rotation.x),
                 float(rotation.y),
                 float(rotation.z),
                 float(rotation.w),
             ),
         )
-        if not _finite(*result):
+        if not result.is_finite():
             self.get_logger().warning("Ignoring non-finite FAST-LIO transform")
             return None
         return result
@@ -158,11 +123,11 @@ class FastLioAnchor(Node):
             odom_to_base = self._lookup_odom_to_base()
             if odom_to_base is None:
                 return
-            self._map_to_odom = _compose(self._target_map_base, _inverse(odom_to_base))
+            self._map_to_odom = self._target_map_base.compose(odom_to_base.inverse())
             self.get_logger().info(
                 "Anchored map to FAST-LIO: "
-                f"x={self._map_to_odom[0]:.3f}, y={self._map_to_odom[1]:.3f}, "
-                f"yaw={self._map_to_odom[2]:.3f}"
+                f"x={self._map_to_odom.x:.3f}, y={self._map_to_odom.y:.3f}, "
+                f"yaw={self._map_to_odom.yaw:.3f}"
             )
 
         if self._map_to_odom is None:
@@ -172,11 +137,11 @@ class FastLioAnchor(Node):
         message.header.stamp = self.get_clock().now().to_msg()
         message.header.frame_id = self.map_frame
         message.child_frame_id = self.odom_frame
-        message.transform.translation.x = self._map_to_odom[0]
-        message.transform.translation.y = self._map_to_odom[1]
+        message.transform.translation.x = self._map_to_odom.x
+        message.transform.translation.y = self._map_to_odom.y
         message.transform.translation.z = 0.0
-        message.transform.rotation.z = math.sin(self._map_to_odom[2] / 2.0)
-        message.transform.rotation.w = math.cos(self._map_to_odom[2] / 2.0)
+        message.transform.rotation.z = math.sin(self._map_to_odom.yaw / 2.0)
+        message.transform.rotation.w = math.cos(self._map_to_odom.yaw / 2.0)
         self._tf_broadcaster.sendTransform(message)
 
 
