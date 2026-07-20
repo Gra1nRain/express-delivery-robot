@@ -104,9 +104,9 @@ safety_params.yaml
 
 事实：定位修复后，车端按 `usb_port_id=2-3.1.1.1` 启动 `front_camera` color-only 节点，`/front_camera/camera/color/image_raw` 可发布 `424x240 rgb8` 图像。
 
-建议：待起跑旗、红绿灯和停车牌实际进入前向相机画面后，再把 `start_flag`、`traffic_light` 和 `parking_sign` 的 ROI 填为 `normalized_image` 坐标。
+事实：现场把车辆从红绿灯停车线后退后，红绿灯可完整进入前向相机右上视野；`debug_vision_rois.yaml` 已写入实验室调试用 `traffic_light` ROI。
 
-未验证：本次抓到的前向相机画面中没有明确的起跑旗、红绿灯或停车牌目标，因此 `config/perception/debug_vision_rois.yaml` 的三个 ROI 仍保持 `null`，状态为 `pending_camera_view`；本次不虚构未采集的像素范围。
+未验证：`start_flag` 和 `parking_sign` 目标尚未入画，因此对应 ROI 仍保持 `null`，状态为 `pending_camera_view`。`traffic_light` ROI 只适用于当前实验室提前停车视角；停车点、红绿灯位置或相机角度变化后需要复核。
 
 ## Day 2 验收记录
 
@@ -143,7 +143,7 @@ debug_route_yaml: valid
 steps: 15 refs checked
 fastlio_route_review: points: 9 measured, refs checked, all points inside effective_area
 car_sync: semantic_map.yaml sha256 matched
-debug_vision_rois_yaml: valid; image_topic_validation: passed; roi_status: pending_camera_view
+debug_vision_rois_yaml: valid; image_topic_validation: passed; traffic_light_roi: measured_debug; start_flag/parking_sign: pending_camera_view
 ```
 
 ## 定位稳定性补充验收
@@ -183,7 +183,7 @@ debug_vision_rois_yaml: valid; image_topic_validation: passed; roi_status: pendi
 
 仍需在小车端完成：
 
-1. 摆放起跑旗、红绿灯和停车牌并采集前向相机画面，把 `debug_vision_rois.yaml` 的 `start_flag`、`traffic_light` 和 `parking_sign` 从 `pending_camera_view` 更新为实际 ROI。
+1. 摆放起跑旗和停车牌并采集前向相机画面，把 `debug_vision_rois.yaml` 的 `start_flag` 和 `parking_sign` 从 `pending_camera_view` 更新为实际 ROI；若停车点或红绿灯位置变化，需要复核 `traffic_light` ROI。
 2. 后续导航日再实现正式底盘控制/Nav2 路线闭环，并在安全监督下统计到点误差、停车误差和终点误差。
 3. 正式场地开放后重新采集地图和语义点，更新正式 profile、semantic map、mission route 和 vision ROI；不要把实验室临时物理布局写死到正式配置。
 

@@ -20,8 +20,13 @@ traffic_light:
   camera: front_camera
   camera_namespace: /front_camera
   image_topic: /front_camera/camera/color/image_raw
-  roi: null
-  roi_status: pending_camera_view
+  roi:
+    x_min: 0.82
+    y_min: 0.04
+    x_max: 0.95
+    y_max: 0.38
+  roi_status: measured_debug
+  note: Applies to the laboratory early-stop traffic-light view; re-check if stop pose or light placement changes.
 parking_sign:
   source: mock
   camera: front_camera
