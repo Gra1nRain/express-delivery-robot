@@ -10,7 +10,7 @@ Day 2 使用 Day 1 已选定的 `maps/debug/map.yaml`，只整理实际有效的
 - 路线表对语义点、dock pose 和规划走廊的引用。
 - `debug_site_profile` 对地图、语义地图、路线、ROI 和 dock 配置的统一入口。
 - 小车前向相机 `front_camera` 的视觉配置命名确认。
-- 车端同步、AMCL/TF 手动低速逐点采样和配置引用完整性验收。
+- 车端同步、AMCL/TF 初始标点、FAST-LIO 路线复核和配置引用完整性验收。
 
 ## 已确认事实
 
@@ -42,24 +42,25 @@ Day 2 使用 Day 1 已选定的 `maps/debug/map.yaml`，只整理实际有效的
 
 事实：坐标写入 `map` frame，单位为米，航向单位为弧度。
 
-事实：本次先用 Day 1 地图预览生成草案点，随后在小车端加载 `map_server`、`amcl`、Livox、FAST-LIO 和 `/scan`，由现场操作员遥控低速到位，Codex 只读取 `map -> body` TF 均值并写入语义地图。
+事实：本次先用 Day 1 地图预览生成草案点，随后在小车端加载 `map_server`、`amcl`、Livox、FAST-LIO 和 `/scan` 完成早期标点；定位修复后，再使用 FAST-LIO 与 `fastlio_anchor_node` 从 `traffic_light_stop_line` 锚定全局 `map`，由现场操作员遥控低速复核整条路线，Codex 读取 `map -> body` TF 均值并更新语义地图。
 
-事实：以下调试点已按车端 AMCL/TF 采样写入，并标记为 `measured`。
+事实：以下调试点已按车端 FAST-LIO 路线复核结果写入，并标记为 `measured`。
 
 | 语义点 | x | y | yaw(rad) | 说明 |
 |---|---:|---:|---:|---|
+| `start` | 0.64 | -1.71 | 0.34 | 起点，由起点锚定采样与红绿灯重锚定关系反算 |
 | `traffic_light_stop_line` | 2.98 | -0.77 | 0.43 | 红绿灯停车线 |
-| `random_obstacle_entry` | 4.14 | -0.25 | 0.35 | 随机障碍入口 |
-| `random_obstacle_exit` | 6.42 | 0.26 | -0.02 | 随机障碍出口 |
-| `pickup_dock` | 8.58 | 0.27 | 0.04 | 取货点 |
-| `cone_lane_change_entry` | 5.96 | 3.42 | -2.97 | 锥桶变道入口，实验室临时放在返程物理路段 |
-| `cone_lane_change_exit` | 1.98 | 2.96 | -3.14 | 锥桶变道出口 |
-| `drop_dock` | 3.28 | 3.82 | 3.03 | 卸货点，实验室临时放在返程物理路段 |
-| `finish_park` | 2.66 | 4.43 | 2.38 | 终点停车 |
+| `random_obstacle_entry` | 4.58 | -0.07 | 0.40 | 随机障碍入口 |
+| `random_obstacle_exit` | 7.09 | 1.01 | 0.43 | 随机障碍出口 |
+| `pickup_dock` | 9.11 | 1.74 | 0.41 | 取货点，两轮采样均值 |
+| `cone_lane_change_entry` | 6.86 | 3.68 | -2.71 | 锥桶变道入口，采用第一轮标准入口；第二轮偏上点不写入 |
+| `cone_lane_change_exit` | 3.35 | 2.30 | -2.76 | 锥桶变道出口，两轮采样均值 |
+| `drop_dock` | 1.55 | 2.14 | -2.77 | 卸货点，两轮采样基本一致 |
+| `finish_park` | -0.94 | 0.91 | -2.73 | 终点停车，按现场确认的稳定终点写入 |
 
 经验：随机障碍区和锥桶变道区边界不是逐角实测障碍物轮廓，而是根据已测入口/出口和 2.40 m 调试走廊宽度派生，因此状态为 `derived_draft`。
 
-未验证：本次完成的是人工遥控低速标点，不等同于自动导航闭环验收；未统计自动运行的到点误差和返程误差。
+未验证：本次完成的是人工遥控低速路线复核和语义点重写，不等同于自动导航闭环验收；未统计自动运行的到点误差和返程误差。
 
 ## 路线与 profile
 
@@ -121,6 +122,7 @@ safety_params.yaml
 | profile 总入口 | 通过 | `debug_site_profile.yaml` 引用 Day 2 四类配置产物 |
 | 相机命名与 topic | 通过 | ROI 配置与 `front_camera` 设备配置交叉校验一致 |
 | 低速逐点到位 | 通过 | 语义标点阶段由现场操作员遥控到红绿灯、随机障碍、取货、锥桶、卸货和终点；该阶段 Codex 未发送底盘速度 |
+| FAST-LIO 路线复核 | 通过 | 定位修复后从红绿灯停车线锚定 `map -> camera_init`，人工低速复核整条路线并重写 9 个语义点 |
 | 障碍区边界 | 通过 | 随机障碍区、锥桶变道区由实测入口/出口派生，所有边界点在 `debug_effective_area` 内 |
 | RViz 图形界面 | 部分通过 | `rviz2` 进程可启动，但远程截图为黑屏；本次以 AMCL/TF 采样为准 |
 | 往返定位误差 | 未验证 | 未执行自动往返和误差统计 |
@@ -131,11 +133,12 @@ safety_params.yaml
 semantic_map_yaml: valid
 points: 9 lanes: 4 obstacle_zones: 2
 measured_points: traffic_light_stop_line, pickup_dock, drop_dock, finish_park,
-  random_obstacle_entry, random_obstacle_exit, cone_lane_change_entry,
-  cone_lane_change_exit
+  start, random_obstacle_entry, random_obstacle_exit,
+  cone_lane_change_entry, cone_lane_change_exit
 derived_zones: random_obstacle_zone_1, cone_lane_change_zone
 debug_route_yaml: valid
 steps: 15 refs checked
+fastlio_route_review: points: 9 measured, refs checked, all points inside effective_area
 car_sync: semantic_map.yaml sha256 matched
 debug_vision_rois_yaml: valid; roi_status: pending_camera_view
 ```
