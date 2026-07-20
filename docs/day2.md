@@ -120,7 +120,7 @@ safety_params.yaml
 | 路线 step 顺序 | 通过 | 15 个 step，覆盖两轮取放和终点停车 |
 | profile 总入口 | 通过 | `debug_site_profile.yaml` 引用 Day 2 四类配置产物 |
 | 相机命名与 topic | 通过 | ROI 配置与 `front_camera` 设备配置交叉校验一致 |
-| 低速逐点到位 | 通过 | 现场操作员遥控到红绿灯、随机障碍、取货、锥桶、卸货和终点；Codex 未发送底盘速度 |
+| 低速逐点到位 | 通过 | 语义标点阶段由现场操作员遥控到红绿灯、随机障碍、取货、锥桶、卸货和终点；该阶段 Codex 未发送底盘速度 |
 | 障碍区边界 | 通过 | 随机障碍区、锥桶变道区由实测入口/出口派生，所有边界点在 `debug_effective_area` 内 |
 | RViz 图形界面 | 部分通过 | `rviz2` 进程可启动，但远程截图为黑屏；本次以 AMCL/TF 采样为准 |
 | 往返定位误差 | 未验证 | 未执行自动往返和误差统计 |
@@ -140,6 +140,30 @@ car_sync: semantic_map.yaml sha256 matched
 debug_vision_rois_yaml: valid; roi_status: pending_camera_view
 ```
 
+## 定位稳定性补充验收
+
+验收时间：2026-07-20（车端 FAST-LIO 定位稳定性修复）。
+
+事实：AMCL 在本实验室调试现场的 `map -> body` 结果不稳定；后续导航前置定位改为以 FAST-LIO 的 `camera_init -> body` 为主，并通过可选锚定节点从 `/initialpose` 派生 `map -> camera_init`。锚定节点不能和 AMCL 同时发布同一条全局定位链。
+
+本次定位修复只改动 Day 1 FAST-LIO 调试配置和可选锚定入口：
+
+- `filter_size_surf` / `filter_size_map` 从 `0.15` 恢复为 `0.5`。
+- `extrinsic_est_en` 设为 `false`，使用配置中的固定 LiDAR-IMU 外参。
+- 新增 `fastlio_anchor_node`，默认不启动；需要全局 map 位姿时，通过 `start_anchor:=true` 启动并发布 `/initialpose`。
+
+验证事实：
+
+| 验收项 | 结果 | 证据 |
+|---|---|---|
+| FAST-LIO 实时性 | 通过 | 0.15 体素时日志 `ave total` 约 0.108 s；0.5 体素后约 0.041 s，低于 10 Hz LiDAR 帧周期 |
+| 静止漂移 | 通过 | 0.5 体素后静止 25 s：x/y/z span 分别约 0.006/0.012/0.014 m，净漂移约 0.002/0.003/-0.004 m |
+| 短距离运动后稳定 | 通过 | `cmd_vel` 0.05 m/s 持续 0.8 s，FAST-LIO 平面位移约 0.0418 m；停稳后 15 s x/y span 约 0.011/0.011 m |
+| 全局锚定链路 | 通过 | 临时 `/initialpose` 后 `map -> body` 与 `camera_init -> body` 平面误差约 0.0015 m，yaw 误差约 0.0003 rad |
+| TF 冲突控制 | 通过 | `ranger_base` 以 `publish_odom_tf:=false` 启动，底盘里程计不抢 FAST-LIO 定位 TF |
+
+未验证：本次没有执行完整 Nav2 自动路线、避障闭环和到点误差统计；正式验收仍需在正式场地重新采图、重标语义点并做自动运行验收。
+
 ## 交付与下一步
 
 已交付：
@@ -147,6 +171,8 @@ debug_vision_rois_yaml: valid; roi_status: pending_camera_view
 - `maps/debug/semantic_map.yaml`
 - `config/routes/debug_route.yaml` 的语义引用
 - `config/perception/debug_vision_rois.yaml` 的相机命名与 ROI 状态
+- `config/mapping/fast_lio_mid360_day1.yaml` 的定位稳定性配置
+- `fastlio_anchor_node` 可选 FAST-LIO 全局锚定节点
 - 本文档的 Day 2 事实、验收和遗留风险记录
 
 仍需在小车端完成：
@@ -155,4 +181,4 @@ debug_vision_rois_yaml: valid; roi_status: pending_camera_view
 2. 在安全监督下执行自动或半自动低速路线，统计到点误差、停车误差和终点误差。
 3. 正式场地开放后重新采集地图和语义点，更新正式 profile、semantic map、mission route 和 vision ROI；不要把实验室临时物理布局写死到正式配置。
 
-安全边界：本次 Codex 没有发送机械臂使能/运动命令，也没有发送底盘速度命令；车辆移动由现场操作员遥控完成。未删除车上录包或日志。
+安全边界：本次 Codex 没有发送机械臂使能/运动命令。语义标点阶段车辆移动由现场操作员遥控完成；定位修复阶段在用户确认空旷安全后，Codex 仅发送两次短距离低速 `cmd_vel` 验证命令，并在脚本结束时连续发送零速。未删除车上录包或日志。

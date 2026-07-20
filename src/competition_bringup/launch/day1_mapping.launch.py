@@ -31,6 +31,10 @@ def _launch_setup(context, *args, **kwargs):
     port_name = LaunchConfiguration("port_name").perform(context)
     robot_model = LaunchConfiguration("robot_model").perform(context)
     use_rviz = LaunchConfiguration("rviz").perform(context)
+    start_anchor = LaunchConfiguration("start_anchor").perform(context)
+    anchor_map_frame = LaunchConfiguration("anchor_map_frame").perform(context)
+    anchor_odom_frame = LaunchConfiguration("anchor_odom_frame").perform(context)
+    anchor_base_frame = LaunchConfiguration("anchor_base_frame").perform(context)
 
     if _is_true(LaunchConfiguration("start_livox").perform(context)):
         livox_pkg = get_package_share_directory("livox_ros_driver2")
@@ -86,6 +90,23 @@ def _launch_setup(context, *args, **kwargs):
             )
         )
 
+    if _is_true(start_anchor):
+        actions.append(
+            Node(
+                package="competition_bringup",
+                executable="fastlio_anchor_node",
+                name="fastlio_anchor",
+                output="screen",
+                parameters=[
+                    {
+                        "map_frame": anchor_map_frame,
+                        "odom_frame": anchor_odom_frame,
+                        "base_frame": anchor_base_frame,
+                    }
+                ],
+            )
+        )
+
     if _is_true(LaunchConfiguration("start_slam").perform(context)):
         actions.append(
             Node(
@@ -124,6 +145,10 @@ def generate_launch_description():
             DeclareLaunchArgument("start_base", default_value="false"),
             DeclareLaunchArgument("start_scan", default_value="true"),
             DeclareLaunchArgument("start_slam", default_value="false"),
+            DeclareLaunchArgument("start_anchor", default_value="false"),
+            DeclareLaunchArgument("anchor_map_frame", default_value="map"),
+            DeclareLaunchArgument("anchor_odom_frame", default_value="camera_init"),
+            DeclareLaunchArgument("anchor_base_frame", default_value="body"),
             DeclareLaunchArgument("rviz", default_value="false"),
             OpaqueFunction(function=_launch_setup),
         ]

@@ -12,6 +12,11 @@ setup(
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
+    entry_points={
+        "console_scripts": [
+            "fastlio_anchor_node = competition_bringup.fastlio_anchor_node:main",
+        ],
+    },
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="agilex",
