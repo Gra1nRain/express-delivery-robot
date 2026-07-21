@@ -8,45 +8,45 @@ plans:
   target_ref: traffic_light_stop_line
   target_source: target_ref
   point_count: 12
-  path_length_m: 2.522
-  planning_time_ms: 0.165
+  path_length_m: 2.516
+  planning_time_ms: 0.126
   points:
   - x: 0.64
     y: -1.71
-    yaw: 0.382
+    yaw: 0.3657
     ref_id: start
-  - x: 0.8527
-    y: -1.6245
-    yaw: 0.382
-  - x: 1.0655
-    y: -1.5391
-    yaw: 0.382
-  - x: 1.2782
-    y: -1.4536
-    yaw: 0.382
-  - x: 1.4909
-    y: -1.3682
-    yaw: 0.382
-  - x: 1.7036
-    y: -1.2827
-    yaw: 0.382
-  - x: 1.9164
-    y: -1.1973
-    yaw: 0.382
-  - x: 2.1291
-    y: -1.1118
-    yaw: 0.382
-  - x: 2.3418
-    y: -1.0264
-    yaw: 0.382
-  - x: 2.5545
-    y: -0.9409
-    yaw: 0.382
-  - x: 2.7673
-    y: -0.8555
-    yaw: 0.382
-  - x: 2.98
-    y: -0.77
+  - x: 0.8536
+    y: -1.6282
+    yaw: 0.3657
+  - x: 1.0673
+    y: -1.5464
+    yaw: 0.3657
+  - x: 1.2809
+    y: -1.4645
+    yaw: 0.3657
+  - x: 1.4945
+    y: -1.3827
+    yaw: 0.3657
+  - x: 1.7082
+    y: -1.3009
+    yaw: 0.3657
+  - x: 1.9218
+    y: -1.2191
+    yaw: 0.3657
+  - x: 2.1355
+    y: -1.1373
+    yaw: 0.3657
+  - x: 2.3491
+    y: -1.0555
+    yaw: 0.3657
+  - x: 2.5627
+    y: -0.9736
+    yaw: 0.3657
+  - x: 2.7764
+    y: -0.8918
+    yaw: 0.3657
+  - x: 2.99
+    y: -0.81
     yaw: 0.43
     ref_id: traffic_light_stop_line
 - step_id: random_obstacle_1
@@ -54,35 +54,38 @@ plans:
   corridor_ref: go_to_pickup
   target_ref: random_obstacle_exit
   target_source: target_ref
-  point_count: 19
-  path_length_m: 4.479
-  planning_time_ms: 0.145
+  point_count: 20
+  path_length_m: 4.486
+  planning_time_ms: 0.111
   points:
-  - x: 2.98
-    y: -0.77
-    yaw: 0.4124
+  - x: 2.99
+    y: -0.81
+    yaw: 0.4356
     ref_id: traffic_light_stop_line
-  - x: 3.2086
-    y: -0.67
-    yaw: 0.4124
-  - x: 3.4371
-    y: -0.57
-    yaw: 0.4124
-  - x: 3.6657
-    y: -0.47
-    yaw: 0.4124
-  - x: 3.8943
-    y: -0.37
-    yaw: 0.4124
-  - x: 4.1229
-    y: -0.27
-    yaw: 0.4124
-  - x: 4.3514
-    y: -0.17
-    yaw: 0.4124
+  - x: 3.1888
+    y: -0.7175
+    yaw: 0.4356
+  - x: 3.3875
+    y: -0.625
+    yaw: 0.4356
+  - x: 3.5863
+    y: -0.5325
+    yaw: 0.4356
+  - x: 3.785
+    y: -0.44
+    yaw: 0.4356
+  - x: 3.9838
+    y: -0.3475
+    yaw: 0.4356
+  - x: 4.1825
+    y: -0.255
+    yaw: 0.4356
+  - x: 4.3812
+    y: -0.1625
+    yaw: 0.4356
   - x: 4.58
     y: -0.07
-    yaw: 0.4124
+    yaw: 0.4356
     ref_id: random_obstacle_entry
   - x: 4.8082
     y: 0.0282
@@ -125,7 +128,7 @@ plans:
   target_source: corridor_end
   point_count: 37
   path_length_m: 8.55
-  planning_time_ms: 0.224
+  planning_time_ms: 0.163
   points:
   - x: 9.11
     y: 1.74
@@ -249,7 +252,7 @@ plans:
   target_source: target_ref
   point_count: 37
   path_length_m: 8.55
-  planning_time_ms: 0.205
+  planning_time_ms: 0.157
   points:
   - x: 1.55
     y: 2.14
@@ -373,7 +376,7 @@ plans:
   target_source: corridor_end
   point_count: 37
   path_length_m: 8.55
-  planning_time_ms: 0.19
+  planning_time_ms: 0.191
   points:
   - x: 9.11
     y: 1.74
@@ -497,7 +500,7 @@ plans:
   target_source: target_ref
   point_count: 13
   path_length_m: 2.777
-  planning_time_ms: 0.061
+  planning_time_ms: 0.064
   points:
   - x: 1.55
     y: 2.14

@@ -24,21 +24,21 @@
 - RViz 配置已加入 `competition_bringup`：`day3_global_planning.launch.py rviz:=true` 默认加载 `maps/debug/map.yaml` 到 `/map`，叠加当前 step `/planning/global_path`，并叠加 6 个全路线分段 topic；launch 默认发布 `map -> day3_viz_anchor` 静态 TF，避免纯规划可视化时 RViz 报 `map` frame 不存在。
 - 小车端 RViz 可视化已验证：`/map` 栅格地图、`/planning/global_path` 和 6 个 `/planning/global_paths/<step_id>` 可叠加显示，Global Status 和 Map Status OK，截图为 `docs/evidence/day3/day3_rviz_all_paths_window.png`。
 - 诊断事实：小车端 `/map` 元数据与 `maps/debug/map.yaml` 一致，`resolution=0.03`、`width=977`、`height=1374`、`origin=(-2.39,-18.3,0)`。
-- 诊断事实：按 `map.yaml` 投影规划点到 `map.pgm` 时，`traffic_light_stop_line=(2.98,-0.77)` 落在占用栅格，叠图证据为 `docs/evidence/day3/debug_global_plan_on_map_diagnosis.png`。
+- 诊断事实：按 `map.yaml` 投影规划点到 `map.pgm` 时，旧 `traffic_light_stop_line=(2.98,-0.77)` 落在占用栅格；用户将车停到红绿灯停止线后，12 个 `map -> body` 采样均值为 `(2.9882,-0.8088,yaw=0.4303)`，与旧点平面差约 `0.040m`，新点更新为 `(2.99,-0.81,yaw=0.43)` 后落在自由栅格。叠图证据为 `docs/evidence/day3/debug_global_plan_on_map_diagnosis.png`，TF 采样原始证据为 `docs/evidence/day3/traffic_light_stop_line_tf_echo.txt`。
 - 诊断事实：校准前车端 `/Laser_map` frame 为 `camera_init`，实时 TF 为 `camera_init -> body`；当时未发现 `map -> camera_init` 锚定 TF。该事实说明校准前 FAST-LIO 实时定位链和 RViz 静态 occupancy map/path 链路尚未连通。
 - 运行校准事实：用户将车停在起点后，车端启动 `competition_localization/fastlio_anchor_node`，并按 `semantic_map.yaml` 中 `start=(0.64,-1.71,yaw=0.34)` 发布 `/initialpose`；锚定后 `map -> body` 复核样本相对起点的平面误差约 `0.11m`、yaw 误差约 `0.008rad`，即实时 FAST-LIO 车体 frame 已对齐到起点附近。
-- RViz 诊断配置已启用 TF display；锚定后可同时看到 `map`、`camera_init`、`body` 和路径分段，截图为 `docs/evidence/day3/day3_rviz_anchor_tf_window.png`。
+- RViz 诊断配置已启用 TF display；锚定后可同时看到 `map`、`camera_init`、`body` 和路径分段，截图为 `docs/evidence/day3/day3_rviz_anchor_tf_window.png`。红绿灯停止线坐标更新并重启 Day3 可视化后，截图为 `docs/evidence/day3/day3_rviz_stopline_updated_window.png`。
 
 ## 当前车端规划结果
 
 | step | target | points | length_m | time_ms |
 |---|---|---:|---:|---:|
-| `go_traffic_light_1` | `traffic_light_stop_line` | 12 | 2.522 | 0.419 |
-| `random_obstacle_1` | `random_obstacle_exit` | 19 | 4.479 | 0.418 |
-| `cone_lane_change_1` | `drop_dock` | 37 | 8.550 | 0.705 |
+| `go_traffic_light_1` | `traffic_light_stop_line` | 12 | 2.516 | 5.767 |
+| `random_obstacle_1` | `random_obstacle_exit` | 20 | 4.486 | 0.556 |
+| `cone_lane_change_1` | `drop_dock` | 37 | 8.550 | 0.715 |
 | `return_to_pickup_area` | `pickup_dock` | 37 | 8.550 | 0.677 |
-| `cone_lane_change_2` | `drop_dock` | 37 | 8.550 | 0.673 |
-| `finish_park` | `finish_park` | 13 | 2.777 | 0.210 |
+| `cone_lane_change_2` | `drop_dock` | 37 | 8.550 | 0.744 |
+| `finish_park` | `finish_park` | 13 | 2.777 | 0.352 |
 
 ## 经验
 
@@ -56,5 +56,5 @@
 - 当前 footprint/clearance 已接入规划参数，debug 默认值为 `footprint_radius_m=0.45`、`clearance_m=0.20`；实车外廓仍需复核后冻结。
 - 当前 `min_turning_radius_m=0.20` 只是 debug 路线合法性保护阈值，尚未绑定 RANGER 实车最小转弯能力；后续底盘能力确认后必须更新并重新验收曲率。
 - `random_obstacle_exit` 到 `pickup_dock` 的末端接近动作当前属于后续 DOCK/精停链路，Day3 不在全局规划里改 route 语义。
-- 语义点与 occupancy map 的最终几何一致性未通过验收；`traffic_light_stop_line` 当前压到占用栅格，需现场提供至少一个可靠锚点或重新采样后再改 `semantic_map.yaml`。
+- 语义点与 occupancy map 的最终几何一致性仍未整体通过验收；`traffic_light_stop_line` 已用当前现场采样修正到自由栅格，但 `pickup_dock`、`drop_dock`、锥桶变道点、终点停车等仍需现场逐点复核。
 - 当前 `map -> camera_init` 锚定是运行态进程；若重启车端、停止 `fastlio_anchor_node` 或重新启动 FAST-LIO 后，需要在起点或另一个可靠锚点重新发布 `/initialpose`。

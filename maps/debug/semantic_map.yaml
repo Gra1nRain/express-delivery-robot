@@ -45,8 +45,8 @@ points:
     role: start_area
     status: measured
   traffic_light_stop_line:
-    x: 2.98
-    y: -0.77
+    x: 2.99
+    y: -0.81
     yaw: 0.43
     role: traffic_light_stop_line
     status: measured
