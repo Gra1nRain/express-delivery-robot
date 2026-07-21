@@ -84,6 +84,48 @@ class SemanticPlannerTest(unittest.TestCase):
         self.assertEqual(cone_plan.target_ref, "drop_dock")
         self.assertEqual(cone_plan.target_source, "corridor_end")
 
+    def test_debug_route_lab_return_goes_via_traffic_light_before_second_pickup(self) -> None:
+        result = plan_route(self.route, self.semantic_map, self.params)
+
+        self.assertTrue(result.ok, result.failures)
+        return_plan = next(
+            plan for plan in result.plans if plan.step_id == "return_to_pickup_area"
+        )
+        self.assertEqual(return_plan.corridor_ref, "lab_return_to_pickup")
+        self.assertEqual(return_plan.target_ref, "pickup_dock")
+        self.assertEqual(
+            [point.ref_id for point in return_plan.path if point.ref_id],
+            [
+                "drop_dock",
+                "traffic_light_stop_line",
+                "random_obstacle_entry",
+                "random_obstacle_exit",
+                "pickup_dock",
+            ],
+        )
+
+    def test_debug_competition_return_route_keeps_return_lane_variant(self) -> None:
+        route = load_yaml_file(
+            REPO_ROOT / "config" / "routes" / "debug_competition_return_route.yaml"
+        )
+
+        result = plan_route(route, self.semantic_map, self.params)
+
+        self.assertTrue(result.ok, result.failures)
+        return_plan = next(
+            plan for plan in result.plans if plan.step_id == "return_to_pickup_area"
+        )
+        self.assertEqual(return_plan.corridor_ref, "return_to_pickup")
+        self.assertEqual(
+            [point.ref_id for point in return_plan.path if point.ref_id],
+            [
+                "drop_dock",
+                "cone_lane_change_exit",
+                "cone_lane_change_entry",
+                "pickup_dock",
+            ],
+        )
+
     def test_rejects_step_not_allowed_by_corridor(self) -> None:
         semantic_map = copy.deepcopy(self.semantic_map)
         for corridor in semantic_map["route_corridors"]:

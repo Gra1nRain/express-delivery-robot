@@ -1,6 +1,6 @@
-route_name: debug_route
+route_name: debug_competition_return_route
 profile: debug
-warning: Laboratory adaptation; second pickup returns through traffic_light_stop_line because the lab has no dedicated return lane.
+warning: Debug semantic-map variant that keeps the official-style return lane after unloading.
 semantic_map_file: maps/debug/semantic_map.yaml
 effective_area_ref: debug_effective_area
 steps:
@@ -44,7 +44,7 @@ steps:
   - id: return_to_pickup_area
     type: RUN_SEGMENT
     avoidance_required: false
-    corridor_ref: lab_return_to_pickup
+    corridor_ref: return_to_pickup
     target_ref: pickup_dock
   - id: pickup_2_dock
     type: DOCK

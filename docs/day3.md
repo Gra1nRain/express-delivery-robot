@@ -7,19 +7,21 @@
 - 可规划 step 为带 `corridor_ref` 的 `RUN_SEGMENT`、`CONE_LANE_CHANGE`、`FINISH_PARK`。
 - 离线入口为 `offline_global_plan`，ROS2 发布入口为 `semantic_global_path_node`，默认发布 `go_traffic_light_1` 到 `/planning/global_path`；其他当前 step 通过 `step_id` 参数切换。当前 debug 配置 `global_planner.plugin=occupancy_grid_astar`、`trajectory_smoother.plugin=cubic_bezier`，保留 `semantic_corridor` fallback。
 - `day3_global_planning.launch.py` 当前默认 `show_all_steps:=true`，会额外按 step 发布 6 个分段路径到 `/planning/global_paths/<step_id>`，用于 RViz 同时查看完整可规划路线。
-- 小车端当前运行的是 RViz 诊断可视化栈；该栈只发布路径、地图和静态可视化 TF，不启动控制器、底盘驱动或机械臂动作。
+- `debug_route.yaml` 当前是实验室适配路线：第一次卸货后，`return_to_pickup_area` 通过 `lab_return_to_pickup` 从 `drop_dock` 到 `traffic_light_stop_line`，再沿随机障碍物/取货方向到 `pickup_dock`。`debug_competition_return_route.yaml` 保留 debug 语义地图上的正式返程车道变体。
+- 小车端上一版运行的是 RViz 诊断可视化栈；该栈只发布路径、地图和静态可视化 TF，不启动控制器、底盘驱动或机械臂动作。2026-07-22 实验室返程适配目前只在 PC 本地完成，尚未同步小车。
 
 ## 验证
 
-- 本地 `python -m unittest tests.test_semantic_planner`：11 tests passed。
-- 本地 `python -m unittest discover -s tests`：13 tests passed。
+- 本地 `python -m unittest tests.test_semantic_planner`：13 tests passed。
+- 本地 `python -m unittest discover -s tests`：15 tests passed。
 - 本地 `python -m compileall src/competition_planning tests/test_semantic_planner.py`：passed。
 - 离线 debug route 规划：6 个可规划 step，0 个失败。
 - 离线 artifact：`docs/evidence/day3/debug_global_plan.yaml`。
+- PC 本地 `debug_competition_return_route.yaml` 离线规划：6 个可规划 step，0 个失败，用于保留正式返程车道变体。
 - 小车端 `colcon build --symlink-install --packages-select competition_planning competition_bringup`：passed。
 - 小车端 `ros2 run competition_planning offline_global_plan ...`：6 个可规划 step，0 个失败；artifact 为 `docs/evidence/day3/debug_global_plan_car.yaml`。
 - 小车端 `/planning/global_path` topic 检查：类型 `nav_msgs/msg/Path`，publisher count 1，`header.frame_id=map`。
-- 小车端 `/planning/global_paths/cone_lane_change_1` topic 检查：类型 `nav_msgs/msg/Path`，publisher count 1，RViz subscriber count 1。
+- 小车端 `/planning/global_paths/cone_lane_change_1` topic 检查：类型 `nav_msgs/msg/Path`，publisher count 1，RViz subscriber count 1。该检查属于 2026-07-21 上一版车端部署，不包含 2026-07-22 实验室返程适配。
 - 离线路径可视化证据已保留为当前 optimizer 栅格叠图：`docs/evidence/day3/debug_global_plan_on_map_diagnosis.png`。
 - RViz 配置已加入 `competition_bringup`：`day3_global_planning.launch.py rviz:=true` 默认加载 `maps/debug/map.yaml` 到 `/map`，叠加当前 step `/planning/global_path`，并叠加 6 个全路线分段 topic；launch 默认发布 `map -> day3_viz_anchor` 静态 TF，避免纯规划可视化时 RViz 报 `map` frame 不存在。
 - 小车端 RViz 可视化已验证：`/map` 栅格地图、`/planning/global_path` 和 6 个 `/planning/global_paths/<step_id>` 可叠加显示，Global Status 和 Map Status OK；旧 RViz 截图已清理，当前保留的路线视觉证据为 `docs/evidence/day3/debug_global_plan_on_map_diagnosis.png`。
@@ -33,10 +35,21 @@
 - Optimizer 实现事实：`occupancy_grid_astar` 读取 `map.yaml/map.pgm`，按 `grid_inflation_radius_m` 生成膨胀障碍，逐语义 waypoint 分段 A* 搜索并按 `path_sample_spacing_m` 重采样；实现保留语义锚点。
 - Trajectory smoother 实现事实：`cubic_bezier` 在 A*/semantic 路径后执行，保留带 `ref_id` 的语义锚点，用分段三次 Bezier 生成连续路径；锚点切线优先使用语义 yaw，若该 yaw 与当前行进方向差超过 120° 则回退到相邻锚点方向；若锚点不足 3 个或平滑后碰到膨胀障碍，则回退原路径并在结果中标记 `smoother_plugin` 原因。
 - Route 修正事实：`random_obstacle_1.target_ref` 已由 `random_obstacle_exit` 改为 `pickup_dock`，因此 RViz 中随机障碍物段现在会从红绿灯停止线经随机障碍物区域连续发布到取货点。
-- 本地 optimizer/smoother 验证事实：debug 配置 `grid_inflation_radius_m=0.30m` 时，6 条路径所有采样点 blocked=0；`cone_lane_change_1` 从 `pickup_dock` 出发的首段方向约 `10.96°`，与 `pickup_dock.yaw=1.15°` 相差约 `9.81°`。贝塞尔平滑后的最大相邻 yaw 跳变：随机障碍物段约 `2.33°`，锥桶变道段约 `25.05°`，返回取货段约 `19.40°`。
-- 当前实车运行事实：本次部署后车端 ROS 图只检测到规划、地图、TF/RViz 相关 topic，未检测到 `/cmd_vel`、`/cmd_vel_safe` 或 `/odom`；因此当前状态只能验证 optimizer Path 发布，不能直接闭环实车行驶。
+- 本地 optimizer/smoother 验证事实：debug 配置 `grid_inflation_radius_m=0.30m`、`min_turning_radius_m=0.15m` 时，6 条路径所有采样点 blocked=0；`cone_lane_change_1` 从 `pickup_dock` 出发的首段方向约 `10.96°`，与 `pickup_dock.yaw=1.15°` 相差约 `9.81°`。实验室返回取货段锚点顺序为 `drop_dock -> traffic_light_stop_line -> random_obstacle_entry -> random_obstacle_exit -> pickup_dock`，最大相邻 yaw 跳变约 `29.86°`。
+- 上一版车端运行事实：2026-07-21 车端 ROS 图只检测到规划、地图、TF/RViz 相关 topic，未检测到 `/cmd_vel`、`/cmd_vel_safe` 或 `/odom`；因此该车端状态只能验证 optimizer Path 发布，不能直接闭环实车行驶。
 
-## 当前车端规划结果
+## 当前 PC 本地实验室规划结果
+
+| step | target | corridor | planner | smoother | points | length_m |
+|---|---|---|---|---|---:|---:|
+| `go_traffic_light_1` | `traffic_light_stop_line` | `go_to_pickup` | `occupancy_grid_astar` | `none_insufficient_anchors` | 12 | 2.521 |
+| `random_obstacle_1` | `pickup_dock` | `go_to_pickup` | `occupancy_grid_astar` | `cubic_bezier` | 35 | 6.635 |
+| `cone_lane_change_1` | `drop_dock` | `pickup_to_drop` | `occupancy_grid_astar` | `cubic_bezier` | 53 | 8.956 |
+| `return_to_pickup_area` | `pickup_dock` | `lab_return_to_pickup` | `occupancy_grid_astar` | `cubic_bezier` | 59 | 10.250 |
+| `cone_lane_change_2` | `drop_dock` | `pickup_to_drop` | `occupancy_grid_astar` | `cubic_bezier` | 53 | 8.956 |
+| `finish_park` | `finish_park` | `finish_return` | `occupancy_grid_astar` | `none_insufficient_anchors` | 13 | 2.786 |
+
+## 上一版车端部署规划结果
 
 | step | target | planner | smoother | points | length_m | time_ms |
 |---|---|---|---|---:|---:|---:|
@@ -69,7 +82,7 @@
 ## 未验证
 
 - 当前 footprint/clearance 已接入规划参数，debug 默认值为 `footprint_radius_m=0.45`、`clearance_m=0.20`；实车外廓仍需复核后冻结。
-- 当前 `min_turning_radius_m=0.20` 只是 debug 路线合法性保护阈值，尚未绑定 RANGER 实车最小转弯能力；后续底盘能力确认后必须更新并重新验收曲率。
+- 当前 `min_turning_radius_m=0.15` 是实验室 debug 路线合法性保护阈值，尚未绑定 RANGER 实车最小转弯能力；后续底盘能力确认后必须更新并重新验收曲率。
 - 当前 cubic Bezier 输出仍是几何 `Path`，不是带速度、加速度、时间戳的最终控制轨迹；实车自动行驶前还需要确认 tracker/safety/driver 链路。
 - 语义点与 occupancy map 的最终几何一致性仍需用户目视和实车低速复核；本次 3 锚点 SE(2) 已改善整体旋转/平移偏差，但 `pickup_dock` 附近路径最小栅格裕量约 `0.420m`，低于 debug `footprint_radius_m + clearance_m = 0.650m` 的保守目标。
 - 当前 `map -> camera_init` 锚定是运行态进程；若重启车端、停止 `fastlio_anchor_node` 或重新启动 FAST-LIO 后，需要在起点或另一个可靠锚点重新发布 `/initialpose`。

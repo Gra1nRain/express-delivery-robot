@@ -135,6 +135,15 @@ lane_centerlines:
       - cone_lane_change_exit
       - cone_lane_change_entry
       - pickup_dock
+  - id: lab_drop_to_pickup_lane
+    status: debug_lab_only
+    width_m: 2.40
+    points:
+      - drop_dock
+      - traffic_light_stop_line
+      - random_obstacle_entry
+      - random_obstacle_exit
+      - pickup_dock
   - id: drop_to_finish_lane
     status: draft
     width_m: 2.40
@@ -228,6 +237,9 @@ route_corridors:
     allowed_steps: [cone_lane_change_1, cone_lane_change_2]
   - id: return_to_pickup
     centerline_ref: drop_to_pickup_lane
+    allowed_steps: [return_to_pickup_area]
+  - id: lab_return_to_pickup
+    centerline_ref: lab_drop_to_pickup_lane
     allowed_steps: [return_to_pickup_area]
   - id: finish_return
     centerline_ref: drop_to_finish_lane

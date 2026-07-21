@@ -30,7 +30,7 @@ Day 2 使用 Day 1 已选定的 `maps/debug/map.yaml`，只整理实际有效的
 
 - `effective_area`：实验室实际调试区域的多边形边界。
 - `points`：起点、红绿灯停止线、取货 dock、投放 dock、终点停车位及障碍区出入口。
-- `lane_centerlines`：起点到取货、取货到投放、投放返程和取货到终点四条调试走廊。
+- `lane_centerlines`：起点到取货、取货到投放、投放返程、实验室借道返程和取货到终点等调试走廊。
 - `lane_boundaries`：有效区域外边界。
 - `no_go_zones`：把有效区域外声明为派生 keep-out，防止规划越出调试区域；不伪造未测量的实体障碍轮廓。
 - `stop_lines`：红绿灯、取货和投放的停止线，通过 `point_ref` 引用语义点，避免坐标重复写入。

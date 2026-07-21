@@ -11,7 +11,7 @@ plans:
   smoother_plugin: none_insufficient_anchors
   point_count: 12
   path_length_m: 2.521
-  planning_time_ms: 1.632
+  planning_time_ms: 1.71
   points:
   - x: -0.07
     y: 0.01
@@ -60,7 +60,7 @@ plans:
   smoother_plugin: cubic_bezier
   point_count: 35
   path_length_m: 6.635
-  planning_time_ms: 3.414
+  planning_time_ms: 3.969
   points:
   - x: 2.45
     y: -0.05
@@ -180,7 +180,7 @@ plans:
   smoother_plugin: cubic_bezier
   point_count: 53
   path_length_m: 8.956
-  planning_time_ms: 17.927
+  planning_time_ms: 18.805
   points:
   - x: 9.08
     y: -0.02
@@ -347,165 +347,193 @@ plans:
     ref_id: drop_dock
 - step_id: return_to_pickup_area
   type: RUN_SEGMENT
-  corridor_ref: return_to_pickup
+  corridor_ref: lab_return_to_pickup
   target_ref: pickup_dock
   target_source: target_ref
   planner_plugin: occupancy_grid_astar
   smoother_plugin: cubic_bezier
-  point_count: 50
-  path_length_m: 8.693
-  planning_time_ms: 6.921
+  point_count: 59
+  path_length_m: 10.25
+  planning_time_ms: 5.09
   points:
   - x: 2.24
     y: 3.22
-    yaw: -0.2989
+    yaw: 3.12
     ref_id: drop_dock
-  - x: 2.3741
-    y: 3.175
-    yaw: -0.3443
-  - x: 2.5181
-    y: 3.1211
-    yaw: -0.3683
-  - x: 2.6714
-    y: 3.061
-    yaw: -0.3758
-  - x: 2.8336
-    y: 2.9974
-    yaw: -0.3698
-  - x: 3.0039
-    y: 2.933
-    yaw: -0.3521
-  - x: 3.1819
-    y: 2.8703
-    yaw: -0.3236
-  - x: 3.3671
-    y: 2.812
-    yaw: -0.2848
-  - x: 3.5589
-    y: 2.7607
-    yaw: -0.2358
-  - x: 3.7567
-    y: 2.7192
-    yaw: -0.1766
-  - x: 3.96
-    y: 2.69
-    yaw: -0.1071
-    ref_id: cone_lane_change_exit
-  - x: 4.0757
-    y: 2.682
-    yaw: -0.0397
-  - x: 4.215
-    y: 2.6795
-    yaw: 0.0003
-  - x: 4.3754
-    y: 2.6818
-    yaw: 0.0256
-  - x: 4.5542
-    y: 2.688
-    yaw: 0.0417
-  - x: 4.7486
-    y: 2.6971
-    yaw: 0.0517
-  - x: 4.956
-    y: 2.7085
-    yaw: 0.0573
-  - x: 5.1738
-    y: 2.7213
-    yaw: 0.0592
-  - x: 5.3992
-    y: 2.7346
-    yaw: 0.058
-  - x: 5.6296
-    y: 2.7476
-    yaw: 0.054
-  - x: 5.8623
-    y: 2.7594
-    yaw: 0.047
-  - x: 6.0947
-    y: 2.7692
-    yaw: 0.037
-  - x: 6.3241
-    y: 2.7762
-    yaw: 0.0234
-  - x: 6.5478
-    y: 2.7796
-    yaw: 0.0056
-  - x: 6.7631
-    y: 2.7784
-    yaw: -0.0175
-  - x: 6.9674
-    y: 2.7719
-    yaw: -0.0477
-  - x: 7.158
-    y: 2.7592
-    yaw: -0.0875
-  - x: 7.3323
-    y: 2.7395
-    yaw: -0.1412
-  - x: 7.4874
-    y: 2.712
-    yaw: -0.2159
-  - x: 7.6209
-    y: 2.6758
-    yaw: -0.3239
-  - x: 7.73
-    y: 2.63
-    yaw: -0.4868
-    ref_id: cone_lane_change_entry
-  - x: 7.8257
-    y: 2.5606
-    yaw: -0.7519
-  - x: 7.9114
-    y: 2.462
-    yaw: -0.9434
-  - x: 7.9885
-    y: 2.3379
-    yaw: -1.0757
-  - x: 8.0582
-    y: 2.1922
-    yaw: -1.1666
-  - x: 8.1218
-    y: 2.0286
-    yaw: -1.229
-  - x: 8.1805
-    y: 1.8508
-    yaw: -1.271
-  - x: 8.2357
-    y: 1.6628
-    yaw: -1.2976
-  - x: 8.2885
-    y: 1.4682
-    yaw: -1.3117
-  - x: 8.3403
-    y: 1.2709
-    yaw: -1.3147
-  - x: 8.3924
-    y: 1.0746
-    yaw: -1.3068
-  - x: 8.4459
-    y: 0.8832
-    yaw: -1.2874
-  - x: 8.5022
-    y: 0.7004
-    yaw: -1.2541
-  - x: 8.5625
-    y: 0.53
-    yaw: -1.2032
-  - x: 8.6281
-    y: 0.3757
-    yaw: -1.1281
-  - x: 8.7003
-    y: 0.2415
-    yaw: -1.018
-  - x: 8.7803
-    y: 0.131
-    yaw: -0.8568
-  - x: 8.8694
-    y: 0.0481
-    yaw: -0.6251
-  - x: 8.9689
-    y: -0.0035
-    yaw: -0.3186
+  - x: 2.1447
+    y: 3.2054
+    yaw: -2.8043
+  - x: 2.0632
+    y: 3.159
+    yaw: -2.4559
+  - x: 1.9947
+    y: 3.0838
+    yaw: -2.1818
+  - x: 1.9387
+    y: 2.9826
+    yaw: -1.9865
+  - x: 1.8945
+    y: 2.8584
+    yaw: -1.8488
+  - x: 1.8615
+    y: 2.7139
+    yaw: -1.7487
+  - x: 1.8391
+    y: 2.5521
+    yaw: -1.6731
+  - x: 1.8265
+    y: 2.3759
+    yaw: -1.6136
+  - x: 1.8232
+    y: 2.1882
+    yaw: -1.565
+  - x: 1.8286
+    y: 1.9918
+    yaw: -1.5237
+  - x: 1.8419
+    y: 1.7896
+    yaw: -1.4873
+  - x: 1.8625
+    y: 1.5846
+    yaw: -1.454
+  - x: 1.8899
+    y: 1.3796
+    yaw: -1.4225
+  - x: 1.9233
+    y: 1.1774
+    yaw: -1.3914
+  - x: 1.9621
+    y: 0.9811
+    yaw: -1.3593
+  - x: 2.0057
+    y: 0.7934
+    yaw: -1.3248
+  - x: 2.0535
+    y: 0.6172
+    yaw: -1.2859
+  - x: 2.1047
+    y: 0.4555
+    yaw: -1.2396
+  - x: 2.1589
+    y: 0.3111
+    yaw: -1.1812
+  - x: 2.2152
+    y: 0.187
+    yaw: -1.1023
+  - x: 2.2731
+    y: 0.0859
+    yaw: -0.9871
+  - x: 2.332
+    y: 0.0107
+    yaw: -0.8023
+  - x: 2.3912
+    y: -0.0355
+    yaw: -0.4811
+  - x: 2.45
+    y: -0.05
+    yaw: 0.04
+    ref_id: traffic_light_stop_line
+  - x: 2.6147
+    y: -0.0425
+    yaw: 0.0498
+  - x: 2.7949
+    y: -0.033
+    yaw: 0.055
+  - x: 2.9871
+    y: -0.0222
+    yaw: 0.0569
+  - x: 3.1878
+    y: -0.0108
+    yaw: 0.0562
+  - x: 3.3937
+    y: 0.0005
+    yaw: 0.0529
+  - x: 3.6012
+    y: 0.0109
+    yaw: 0.0471
+  - x: 3.8071
+    y: 0.0198
+    yaw: 0.0385
+  - x: 4.0078
+    y: 0.0264
+    yaw: 0.0265
+  - x: 4.2
+    y: 0.03
+    yaw: 0.01
+    ref_id: random_obstacle_entry
+  - x: 4.3346
+    y: 0.0313
+    yaw: 0.0091
+  - x: 4.4956
+    y: 0.0327
+    yaw: 0.0088
+  - x: 4.6787
+    y: 0.0343
+    yaw: 0.0088
+  - x: 4.8796
+    y: 0.0361
+    yaw: 0.0092
+  - x: 5.094
+    y: 0.0381
+    yaw: 0.0098
+  - x: 5.3177
+    y: 0.0404
+    yaw: 0.0106
+  - x: 5.5465
+    y: 0.043
+    yaw: 0.0117
+  - x: 5.776
+    y: 0.0458
+    yaw: 0.013
+  - x: 6.002
+    y: 0.0489
+    yaw: 0.0148
+  - x: 6.2202
+    y: 0.0524
+    yaw: 0.0171
+  - x: 6.4264
+    y: 0.0562
+    yaw: 0.0201
+  - x: 6.6162
+    y: 0.0604
+    yaw: 0.0243
+  - x: 6.7855
+    y: 0.065
+    yaw: 0.0304
+  - x: 6.93
+    y: 0.07
+    yaw: 0.04
+    ref_id: random_obstacle_exit
+  - x: 7.1053
+    y: 0.0732
+    yaw: -0.0006
+  - x: 7.2963
+    y: 0.0702
+    yaw: -0.0284
+  - x: 7.499
+    y: 0.0624
+    yaw: -0.0473
+  - x: 7.7096
+    y: 0.051
+    yaw: -0.0595
+  - x: 7.9243
+    y: 0.0374
+    yaw: -0.0665
+  - x: 8.1391
+    y: 0.0228
+    yaw: -0.0686
+  - x: 8.3501
+    y: 0.0085
+    yaw: -0.0659
+  - x: 8.5536
+    y: -0.0043
+    yaw: -0.0579
+  - x: 8.7457
+    y: -0.0141
+    yaw: -0.043
+  - x: 8.9224
+    y: -0.0198
+    yaw: -0.0188
   - x: 9.08
     y: -0.02
     yaw: 0.02
@@ -519,7 +547,7 @@ plans:
   smoother_plugin: cubic_bezier
   point_count: 53
   path_length_m: 8.956
-  planning_time_ms: 6.858
+  planning_time_ms: 7.046
   points:
   - x: 9.08
     y: -0.02
@@ -693,7 +721,7 @@ plans:
   smoother_plugin: none_insufficient_anchors
   point_count: 13
   path_length_m: 2.786
-  planning_time_ms: 1.511
+  planning_time_ms: 1.703
   points:
   - x: 2.24
     y: 3.22

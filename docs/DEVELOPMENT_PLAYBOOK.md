@@ -187,6 +187,7 @@ git log -3 --oneline --decorate
 
 - 实验室使用 `debug_site_profile.yaml` 和 `debug_route.yaml`。
 - 正式场地使用 `competition_site_profile.yaml` 和 `competition_route.yaml`。
+- 若需要在 debug 语义地图上复核正式返程车道逻辑，使用 `debug_competition_return_route.yaml`，不要改主状态机。
 - 临时物理摆放不能改变代码中的官方语义，例如 `CONE_LANE_CHANGE`、`DOCK(DROP)` 和 `ARM_TASK(DROP)`。
 - 现场只替换地图、语义点、路线点、ROI、dock pose、限速和小范围阈值，不重写主状态机和接口协议。
 
