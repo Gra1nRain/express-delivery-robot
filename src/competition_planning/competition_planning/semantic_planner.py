@@ -41,6 +41,7 @@ class StepPlan:
     target_source: str
     path: tuple[PathPoint, ...]
     planning_time_ms: float
+    planner_plugin: str = "semantic_corridor"
 
     @property
     def path_length_m(self) -> float:
@@ -56,6 +57,7 @@ class StepPlan:
             "corridor_ref": self.corridor_ref,
             "target_ref": self.target_ref,
             "target_source": self.target_source,
+            "planner_plugin": self.planner_plugin,
             "point_count": len(self.path),
             "path_length_m": round(self.path_length_m, 3),
             "planning_time_ms": round(self.planning_time_ms, 3),
@@ -125,8 +127,17 @@ def plan_route(
     margin_m = _corridor_margin_m(params)
     min_turning_radius_m = float(params.get("min_turning_radius_m", 0.0))
     sample_spacing_m = float(params.get("path_sample_spacing_m", 0.25))
+    planner_plugin = str(params.get("plugin", "semantic_corridor"))
+    fallback_plugin = str(params.get("fallback_plugin", ""))
 
     map_model = _SemanticMap(semantic_map)
+    grid_planner = None
+    grid_planner_failure: str | None = None
+    if planner_plugin == "occupancy_grid_astar":
+        try:
+            grid_planner = _load_grid_planner(semantic_map, params)
+        except Exception as exc:
+            grid_planner_failure = str(exc)
     current_ref = _initial_current_ref(route, map_model)
     plans: list[StepPlan] = []
     failures: list[PlanFailure] = []
@@ -149,6 +160,10 @@ def plan_route(
             margin_m=margin_m,
             min_turning_radius_m=min_turning_radius_m,
             sample_spacing_m=sample_spacing_m,
+            planner_plugin=planner_plugin,
+            fallback_plugin=fallback_plugin,
+            grid_planner=grid_planner,
+            grid_planner_failure=grid_planner_failure,
         )
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
 
@@ -172,6 +187,7 @@ def plan_route(
                     target_source=plan.target_source,
                     path=plan.path,
                     planning_time_ms=elapsed_ms,
+                    planner_plugin=plan.planner_plugin,
                 )
             )
             current_ref = next_ref
@@ -230,6 +246,10 @@ def _plan_step(
     margin_m: float,
     min_turning_radius_m: float,
     sample_spacing_m: float,
+    planner_plugin: str,
+    fallback_plugin: str,
+    grid_planner: Any,
+    grid_planner_failure: str | None,
 ) -> tuple[StepPlan | None, PlanFailure | None, str | None]:
     step_id = str(step.get("id", ""))
     step_type = str(step.get("type", ""))
@@ -300,7 +320,33 @@ def _plan_step(
     if any(point is None for point in points):
         return None, _failure(step, "unknown_point_ref", "segment contains unknown point"), current_ref
 
-    path = tuple(_interpolate_path([point for point in points if point], sample_spacing_m))
+    semantic_path = tuple(_interpolate_path([point for point in points if point], sample_spacing_m))
+    path = semantic_path
+    used_plugin = "semantic_corridor"
+    if planner_plugin == "occupancy_grid_astar":
+        if grid_planner is None:
+            if fallback_plugin != "semantic_corridor":
+                return (
+                    None,
+                    _failure(
+                        step,
+                        "grid_planner_unavailable",
+                        grid_planner_failure or "occupancy-grid planner is unavailable",
+                    ),
+                    current_ref,
+                )
+        else:
+            try:
+                path = grid_planner.plan([point for point in points if point])
+                used_plugin = "occupancy_grid_astar"
+            except Exception as exc:
+                if fallback_plugin != "semantic_corridor":
+                    return (
+                        None,
+                        _failure(step, "grid_planning_failed", str(exc)),
+                        current_ref,
+                    )
+
     validation_failure = _validate_path(
         step,
         path,
@@ -308,6 +354,7 @@ def _plan_step(
         map_model,
         margin_m,
         min_turning_radius_m,
+        check_corridor_distance=used_plugin == "semantic_corridor",
     )
     if validation_failure is not None:
         return None, validation_failure, current_ref
@@ -320,6 +367,7 @@ def _plan_step(
         target_source=target_source,
         path=path,
         planning_time_ms=0.0,
+        planner_plugin=used_plugin,
     )
     return plan, None, target_ref
 
@@ -406,6 +454,7 @@ def _validate_path(
     map_model: _SemanticMap,
     margin_m: float,
     min_turning_radius_m: float,
+    check_corridor_distance: bool = True,
 ) -> PlanFailure | None:
     width_m = float(centerline.get("width_m", 0.0))
     max_distance_m = width_m / 2.0 - margin_m
@@ -436,7 +485,10 @@ def _validate_path(
                 "inside_no_go_zone",
                 f"path point ({point.x:.3f}, {point.y:.3f}) is inside a no_go_zone",
             )
-        if _distance_to_polyline(point, centerline_points) > max_distance_m + 1e-9:
+        if (
+            check_corridor_distance
+            and _distance_to_polyline(point, centerline_points) > max_distance_m + 1e-9
+        ):
             return _failure(
                 step,
                 "outside_corridor",
@@ -463,6 +515,37 @@ def _corridor_margin_m(params: dict[str, Any]) -> float:
     footprint_radius_m = float(params.get("footprint_radius_m", 0.0))
     clearance_m = float(params.get("clearance_m", 0.0))
     return max(configured_margin_m, footprint_radius_m + clearance_m)
+
+
+def _load_grid_planner(semantic_map: dict[str, Any], params: dict[str, Any]) -> Any:
+    from competition_planning.occupancy_grid_planner import (
+        GridAStarPlanner,
+        GridPlanningError,
+        OccupancyGridMap,
+    )
+
+    configured_map_file = params.get("map_file") or semantic_map.get("source_map")
+    if not configured_map_file:
+        raise GridPlanningError("global_planner.map_file or semantic_map.source_map is required")
+    map_file = Path(str(configured_map_file))
+    if not map_file.exists():
+        raise GridPlanningError(f"occupancy map file not found: {map_file}")
+
+    footprint_radius_m = float(params.get("footprint_radius_m", 0.0))
+    clearance_m = float(params.get("clearance_m", 0.0))
+    inflation_radius_m = float(
+        params.get("grid_inflation_radius_m", footprint_radius_m + clearance_m)
+    )
+    search_padding_m = float(params.get("grid_search_padding_m", 3.0))
+    sample_spacing_m = float(params.get("path_sample_spacing_m", 0.25))
+    simplify_path = bool(params.get("grid_simplify_path", True))
+    return GridAStarPlanner(
+        OccupancyGridMap.from_yaml(map_file),
+        inflation_radius_m=inflation_radius_m,
+        search_padding_m=search_padding_m,
+        sample_spacing_m=sample_spacing_m,
+        simplify_path=simplify_path,
+    )
 
 
 def _inside_no_go_zone(point: PathPoint, map_model: _SemanticMap) -> bool:

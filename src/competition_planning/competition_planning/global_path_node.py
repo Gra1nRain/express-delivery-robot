@@ -22,6 +22,7 @@ class SemanticGlobalPathNode(Node):
         self.planning_params_file = str(
             self.declare_parameter("planning_params_file", "").value
         )
+        self.map_file = str(self.declare_parameter("map_file", "").value)
         self.step_id = str(self.declare_parameter("step_id", "go_traffic_light_1").value)
         self.publish_topic = str(
             self.declare_parameter("publish_topic", "/planning/global_path").value
@@ -43,6 +44,8 @@ class SemanticGlobalPathNode(Node):
             if self.planning_params_file
             else {}
         )
+        if self.map_file:
+            params.setdefault("global_planner", {})["map_file"] = self.map_file
         if not self.step_id:
             raise RuntimeError("step_id is required for /planning/global_path publication")
 
@@ -75,7 +78,8 @@ class SemanticGlobalPathNode(Node):
             message.poses.append(pose)
         self.get_logger().info(
             f"loaded {plan.step_id}: {len(plan.path)} points, "
-            f"{plan.path_length_m:.3f} m, {plan.planning_time_ms:.3f} ms"
+            f"{plan.path_length_m:.3f} m, {plan.planning_time_ms:.3f} ms, "
+            f"plugin={plan.planner_plugin}"
         )
         return message
 

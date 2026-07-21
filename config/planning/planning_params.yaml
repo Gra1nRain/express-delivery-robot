@@ -1,12 +1,16 @@
 global_planner:
-  plugin: semantic_corridor
+  plugin: occupancy_grid_astar
+  map_file: maps/debug/map.yaml
   planning_timeout_ms: 500
   corridor_margin_m: 0.20
   footprint_radius_m: 0.45
   clearance_m: 0.20
+  grid_inflation_radius_m: 0.30
+  grid_search_padding_m: 3.00
+  grid_simplify_path: true
   min_turning_radius_m: 0.20
   max_speed_mps: 1.80
-  fallback_plugin: state_lattice
+  fallback_plugin: semantic_corridor
 
 semantic_route_graph:
   lane_centerline_topic: /semantic_map
