@@ -15,7 +15,7 @@ steps:
     type: RUN_SEGMENT
     avoidance_required: true
     corridor_ref: go_to_pickup
-    target_ref: random_obstacle_exit
+    target_ref: pickup_dock
   - id: pickup_1_dock
     type: DOCK
     dock_type: PICKUP

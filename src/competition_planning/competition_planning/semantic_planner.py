@@ -42,6 +42,7 @@ class StepPlan:
     path: tuple[PathPoint, ...]
     planning_time_ms: float
     planner_plugin: str = "semantic_corridor"
+    smoother_plugin: str = "none"
 
     @property
     def path_length_m(self) -> float:
@@ -58,6 +59,7 @@ class StepPlan:
             "target_ref": self.target_ref,
             "target_source": self.target_source,
             "planner_plugin": self.planner_plugin,
+            "smoother_plugin": self.smoother_plugin,
             "point_count": len(self.path),
             "path_length_m": round(self.path_length_m, 3),
             "planning_time_ms": round(self.planning_time_ms, 3),
@@ -129,6 +131,7 @@ def plan_route(
     sample_spacing_m = float(params.get("path_sample_spacing_m", 0.25))
     planner_plugin = str(params.get("plugin", "semantic_corridor"))
     fallback_plugin = str(params.get("fallback_plugin", ""))
+    smoother = _load_smoother(planning_config)
 
     map_model = _SemanticMap(semantic_map)
     grid_planner = None
@@ -164,6 +167,7 @@ def plan_route(
             fallback_plugin=fallback_plugin,
             grid_planner=grid_planner,
             grid_planner_failure=grid_planner_failure,
+            smoother=smoother,
         )
         elapsed_ms = (time.perf_counter() - started_at) * 1000.0
 
@@ -188,6 +192,7 @@ def plan_route(
                     path=plan.path,
                     planning_time_ms=elapsed_ms,
                     planner_plugin=plan.planner_plugin,
+                    smoother_plugin=plan.smoother_plugin,
                 )
             )
             current_ref = next_ref
@@ -250,6 +255,7 @@ def _plan_step(
     fallback_plugin: str,
     grid_planner: Any,
     grid_planner_failure: str | None,
+    smoother: Any,
 ) -> tuple[StepPlan | None, PlanFailure | None, str | None]:
     step_id = str(step.get("id", ""))
     step_type = str(step.get("type", ""))
@@ -359,6 +365,18 @@ def _plan_step(
     if validation_failure is not None:
         return None, validation_failure, current_ref
 
+    smoother_plugin = "none"
+    if smoother is not None:
+        smoothing_input = _with_semantic_anchor_yaws(path, points)
+        smoothed_path = smoother.smooth(smoothing_input)
+        if smoothed_path == smoothing_input:
+            smoother_plugin = "none_insufficient_anchors"
+        elif grid_planner is not None and not grid_planner.path_is_navigable(smoothed_path):
+            smoother_plugin = "none_collision_fallback"
+        else:
+            path = smoothed_path
+            smoother_plugin = "cubic_bezier"
+
     plan = StepPlan(
         step_id=step_id,
         step_type=step_type,
@@ -368,6 +386,7 @@ def _plan_step(
         path=path,
         planning_time_ms=0.0,
         planner_plugin=used_plugin,
+        smoother_plugin=smoother_plugin,
     )
     return plan, None, target_ref
 
@@ -545,6 +564,39 @@ def _load_grid_planner(semantic_map: dict[str, Any], params: dict[str, Any]) -> 
         search_padding_m=search_padding_m,
         sample_spacing_m=sample_spacing_m,
         simplify_path=simplify_path,
+    )
+
+
+def _load_smoother(planning_config: dict[str, Any]) -> Any:
+    params = planning_config.get("trajectory_smoother", {})
+    if not bool(params.get("enabled", False)):
+        return None
+    plugin = str(params.get("plugin", "cubic_bezier"))
+    if plugin != "cubic_bezier":
+        return None
+
+    from competition_planning.trajectory_smoother import CubicBezierSmoother
+
+    return CubicBezierSmoother(
+        sample_spacing_m=float(params.get("sample_spacing_m", 0.20)),
+        tangent_scale=float(params.get("tangent_scale", 0.75)),
+    )
+
+
+def _with_semantic_anchor_yaws(
+    path: tuple[PathPoint, ...],
+    semantic_points: list[PathPoint | None],
+) -> tuple[PathPoint, ...]:
+    anchor_yaws = {
+        point.ref_id: point.yaw
+        for point in semantic_points
+        if point is not None and point.ref_id is not None
+    }
+    return tuple(
+        PathPoint(x=point.x, y=point.y, yaw=anchor_yaws[point.ref_id], ref_id=point.ref_id)
+        if point.ref_id in anchor_yaws
+        else point
+        for point in path
     )
 
 

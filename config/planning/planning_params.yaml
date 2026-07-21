@@ -12,6 +12,12 @@ global_planner:
   max_speed_mps: 1.80
   fallback_plugin: semantic_corridor
 
+trajectory_smoother:
+  enabled: true
+  plugin: cubic_bezier
+  sample_spacing_m: 0.20
+  tangent_scale: 0.75
+
 semantic_route_graph:
   lane_centerline_topic: /semantic_map
   corridor_topic: /planning/corridor

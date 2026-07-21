@@ -161,6 +161,13 @@ class GridAStarPlanner:
             final_yaw=waypoints[-1].yaw,
         )
 
+    def path_is_navigable(self, path: Sequence[PathPoint]) -> bool:
+        for point in path:
+            cell = self._map.world_to_cell(point.x, point.y)
+            if not self._map.contains(cell) or self._is_blocked(cell):
+                return False
+        return True
+
     def _search(
         self,
         start: tuple[int, int],

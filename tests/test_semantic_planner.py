@@ -1,4 +1,5 @@
 import copy
+import math
 import pathlib
 import sys
 import tempfile
@@ -10,6 +11,24 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_planning"))
 
 from competition_planning.semantic_planner import load_yaml_file, plan_route
+
+
+def _max_adjacent_yaw_delta(points) -> float:
+    deltas = []
+    for previous, current in zip(points, points[1:]):
+        delta = abs(current.yaw - previous.yaw)
+        while delta > 3.141592653589793:
+            delta = abs(delta - 2.0 * 3.141592653589793)
+        deltas.append(delta)
+    return max(deltas) if deltas else 0.0
+
+
+def _angle_delta(lhs: float, rhs: float) -> float:
+    return abs((lhs - rhs + math.pi) % (2.0 * math.pi) - math.pi)
+
+
+def _segment_heading(previous, current) -> float:
+    return math.atan2(current.y - previous.y, current.x - previous.x)
 
 
 class SemanticPlannerTest(unittest.TestCase):
@@ -267,6 +286,92 @@ class SemanticPlannerTest(unittest.TestCase):
 
         self.assertTrue(result.ok, result.failures)
         self.assertIn("midpoint", [point.ref_id for point in result.plans[0].path])
+
+    def test_cubic_bezier_smoother_preserves_anchors_and_reduces_yaw_jumps(self) -> None:
+        route = {
+            "route_name": "smooth_test",
+            "steps": [
+                {
+                    "id": "smooth_segment",
+                    "type": "RUN_SEGMENT",
+                    "corridor_ref": "test_corridor",
+                    "target_ref": "goal",
+                }
+            ],
+        }
+        semantic_map = {
+            "frame_id": "map",
+            "points": {
+                "start": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+                "midpoint": {"x": 1.0, "y": 1.0, "yaw": 0.0},
+                "goal": {"x": 2.0, "y": 0.0, "yaw": 0.0},
+            },
+            "effective_area": {
+                "vertices": [[-1.0, -1.0], [3.0, -1.0], [3.0, 2.0], [-1.0, 2.0]]
+            },
+            "lane_centerlines": [
+                {
+                    "id": "test_centerline",
+                    "width_m": 5.0,
+                    "points": ["start", "midpoint", "goal"],
+                }
+            ],
+            "route_corridors": [
+                {
+                    "id": "test_corridor",
+                    "centerline_ref": "test_centerline",
+                    "allowed_steps": ["smooth_segment"],
+                }
+            ],
+        }
+        params = {
+            "global_planner": {
+                "plugin": "semantic_corridor",
+                "path_sample_spacing_m": 0.20,
+                "min_turning_radius_m": 0.0,
+            },
+            "trajectory_smoother": {
+                "enabled": True,
+                "plugin": "cubic_bezier",
+                "sample_spacing_m": 0.10,
+                "tangent_scale": 0.75,
+            },
+        }
+
+        result = plan_route(route, semantic_map, params)
+
+        self.assertTrue(result.ok, result.failures)
+        plan = result.plans[0]
+        self.assertEqual(plan.smoother_plugin, "cubic_bezier")
+        self.assertEqual(
+            [point.ref_id for point in plan.path if point.ref_id],
+            ["start", "midpoint", "goal"],
+        )
+        self.assertLess(_max_adjacent_yaw_delta(plan.path), 0.9)
+
+    def test_cubic_bezier_smoother_uses_anchor_yaw_at_pickup_departure(self) -> None:
+        params = load_yaml_file(
+            REPO_ROOT / "config" / "planning" / "planning_params.yaml"
+        )
+
+        result = plan_route(self.route, self.semantic_map, params)
+
+        self.assertTrue(result.ok, result.failures)
+        cone_plan = next(
+            plan for plan in result.plans if plan.step_id == "cone_lane_change_1"
+        )
+        pickup_yaw = self.semantic_map["points"]["pickup_dock"]["yaw"]
+        departure_heading = _segment_heading(cone_plan.path[0], cone_plan.path[1])
+        self.assertEqual(cone_plan.smoother_plugin, "cubic_bezier")
+        self.assertEqual(cone_plan.path[0].ref_id, "pickup_dock")
+        self.assertLess(_angle_delta(departure_heading, pickup_yaw), math.radians(20.0))
+        return_plan = next(
+            plan for plan in result.plans if plan.step_id == "return_to_pickup_area"
+        )
+        self.assertLess(
+            _max_adjacent_yaw_delta(return_plan.path),
+            math.radians(60.0),
+        )
 
 
 if __name__ == "__main__":

@@ -79,7 +79,7 @@ class SemanticGlobalPathNode(Node):
         self.get_logger().info(
             f"loaded {plan.step_id}: {len(plan.path)} points, "
             f"{plan.path_length_m:.3f} m, {plan.planning_time_ms:.3f} ms, "
-            f"plugin={plan.planner_plugin}"
+            f"plugin={plan.planner_plugin}, smoother={plan.smoother_plugin}"
         )
         return message
 
