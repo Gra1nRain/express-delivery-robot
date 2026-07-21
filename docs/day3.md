@@ -20,14 +20,14 @@
 - 小车端 `ros2 run competition_planning offline_global_plan ...`：6 个可规划 step，0 个失败；artifact 为 `docs/evidence/day3/debug_global_plan_car.yaml`。
 - 小车端 `/planning/global_path` topic 检查：类型 `nav_msgs/msg/Path`，publisher count 1，`header.frame_id=map`。
 - 小车端 `/planning/global_paths/{go_traffic_light_1,random_obstacle_1,cone_lane_change_1,return_to_pickup_area,cone_lane_change_2,finish_park}` topic 检查：每个 topic 类型均为 `nav_msgs/msg/Path`，publisher count 1，RViz subscriber count 1。
-- 离线路径可视化证据已生成：`docs/evidence/day3/debug_global_plan_all.png` 和 6 张单 step PNG。
+- 离线路径可视化证据已保留为当前 optimizer 栅格叠图：`docs/evidence/day3/debug_global_plan_on_map_diagnosis.png`。
 - RViz 配置已加入 `competition_bringup`：`day3_global_planning.launch.py rviz:=true` 默认加载 `maps/debug/map.yaml` 到 `/map`，叠加当前 step `/planning/global_path`，并叠加 6 个全路线分段 topic；launch 默认发布 `map -> day3_viz_anchor` 静态 TF，避免纯规划可视化时 RViz 报 `map` frame 不存在。
-- 小车端 RViz 可视化已验证：`/map` 栅格地图、`/planning/global_path` 和 6 个 `/planning/global_paths/<step_id>` 可叠加显示，Global Status 和 Map Status OK，截图为 `docs/evidence/day3/day3_rviz_all_paths_window.png`。
+- 小车端 RViz 可视化已验证：`/map` 栅格地图、`/planning/global_path` 和 6 个 `/planning/global_paths/<step_id>` 可叠加显示，Global Status 和 Map Status OK；旧 RViz 截图已清理，当前保留的路线视觉证据为 `docs/evidence/day3/debug_global_plan_on_map_diagnosis.png`。
 - 诊断事实：小车端 `/map` 元数据与 `maps/debug/map.yaml` 一致，`resolution=0.03`、`width=977`、`height=1374`、`origin=(-2.39,-18.3,0)`。
 - 历史诊断事实：按 `map.yaml` 投影规划点到 `map.pgm` 时，旧 `traffic_light_stop_line=(2.98,-0.77)` 落在占用栅格；用户将车停到红绿灯停止线后，12 个 `map -> body` 采样均值为 `(2.9882,-0.8088,yaw=0.4303)`，与旧点平面差约 `0.040m`，该阶段曾将停止线更新为 `(2.99,-0.81,yaw=0.43)`。
 - 诊断事实：校准前车端 `/Laser_map` frame 为 `camera_init`，实时 TF 为 `camera_init -> body`；当时未发现 `map -> camera_init` 锚定 TF。该事实说明校准前 FAST-LIO 实时定位链和 RViz 静态 occupancy map/path 链路尚未连通。
 - 运行校准事实：用户将车停在起点后，车端启动 `competition_localization/fastlio_anchor_node`，并按当时 `semantic_map.yaml` 中 `start=(0.64,-1.71,yaw=0.34)` 发布 `/initialpose`；锚定后 `map -> body` 复核样本相对起点的平面误差约 `0.11m`、yaw 误差约 `0.008rad`，即实时 FAST-LIO 车体 frame 已对齐到起点附近。
-- RViz 诊断配置已启用 TF display；锚定后可同时看到 `map`、`camera_init`、`body` 和路径分段，截图为 `docs/evidence/day3/day3_rviz_anchor_tf_window.png`。红绿灯停止线坐标更新并重启 Day3 可视化后，截图为 `docs/evidence/day3/day3_rviz_stopline_updated_window.png`。
+- RViz 诊断配置已启用 TF display；锚定后可同时看到 `map`、`camera_init`、`body` 和路径分段，截图为 `docs/evidence/day3/day3_rviz_anchor_tf_window.png`。
 - 本次整体对齐事实：用户在 RViz `/clicked_point` 中按顺序标记 `start`、`traffic_light_stop_line`、`random_obstacle_entry`，点击坐标分别为 `(0.010,-0.006)`、`(2.546,-0.016)`、`(4.018,0.002)`；`semantic_map.yaml` 已用 3 锚点 SE(2) 最小二乘整体校准，变换为 `rotation=-22.338099deg`、`translation=(-0.011642567,1.832068285)m`，锚点残差 `rms=0.130m`、`max=0.182m`。
 - 本次整体对齐后，小车端 `/planning/global_path` 实际发布端点为 `first=(-0.07,0.01)`、`last=(2.45,-0.05)`，6 个分段 topic 均为 `frame=map` 且 RViz 有 subscriber；本地栅格检查显示 6 条路径采样点均为 FREE，最小占用栅格距离范围为 `0.420m` 到 `0.680m`。叠图证据为 `docs/evidence/day3/debug_global_plan_on_map_diagnosis.png`。
 - Optimizer 实现事实：`occupancy_grid_astar` 读取 `map.yaml/map.pgm`，按 `grid_inflation_radius_m` 生成膨胀障碍，逐语义 waypoint 分段 A* 搜索并按 `path_sample_spacing_m` 重采样；实现保留语义锚点。
