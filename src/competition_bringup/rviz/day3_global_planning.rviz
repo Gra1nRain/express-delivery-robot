@@ -9,6 +9,12 @@ Panels:
         - /Map1
         - /Grid1
         - /Global Path1
+        - /Route go_traffic_light_11
+        - /Route random_obstacle_11
+        - /Route cone_lane_change_11
+        - /Route return_to_pickup_area1
+        - /Route cone_lane_change_21
+        - /Route finish_park1
       Splitter Ratio: 0.5
     Tree Height: 560
   - Class: rviz_common/Views
@@ -94,6 +100,168 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /planning/global_path
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 0; 114; 178
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Lines
+      Line Width: 0.06
+      Name: Route go_traffic_light_1
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.04
+      Pose Color: 255; 85; 0
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planning/global_paths/go_traffic_light_1
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 230; 159; 0
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Lines
+      Line Width: 0.06
+      Name: Route random_obstacle_1
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.05
+      Pose Color: 255; 85; 0
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planning/global_paths/random_obstacle_1
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 0; 158; 115
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Lines
+      Line Width: 0.06
+      Name: Route cone_lane_change_1
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.06
+      Pose Color: 255; 85; 0
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planning/global_paths/cone_lane_change_1
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 213; 94; 0
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Lines
+      Line Width: 0.06
+      Name: Route return_to_pickup_area
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.07
+      Pose Color: 255; 85; 0
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planning/global_paths/return_to_pickup_area
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 204; 121; 167
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Lines
+      Line Width: 0.06
+      Name: Route cone_lane_change_2
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.08
+      Pose Color: 255; 85; 0
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planning/global_paths/cone_lane_change_2
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 86; 180; 233
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Lines
+      Line Width: 0.06
+      Name: Route finish_park
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.09
+      Pose Color: 255; 85; 0
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planning/global_paths/finish_park
       Value: true
   Enabled: true
   Global Options:

@@ -6,7 +6,8 @@
 - 当前全局规划模块只输出路径，不输出速度命令，不控制底盘，不触发机械臂动作。
 - 可规划 step 为带 `corridor_ref` 的 `RUN_SEGMENT`、`CONE_LANE_CHANGE`、`FINISH_PARK`。
 - 离线入口为 `offline_global_plan`，ROS2 发布入口为 `semantic_global_path_node`，默认发布 `go_traffic_light_1` 到 `/planning/global_path`；其他当前 step 通过 `step_id` 参数切换。
-- 小车端已短时启动 `day3_global_planning.launch.py` 验证 topic；验证结束后已停止测试节点。
+- `day3_global_planning.launch.py` 当前默认 `show_all_steps:=true`，会额外按 step 发布 6 个分段路径到 `/planning/global_paths/<step_id>`，用于 RViz 同时查看完整可规划路线。
+- 小车端当前运行的是 RViz 诊断可视化栈；该栈只发布路径、地图和静态可视化 TF，不启动控制器、底盘驱动或机械臂动作。
 
 ## 验证
 
@@ -18,9 +19,13 @@
 - 小车端 `colcon build --symlink-install --packages-select competition_planning competition_bringup`：passed。
 - 小车端 `ros2 run competition_planning offline_global_plan ...`：6 个可规划 step，0 个失败；artifact 为 `docs/evidence/day3/debug_global_plan_car.yaml`。
 - 小车端 `/planning/global_path` topic 检查：类型 `nav_msgs/msg/Path`，publisher count 1，`header.frame_id=map`。
+- 小车端 `/planning/global_paths/{go_traffic_light_1,random_obstacle_1,cone_lane_change_1,return_to_pickup_area,cone_lane_change_2,finish_park}` topic 检查：每个 topic 类型均为 `nav_msgs/msg/Path`，publisher count 1，RViz subscriber count 1。
 - 离线路径可视化证据已生成：`docs/evidence/day3/debug_global_plan_all.png` 和 6 张单 step PNG。
-- RViz 配置已加入 `competition_bringup`：`day3_global_planning.launch.py rviz:=true` 默认加载 `maps/debug/map.yaml` 到 `/map`，并叠加 `/planning/global_path` 显示；launch 默认发布 `map -> day3_viz_anchor` 静态 TF，避免纯规划可视化时 RViz 报 `map` frame 不存在。
-- 小车端 RViz 可视化已验证：`/map` 栅格地图和 `/planning/global_path` 蓝线可叠加显示，Global Status 和 Map Status OK，截图为 `docs/evidence/day3/day3_rviz_map_window.png`。
+- RViz 配置已加入 `competition_bringup`：`day3_global_planning.launch.py rviz:=true` 默认加载 `maps/debug/map.yaml` 到 `/map`，叠加当前 step `/planning/global_path`，并叠加 6 个全路线分段 topic；launch 默认发布 `map -> day3_viz_anchor` 静态 TF，避免纯规划可视化时 RViz 报 `map` frame 不存在。
+- 小车端 RViz 可视化已验证：`/map` 栅格地图、`/planning/global_path` 和 6 个 `/planning/global_paths/<step_id>` 可叠加显示，Global Status 和 Map Status OK，截图为 `docs/evidence/day3/day3_rviz_all_paths_window.png`。
+- 诊断事实：小车端 `/map` 元数据与 `maps/debug/map.yaml` 一致，`resolution=0.03`、`width=977`、`height=1374`、`origin=(-2.39,-18.3,0)`。
+- 诊断事实：按 `map.yaml` 投影规划点到 `map.pgm` 时，`traffic_light_stop_line=(2.98,-0.77)` 落在占用栅格，叠图证据为 `docs/evidence/day3/debug_global_plan_on_map_diagnosis.png`。
+- 诊断事实：当前车端 `/Laser_map` frame 为 `camera_init`，实时 TF 为 `camera_init -> body`；当前未发现 `map -> camera_init` 锚定 TF。该事实说明 FAST-LIO 实时定位链和 RViz 静态 occupancy map/path 链路尚未连通。
 
 ## 当前车端规划结果
 
@@ -42,9 +47,11 @@
 
 - RViz 验收前先在车端构建并运行 `day3_global_planning.launch.py`；若在小车图形桌面操作，可加 `rviz:=true` 直接打开 RViz 配置。默认会同时启动 `/map`，若只想看路径可加 `map:=false`。
 - 如果路径贴边，先调整语义地图中的 centerline、width 或规划 margin，不先改控制器。
+- 不建议通过 RViz offset 或静态平移“修正”路径显示。若路线在 occupancy map 上位置不对，应先重新校准 `semantic_map.yaml` 的语义点，或启动 `fastlio_anchor_node` 后用 `/initialpose` 建立 `map -> camera_init` 锚定，再重新采样/核对语义点。
 
 ## 未验证
 
 - 当前 footprint/clearance 已接入规划参数，debug 默认值为 `footprint_radius_m=0.45`、`clearance_m=0.20`；实车外廓仍需复核后冻结。
 - 当前 `min_turning_radius_m=0.20` 只是 debug 路线合法性保护阈值，尚未绑定 RANGER 实车最小转弯能力；后续底盘能力确认后必须更新并重新验收曲率。
 - `random_obstacle_exit` 到 `pickup_dock` 的末端接近动作当前属于后续 DOCK/精停链路，Day3 不在全局规划里改 route 语义。
+- 语义点与 occupancy map 的最终几何一致性未通过验收；`traffic_light_stop_line` 当前压到占用栅格，需现场提供至少一个可靠锚点或重新采样后再改 `semantic_map.yaml`。
