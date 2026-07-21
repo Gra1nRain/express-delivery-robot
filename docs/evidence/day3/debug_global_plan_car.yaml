@@ -1,0 +1,543 @@
+route_name: debug_route
+frame_id: map
+ok: true
+plans:
+- step_id: go_traffic_light_1
+  type: RUN_SEGMENT
+  corridor_ref: go_to_pickup
+  target_ref: traffic_light_stop_line
+  target_source: target_ref
+  point_count: 12
+  path_length_m: 2.522
+  planning_time_ms: 0.419
+  points:
+  - x: 0.64
+    y: -1.71
+    yaw: 0.382
+    ref_id: start
+  - x: 0.8527
+    y: -1.6245
+    yaw: 0.382
+  - x: 1.0655
+    y: -1.5391
+    yaw: 0.382
+  - x: 1.2782
+    y: -1.4536
+    yaw: 0.382
+  - x: 1.4909
+    y: -1.3682
+    yaw: 0.382
+  - x: 1.7036
+    y: -1.2827
+    yaw: 0.382
+  - x: 1.9164
+    y: -1.1973
+    yaw: 0.382
+  - x: 2.1291
+    y: -1.1118
+    yaw: 0.382
+  - x: 2.3418
+    y: -1.0264
+    yaw: 0.382
+  - x: 2.5545
+    y: -0.9409
+    yaw: 0.382
+  - x: 2.7673
+    y: -0.8555
+    yaw: 0.382
+  - x: 2.98
+    y: -0.77
+    yaw: 0.43
+    ref_id: traffic_light_stop_line
+- step_id: random_obstacle_1
+  type: RUN_SEGMENT
+  corridor_ref: go_to_pickup
+  target_ref: random_obstacle_exit
+  target_source: target_ref
+  point_count: 19
+  path_length_m: 4.479
+  planning_time_ms: 0.418
+  points:
+  - x: 2.98
+    y: -0.77
+    yaw: 0.4124
+    ref_id: traffic_light_stop_line
+  - x: 3.2086
+    y: -0.67
+    yaw: 0.4124
+  - x: 3.4371
+    y: -0.57
+    yaw: 0.4124
+  - x: 3.6657
+    y: -0.47
+    yaw: 0.4124
+  - x: 3.8943
+    y: -0.37
+    yaw: 0.4124
+  - x: 4.1229
+    y: -0.27
+    yaw: 0.4124
+  - x: 4.3514
+    y: -0.17
+    yaw: 0.4124
+  - x: 4.58
+    y: -0.07
+    yaw: 0.4124
+    ref_id: random_obstacle_entry
+  - x: 4.8082
+    y: 0.0282
+    yaw: 0.4063
+  - x: 5.0364
+    y: 0.1264
+    yaw: 0.4063
+  - x: 5.2645
+    y: 0.2245
+    yaw: 0.4063
+  - x: 5.4927
+    y: 0.3227
+    yaw: 0.4063
+  - x: 5.7209
+    y: 0.4209
+    yaw: 0.4063
+  - x: 5.9491
+    y: 0.5191
+    yaw: 0.4063
+  - x: 6.1773
+    y: 0.6173
+    yaw: 0.4063
+  - x: 6.4055
+    y: 0.7155
+    yaw: 0.4063
+  - x: 6.6336
+    y: 0.8136
+    yaw: 0.4063
+  - x: 6.8618
+    y: 0.9118
+    yaw: 0.4063
+  - x: 7.09
+    y: 1.01
+    yaw: 0.43
+    ref_id: random_obstacle_exit
+- step_id: cone_lane_change_1
+  type: CONE_LANE_CHANGE
+  corridor_ref: pickup_to_drop
+  target_ref: drop_dock
+  target_source: corridor_end
+  point_count: 37
+  path_length_m: 8.55
+  planning_time_ms: 0.705
+  points:
+  - x: 9.11
+    y: 1.74
+    yaw: 2.43
+    ref_id: pickup_dock
+  - x: 8.9225
+    y: 1.9017
+    yaw: 2.43
+  - x: 8.735
+    y: 2.0633
+    yaw: 2.43
+  - x: 8.5475
+    y: 2.225
+    yaw: 2.43
+  - x: 8.36
+    y: 2.3867
+    yaw: 2.43
+  - x: 8.1725
+    y: 2.5483
+    yaw: 2.43
+  - x: 7.985
+    y: 2.71
+    yaw: 2.43
+  - x: 7.7975
+    y: 2.8717
+    yaw: 2.43
+  - x: 7.61
+    y: 3.0333
+    yaw: 2.43
+  - x: 7.4225
+    y: 3.195
+    yaw: 2.43
+  - x: 7.235
+    y: 3.3567
+    yaw: 2.43
+  - x: 7.0475
+    y: 3.5183
+    yaw: 2.43
+  - x: 6.86
+    y: 3.68
+    yaw: 2.43
+    ref_id: cone_lane_change_entry
+  - x: 6.6406
+    y: 3.5938
+    yaw: -2.767
+  - x: 6.4213
+    y: 3.5075
+    yaw: -2.767
+  - x: 6.2019
+    y: 3.4213
+    yaw: -2.767
+  - x: 5.9825
+    y: 3.335
+    yaw: -2.767
+  - x: 5.7631
+    y: 3.2488
+    yaw: -2.767
+  - x: 5.5438
+    y: 3.1625
+    yaw: -2.767
+  - x: 5.3244
+    y: 3.0762
+    yaw: -2.767
+  - x: 5.105
+    y: 2.99
+    yaw: -2.767
+  - x: 4.8856
+    y: 2.9038
+    yaw: -2.767
+  - x: 4.6662
+    y: 2.8175
+    yaw: -2.767
+  - x: 4.4469
+    y: 2.7313
+    yaw: -2.767
+  - x: 4.2275
+    y: 2.645
+    yaw: -2.767
+  - x: 4.0081
+    y: 2.5587
+    yaw: -2.767
+  - x: 3.7888
+    y: 2.4725
+    yaw: -2.767
+  - x: 3.5694
+    y: 2.3862
+    yaw: -2.767
+  - x: 3.35
+    y: 2.3
+    yaw: -2.767
+    ref_id: cone_lane_change_exit
+  - x: 3.125
+    y: 2.28
+    yaw: -3.0529
+  - x: 2.9
+    y: 2.26
+    yaw: -3.0529
+  - x: 2.675
+    y: 2.24
+    yaw: -3.0529
+  - x: 2.45
+    y: 2.22
+    yaw: -3.0529
+  - x: 2.225
+    y: 2.2
+    yaw: -3.0529
+  - x: 2.0
+    y: 2.18
+    yaw: -3.0529
+  - x: 1.775
+    y: 2.16
+    yaw: -3.0529
+  - x: 1.55
+    y: 2.14
+    yaw: -2.77
+    ref_id: drop_dock
+- step_id: return_to_pickup_area
+  type: RUN_SEGMENT
+  corridor_ref: return_to_pickup
+  target_ref: pickup_dock
+  target_source: target_ref
+  point_count: 37
+  path_length_m: 8.55
+  planning_time_ms: 0.677
+  points:
+  - x: 1.55
+    y: 2.14
+    yaw: 0.0887
+    ref_id: drop_dock
+  - x: 1.775
+    y: 2.16
+    yaw: 0.0887
+  - x: 2.0
+    y: 2.18
+    yaw: 0.0887
+  - x: 2.225
+    y: 2.2
+    yaw: 0.0887
+  - x: 2.45
+    y: 2.22
+    yaw: 0.0887
+  - x: 2.675
+    y: 2.24
+    yaw: 0.0887
+  - x: 2.9
+    y: 2.26
+    yaw: 0.0887
+  - x: 3.125
+    y: 2.28
+    yaw: 0.0887
+  - x: 3.35
+    y: 2.3
+    yaw: 0.0887
+    ref_id: cone_lane_change_exit
+  - x: 3.5694
+    y: 2.3862
+    yaw: 0.3746
+  - x: 3.7888
+    y: 2.4725
+    yaw: 0.3746
+  - x: 4.0081
+    y: 2.5587
+    yaw: 0.3746
+  - x: 4.2275
+    y: 2.645
+    yaw: 0.3746
+  - x: 4.4469
+    y: 2.7313
+    yaw: 0.3746
+  - x: 4.6662
+    y: 2.8175
+    yaw: 0.3746
+  - x: 4.8856
+    y: 2.9038
+    yaw: 0.3746
+  - x: 5.105
+    y: 2.99
+    yaw: 0.3746
+  - x: 5.3244
+    y: 3.0762
+    yaw: 0.3746
+  - x: 5.5438
+    y: 3.1625
+    yaw: 0.3746
+  - x: 5.7631
+    y: 3.2488
+    yaw: 0.3746
+  - x: 5.9825
+    y: 3.335
+    yaw: 0.3746
+  - x: 6.2019
+    y: 3.4213
+    yaw: 0.3746
+  - x: 6.4213
+    y: 3.5075
+    yaw: 0.3746
+  - x: 6.6406
+    y: 3.5938
+    yaw: 0.3746
+  - x: 6.86
+    y: 3.68
+    yaw: 0.3746
+    ref_id: cone_lane_change_entry
+  - x: 7.0475
+    y: 3.5183
+    yaw: -0.7115
+  - x: 7.235
+    y: 3.3567
+    yaw: -0.7115
+  - x: 7.4225
+    y: 3.195
+    yaw: -0.7115
+  - x: 7.61
+    y: 3.0333
+    yaw: -0.7115
+  - x: 7.7975
+    y: 2.8717
+    yaw: -0.7115
+  - x: 7.985
+    y: 2.71
+    yaw: -0.7115
+  - x: 8.1725
+    y: 2.5483
+    yaw: -0.7115
+  - x: 8.36
+    y: 2.3867
+    yaw: -0.7115
+  - x: 8.5475
+    y: 2.225
+    yaw: -0.7115
+  - x: 8.735
+    y: 2.0633
+    yaw: -0.7115
+  - x: 8.9225
+    y: 1.9017
+    yaw: -0.7115
+  - x: 9.11
+    y: 1.74
+    yaw: 0.41
+    ref_id: pickup_dock
+- step_id: cone_lane_change_2
+  type: CONE_LANE_CHANGE
+  corridor_ref: pickup_to_drop
+  target_ref: drop_dock
+  target_source: corridor_end
+  point_count: 37
+  path_length_m: 8.55
+  planning_time_ms: 0.673
+  points:
+  - x: 9.11
+    y: 1.74
+    yaw: 2.43
+    ref_id: pickup_dock
+  - x: 8.9225
+    y: 1.9017
+    yaw: 2.43
+  - x: 8.735
+    y: 2.0633
+    yaw: 2.43
+  - x: 8.5475
+    y: 2.225
+    yaw: 2.43
+  - x: 8.36
+    y: 2.3867
+    yaw: 2.43
+  - x: 8.1725
+    y: 2.5483
+    yaw: 2.43
+  - x: 7.985
+    y: 2.71
+    yaw: 2.43
+  - x: 7.7975
+    y: 2.8717
+    yaw: 2.43
+  - x: 7.61
+    y: 3.0333
+    yaw: 2.43
+  - x: 7.4225
+    y: 3.195
+    yaw: 2.43
+  - x: 7.235
+    y: 3.3567
+    yaw: 2.43
+  - x: 7.0475
+    y: 3.5183
+    yaw: 2.43
+  - x: 6.86
+    y: 3.68
+    yaw: 2.43
+    ref_id: cone_lane_change_entry
+  - x: 6.6406
+    y: 3.5938
+    yaw: -2.767
+  - x: 6.4213
+    y: 3.5075
+    yaw: -2.767
+  - x: 6.2019
+    y: 3.4213
+    yaw: -2.767
+  - x: 5.9825
+    y: 3.335
+    yaw: -2.767
+  - x: 5.7631
+    y: 3.2488
+    yaw: -2.767
+  - x: 5.5438
+    y: 3.1625
+    yaw: -2.767
+  - x: 5.3244
+    y: 3.0762
+    yaw: -2.767
+  - x: 5.105
+    y: 2.99
+    yaw: -2.767
+  - x: 4.8856
+    y: 2.9038
+    yaw: -2.767
+  - x: 4.6662
+    y: 2.8175
+    yaw: -2.767
+  - x: 4.4469
+    y: 2.7313
+    yaw: -2.767
+  - x: 4.2275
+    y: 2.645
+    yaw: -2.767
+  - x: 4.0081
+    y: 2.5587
+    yaw: -2.767
+  - x: 3.7888
+    y: 2.4725
+    yaw: -2.767
+  - x: 3.5694
+    y: 2.3862
+    yaw: -2.767
+  - x: 3.35
+    y: 2.3
+    yaw: -2.767
+    ref_id: cone_lane_change_exit
+  - x: 3.125
+    y: 2.28
+    yaw: -3.0529
+  - x: 2.9
+    y: 2.26
+    yaw: -3.0529
+  - x: 2.675
+    y: 2.24
+    yaw: -3.0529
+  - x: 2.45
+    y: 2.22
+    yaw: -3.0529
+  - x: 2.225
+    y: 2.2
+    yaw: -3.0529
+  - x: 2.0
+    y: 2.18
+    yaw: -3.0529
+  - x: 1.775
+    y: 2.16
+    yaw: -3.0529
+  - x: 1.55
+    y: 2.14
+    yaw: -2.77
+    ref_id: drop_dock
+- step_id: finish_park
+  type: FINISH_PARK
+  corridor_ref: finish_return
+  target_ref: finish_park
+  target_source: target_ref
+  point_count: 13
+  path_length_m: 2.777
+  planning_time_ms: 0.21
+  points:
+  - x: 1.55
+    y: 2.14
+    yaw: -2.6828
+    ref_id: drop_dock
+  - x: 1.3425
+    y: 2.0375
+    yaw: -2.6828
+  - x: 1.135
+    y: 1.935
+    yaw: -2.6828
+  - x: 0.9275
+    y: 1.8325
+    yaw: -2.6828
+  - x: 0.72
+    y: 1.73
+    yaw: -2.6828
+  - x: 0.5125
+    y: 1.6275
+    yaw: -2.6828
+  - x: 0.305
+    y: 1.525
+    yaw: -2.6828
+  - x: 0.0975
+    y: 1.4225
+    yaw: -2.6828
+  - x: -0.11
+    y: 1.32
+    yaw: -2.6828
+  - x: -0.3175
+    y: 1.2175
+    yaw: -2.6828
+  - x: -0.525
+    y: 1.115
+    yaw: -2.6828
+  - x: -0.7325
+    y: 1.0125
+    yaw: -2.6828
+  - x: -0.94
+    y: 0.91
+    yaw: -2.73
+    ref_id: finish_park
+failures: []
