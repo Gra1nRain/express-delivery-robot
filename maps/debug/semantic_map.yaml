@@ -7,18 +7,33 @@ coordinate_source: >-
   Initial draft points were projected from recordings/day1/map_preview.png.
   Measured debug points were captured on the car from AMCL/TF in the map frame
   during supervised low-speed manual marking, then route-reviewed with
-  FAST-LIO anchored from traffic_light_stop_line.
+  FAST-LIO anchored from traffic_light_stop_line. On 2026-07-21, all
+  coordinate-bearing debug semantic geometry was aligned to the RViz occupancy
+  map with a 3-anchor SE(2) calibration from /clicked_point anchors start,
+  traffic_light_stop_line, and random_obstacle_entry.
 coordinate_convention:
   position_unit: m
   heading_unit: rad
   polygon_winding: counter_clockwise
   map_origin: [-2.39, -18.30, 0.0]
   map_resolution: 0.03
+alignment_calibration:
+  method: se2_least_squares_clicked_points
+  date: 2026-07-21
+  clicked_point_frame_id: map
+  anchors: [start, traffic_light_stop_line, random_obstacle_entry]
+  transform:
+    rotation_rad: -0.389873385
+    rotation_deg: -22.338099
+    translation_m: [-0.011642567, 1.832068285]
+  residual_rms_m: 0.130
+  residual_max_m: 0.182
 verification:
   map_file_load: passed_car_nav2_map_server
   rviz_pose_check: passed_amcl_tf_pose_capture
   low_speed_route_check: passed_manual_low_speed_semantic_marking
   fastlio_route_review: passed_manual_low_speed_route_review
+  rviz_clicked_point_alignment: passed_three_anchor_se2_calibration
   return_to_start_error_check: pending
 
 # The effective area is intentionally narrower than the complete Day 1 map.
@@ -28,69 +43,69 @@ effective_area:
   type: polygon
   status: draft
   vertices:
-    - [-1.50, -4.50]
-    - [23.00, -4.50]
-    - [23.00, 6.50]
-    - [18.50, 9.50]
-    - [13.00, 9.50]
-    - [10.00, 7.00]
-    - [6.00, 7.00]
-    - [-1.50, 4.80]
+    - [-3.11, -1.76]
+    - [19.55, -11.07]
+    - [23.73, -0.90]
+    - [20.71, 3.59]
+    - [15.62, 5.68]
+    - [11.90, 4.51]
+    - [8.20, 6.03]
+    - [0.43, 6.84]
 
 points:
   start:
-    x: 0.64
-    y: -1.71
-    yaw: 0.34
+    x: -0.07
+    y: 0.01
+    yaw: -0.05
     role: start_area
     status: measured
   traffic_light_stop_line:
-    x: 2.99
-    y: -0.81
-    yaw: 0.43
+    x: 2.45
+    y: -0.05
+    yaw: 0.04
     role: traffic_light_stop_line
     status: measured
   pickup_dock:
-    x: 9.11
-    y: 1.74
-    yaw: 0.41
+    x: 9.08
+    y: -0.02
+    yaw: 0.02
     role: pickup_area
     status: measured
   drop_dock:
-    x: 1.55
-    y: 2.14
-    yaw: -2.77
+    x: 2.24
+    y: 3.22
+    yaw: 3.12
     role: drop_area
     status: measured
   finish_park:
-    x: -0.94
-    y: 0.91
-    yaw: -2.73
+    x: -0.54
+    y: 3.03
+    yaw: -3.12
     role: finish_parking_area
     status: measured
 
   random_obstacle_entry:
-    x: 4.58
-    y: -0.07
-    yaw: 0.40
+    x: 4.20
+    y: 0.03
+    yaw: 0.01
     role: random_obstacle_zone_entry
     status: measured
   random_obstacle_exit:
-    x: 7.09
-    y: 1.01
-    yaw: 0.43
+    x: 6.93
+    y: 0.07
+    yaw: 0.04
     role: random_obstacle_zone_exit
     status: measured
   cone_lane_change_entry:
-    x: 6.86
-    y: 3.68
-    yaw: -2.71
+    x: 7.73
+    y: 2.63
+    yaw: -3.10
     role: cone_lane_change_zone_entry
     status: measured
   cone_lane_change_exit:
-    x: 3.35
-    y: 2.30
-    yaw: -2.76
+    x: 3.96
+    y: 2.69
+    yaw: 3.13
     role: cone_lane_change_zone_exit
     status: measured
 
@@ -131,15 +146,15 @@ lane_boundaries:
   - id: debug_outer_boundary
     status: draft
     points:
-      - [-1.50, -4.50]
-      - [23.00, -4.50]
-      - [23.00, 6.50]
-      - [18.50, 9.50]
-      - [13.00, 9.50]
-      - [10.00, 7.00]
-      - [6.00, 7.00]
-      - [-1.50, 4.80]
-      - [-1.50, -4.50]
+      - [-3.11, -1.76]
+      - [19.55, -11.07]
+      - [23.73, -0.90]
+      - [20.71, 3.59]
+      - [15.62, 5.68]
+      - [11.90, 4.51]
+      - [8.20, 6.03]
+      - [0.43, 6.84]
+      - [-3.11, -1.76]
 
 stop_lines:
   - id: traffic_light_stop_line
@@ -160,18 +175,18 @@ obstacle_zones:
     semantic_type: RANDOM_OBSTACLE
     status: derived_draft
     boundary:
-      - [4.11, 1.03]
-      - [6.62, 2.11]
-      - [7.56, -0.09]
-      - [5.05, -1.17]
+      - [4.18, 1.22]
+      - [6.91, 1.27]
+      - [6.95, -1.12]
+      - [4.21, -1.17]
   - id: cone_lane_change_zone
     semantic_type: CONE_LANE_CHANGE
     status: derived_draft
     boundary:
-      - [7.30, 2.56]
-      - [3.79, 1.18]
-      - [2.91, 3.42]
-      - [6.42, 4.80]
+      - [7.71, 1.43]
+      - [3.94, 1.48]
+      - [3.98, 3.89]
+      - [7.75, 3.83]
 
 no_go_zones:
   - id: outside_debug_effective_area
