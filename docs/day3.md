@@ -19,6 +19,8 @@
 - 小车端 `ros2 run competition_planning offline_global_plan ...`：6 个可规划 step，0 个失败；artifact 为 `docs/evidence/day3/debug_global_plan_car.yaml`。
 - 小车端 `/planning/global_path` topic 检查：类型 `nav_msgs/msg/Path`，publisher count 1，`header.frame_id=map`。
 - 离线路径可视化证据已生成：`docs/evidence/day3/debug_global_plan_all.png` 和 6 张单 step PNG。
+- RViz 配置已加入 `competition_bringup`：`day3_global_planning.launch.py rviz:=true` 可加载 `/planning/global_path` 显示；launch 默认发布 `map -> day3_viz_anchor` 静态 TF，避免纯规划可视化时 RViz 报 `map` frame 不存在。
+- 小车端 RViz 可视化已验证：`/planning/global_path` 蓝线可见，Global Status OK，截图为 `docs/evidence/day3/day3_rviz_window.png`。
 
 ## 当前车端规划结果
 
@@ -38,12 +40,11 @@
 
 ## 建议
 
-- RViz 验收前先在车端构建并运行 `day3_global_planning.launch.py`，确认 `/planning/global_path` topic 可见。
+- RViz 验收前先在车端构建并运行 `day3_global_planning.launch.py`；若在小车图形桌面操作，可加 `rviz:=true` 直接打开 RViz 配置。
 - 如果路径贴边，先调整语义地图中的 centerline、width 或规划 margin，不先改控制器。
 
 ## 未验证
 
-- RViz 可视化截图尚未采集。
 - 当前 footprint/clearance 已接入规划参数，debug 默认值为 `footprint_radius_m=0.45`、`clearance_m=0.20`；实车外廓仍需复核后冻结。
 - 当前 `min_turning_radius_m=0.20` 只是 debug 路线合法性保护阈值，尚未绑定 RANGER 实车最小转弯能力；后续底盘能力确认后必须更新并重新验收曲率。
 - `random_obstacle_exit` 到 `pickup_dock` 的末端接近动作当前属于后续 DOCK/精停链路，Day3 不在全局规划里改 route 语义。
