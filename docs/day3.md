@@ -19,8 +19,8 @@
 - 小车端 `ros2 run competition_planning offline_global_plan ...`：6 个可规划 step，0 个失败；artifact 为 `docs/evidence/day3/debug_global_plan_car.yaml`。
 - 小车端 `/planning/global_path` topic 检查：类型 `nav_msgs/msg/Path`，publisher count 1，`header.frame_id=map`。
 - 离线路径可视化证据已生成：`docs/evidence/day3/debug_global_plan_all.png` 和 6 张单 step PNG。
-- RViz 配置已加入 `competition_bringup`：`day3_global_planning.launch.py rviz:=true` 可加载 `/planning/global_path` 显示；launch 默认发布 `map -> day3_viz_anchor` 静态 TF，避免纯规划可视化时 RViz 报 `map` frame 不存在。
-- 小车端 RViz 可视化已验证：`/planning/global_path` 蓝线可见，Global Status OK，截图为 `docs/evidence/day3/day3_rviz_window.png`。
+- RViz 配置已加入 `competition_bringup`：`day3_global_planning.launch.py rviz:=true` 默认加载 `maps/debug/map.yaml` 到 `/map`，并叠加 `/planning/global_path` 显示；launch 默认发布 `map -> day3_viz_anchor` 静态 TF，避免纯规划可视化时 RViz 报 `map` frame 不存在。
+- 小车端 RViz 可视化已验证：`/map` 栅格地图和 `/planning/global_path` 蓝线可叠加显示，Global Status 和 Map Status OK，截图为 `docs/evidence/day3/day3_rviz_map_window.png`。
 
 ## 当前车端规划结果
 
@@ -40,7 +40,7 @@
 
 ## 建议
 
-- RViz 验收前先在车端构建并运行 `day3_global_planning.launch.py`；若在小车图形桌面操作，可加 `rviz:=true` 直接打开 RViz 配置。
+- RViz 验收前先在车端构建并运行 `day3_global_planning.launch.py`；若在小车图形桌面操作，可加 `rviz:=true` 直接打开 RViz 配置。默认会同时启动 `/map`，若只想看路径可加 `map:=false`。
 - 如果路径贴边，先调整语义地图中的 centerline、width 或规划 margin，不先改控制器。
 
 ## 未验证

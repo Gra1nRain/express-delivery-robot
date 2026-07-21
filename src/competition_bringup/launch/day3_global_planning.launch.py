@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Day 3 semantic global planning bringup.
 
-This launch file publishes nav_msgs/Path only. It does not start controllers,
-the chassis driver, or any mechanical-arm action.
+This launch file publishes nav_msgs/Path and can start a map server for RViz.
+It does not start controllers, the chassis driver, or any mechanical-arm action.
 """
 
 import os
@@ -42,9 +42,19 @@ def generate_launch_description():
                     "planning_params.yaml",
                 ),
             ),
+            DeclareLaunchArgument(
+                "map_file",
+                default_value=os.path.join(
+                    competition_ws_default,
+                    "maps",
+                    "debug",
+                    "map.yaml",
+                ),
+            ),
             DeclareLaunchArgument("step_id", default_value="go_traffic_light_1"),
             DeclareLaunchArgument("publish_topic", default_value="/planning/global_path"),
             DeclareLaunchArgument("publish_period_s", default_value="1.0"),
+            DeclareLaunchArgument("map", default_value="true"),
             DeclareLaunchArgument("publish_viz_anchor", default_value="true"),
             DeclareLaunchArgument("rviz", default_value="false"),
             DeclareLaunchArgument(
@@ -70,6 +80,27 @@ def generate_launch_description():
                         "publish_period_s": LaunchConfiguration("publish_period_s"),
                     }
                 ],
+            ),
+            Node(
+                package="nav2_map_server",
+                executable="map_server",
+                name="map_server",
+                output="screen",
+                parameters=[{"yaml_filename": LaunchConfiguration("map_file")}],
+                condition=IfCondition(LaunchConfiguration("map")),
+            ),
+            Node(
+                package="nav2_lifecycle_manager",
+                executable="lifecycle_manager",
+                name="day3_map_lifecycle_manager",
+                output="screen",
+                parameters=[
+                    {
+                        "autostart": True,
+                        "node_names": ["map_server"],
+                    }
+                ],
+                condition=IfCondition(LaunchConfiguration("map")),
             ),
             Node(
                 package="tf2_ros",
