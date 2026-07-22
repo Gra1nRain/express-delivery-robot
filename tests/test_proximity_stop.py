@@ -36,13 +36,35 @@ class ProximityStopTest(unittest.TestCase):
         self.assertTrue(stop)
         self.assertEqual(count, 3)
 
+    def test_side_front_points_inside_vehicle_corridor_trigger_stop(self) -> None:
+        config = ProximityStopConfig(
+            x_min_m=0.25,
+            stop_distance_m=0.55,
+            front_half_angle_rad=0.4363,
+            z_min_m=-0.25,
+            z_max_m=0.80,
+            min_points=2,
+        )
+
+        stop, count = should_stop_for_points(
+            [
+                (0.40, 0.38, 0.10),
+                (0.45, -0.42, 0.20),
+                (0.40, 0.60, 0.10),
+            ],
+            config,
+        )
+
+        self.assertTrue(stop)
+        self.assertEqual(count, 2)
+
     def test_points_outside_stop_box_do_not_trigger_stop(self) -> None:
         config = ProximityStopConfig(min_points=2)
 
         stop, count = should_stop_for_points(
             [
                 (0.10, 0.00, 0.10),
-                (0.40, 0.25, 0.10),
+                (0.40, 0.60, 0.10),
                 (0.40, 0.00, 1.20),
                 (0.70, 0.00, 0.10),
             ],

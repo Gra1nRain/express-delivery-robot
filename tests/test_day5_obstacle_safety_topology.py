@@ -31,6 +31,8 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         )
 
         publish_config = fast_lio_config["/**"]["ros__parameters"]["publish"]
+        preprocess_config = fast_lio_config["/**"]["ros__parameters"]["preprocess"]
+        proximity_config = safety_config["proximity_stop"]
         self.assertTrue(
             publish_config["scan_publish_en"],
             "FAST-LIO scan_publish_en is the master switch for point cloud outputs.",
@@ -42,6 +44,16 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         self.assertIn("proximity_stop_node", launch_text)
         self.assertTrue(safety_config["safety"]["require_avoidance_source"])
         self.assertIn("proximity_stop", safety_config)
+        self.assertGreaterEqual(
+            proximity_config["stop_distance_m"],
+            preprocess_config["blind"] + 0.25,
+            "Proximity stop must look far enough beyond FAST-LIO's blind range.",
+        )
+        self.assertGreaterEqual(
+            proximity_config["lateral_half_width_m"],
+            0.45,
+            "Proximity stop must cover the vehicle half-width plus clearance.",
+        )
 
 
 if __name__ == "__main__":

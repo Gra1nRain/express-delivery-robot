@@ -12,6 +12,7 @@ class ProximityStopConfig:
     x_min_m: float = 0.25
     stop_distance_m: float = 0.55
     front_half_angle_rad: float = 0.4363
+    lateral_half_width_m: float = 0.45
     z_min_m: float = -0.25
     z_max_m: float = 0.80
     min_points: int = 3
@@ -23,6 +24,8 @@ class ProximityStopConfig:
             raise ValueError("stop_distance_m must be greater than x_min_m")
         if not (0.0 < self.front_half_angle_rad < math.pi / 2.0):
             raise ValueError("front_half_angle_rad must be in (0, pi/2)")
+        if self.lateral_half_width_m <= 0.0:
+            raise ValueError("lateral_half_width_m must be positive")
         if self.z_max_m <= self.z_min_m:
             raise ValueError("z_max_m must be greater than z_min_m")
         if self.min_points < 1:
@@ -38,13 +41,18 @@ def count_points_in_stop_box(
         if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
             continue
         range_xy = math.hypot(x, y)
-        if not (config.x_min_m <= range_xy <= config.stop_distance_m):
-            continue
-        if x <= 0.0:
-            continue
-        if abs(math.atan2(y, x)) > config.front_half_angle_rad:
-            continue
         if not (config.z_min_m <= z <= config.z_max_m):
+            continue
+        in_front_sector = (
+            config.x_min_m <= range_xy <= config.stop_distance_m
+            and x > 0.0
+            and abs(math.atan2(y, x)) <= config.front_half_angle_rad
+        )
+        in_body_corridor = (
+            config.x_min_m <= x <= config.stop_distance_m
+            and abs(y) <= config.lateral_half_width_m
+        )
+        if not (in_front_sector or in_body_corridor):
             continue
         count += 1
     return count

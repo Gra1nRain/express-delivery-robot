@@ -120,6 +120,9 @@ def _launch_setup(context, *args, **kwargs):
                     "x_min_m": proximity_stop["x_min_m"],
                     "stop_distance_m": proximity_stop["stop_distance_m"],
                     "front_half_angle_rad": proximity_stop["front_half_angle_rad"],
+                    "lateral_half_width_m": proximity_stop[
+                        "lateral_half_width_m"
+                    ],
                     "z_min_m": proximity_stop["z_min_m"],
                     "z_max_m": proximity_stop["z_max_m"],
                     "min_points": proximity_stop["min_points"],

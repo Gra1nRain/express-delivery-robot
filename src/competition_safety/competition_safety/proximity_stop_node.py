@@ -37,6 +37,9 @@ class ProximityStopNode(Node):
             front_half_angle_rad=float(
                 self.declare_parameter("front_half_angle_rad", 0.4363).value
             ),
+            lateral_half_width_m=float(
+                self.declare_parameter("lateral_half_width_m", 0.45).value
+            ),
             z_min_m=float(self.declare_parameter("z_min_m", -0.25).value),
             z_max_m=float(self.declare_parameter("z_max_m", 0.80).value),
             min_points=int(self.declare_parameter("min_points", 3).value),
@@ -72,6 +75,7 @@ class ProximityStopNode(Node):
             f"cloud_topic={self._cloud_topic}, range=[{self._config.x_min_m:.2f}, "
             f"{self._config.stop_distance_m:.2f}], "
             f"half_angle={self._config.front_half_angle_rad:.3f}rad, "
+            f"lateral_half_width={self._config.lateral_half_width_m:.2f}, "
             f"z=[{self._config.z_min_m:.2f}, {self._config.z_max_m:.2f}], "
             f"min_points={self._config.min_points}"
         )
