@@ -2,9 +2,9 @@
 """Follow the Day 3 debug global plan with a conservative Twist controller.
 
 This is a supervised field-test helper.  It reads the offline global-plan YAML,
-concatenates the planned route steps, tracks the path from map->body TF, and
-publishes low-speed /cmd_vel commands.  It is intentionally separate from the
-unfinished competition_control package so the test path is explicit.
+concatenates the planned route steps, tracks the path from map->base_link TF,
+and publishes low-speed /cmd_vel commands.  It is intentionally separate from
+the unfinished competition_control package so the test path is explicit.
 """
 
 from __future__ import annotations
@@ -30,6 +30,10 @@ DEFAULT_STEPS = (
 )
 
 
+class FrameValidationError(RuntimeError):
+    """Raised when the configured TF chain is present but unsafe for 2D tracking."""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--plan", required=True, help="debug_global_plan*.yaml file")
@@ -37,7 +41,9 @@ def main() -> int:
     parser.add_argument("--check-only", action="store_true", help="Parse the path and exit")
     parser.add_argument("--cmd-topic", default="/cmd_vel")
     parser.add_argument("--map-frame", default="map")
-    parser.add_argument("--body-frame", default="body")
+    parser.add_argument("--base-frame", default="base_link")
+    parser.add_argument("--body-frame", dest="base_frame", help=argparse.SUPPRESS)
+    parser.add_argument("--max-pose-z-m", type=float, default=0.30)
     parser.add_argument("--rate-hz", type=float, default=20.0)
     parser.add_argument("--lookahead-m", type=float, default=0.45)
     parser.add_argument("--max-speed-mps", type=float, default=0.18)
@@ -125,7 +131,13 @@ def run_tracker(args: argparse.Namespace, path: list[tuple[float, float]]) -> in
 
     try:
         wait_for_subscriber(node, publisher, args.cmd_topic)
-        pose = wait_for_pose(node, tf_buffer, args.map_frame, args.body_frame)
+        pose = wait_for_pose(
+            node,
+            tf_buffer,
+            args.map_frame,
+            args.base_frame,
+            args.max_pose_z_m,
+        )
         start_error = math.hypot(pose[0] - path[0][0], pose[1] - path[0][1])
         if start_error > args.start_tolerance_m:
             print(
@@ -135,7 +147,8 @@ def run_tracker(args: argparse.Namespace, path: list[tuple[float, float]]) -> in
             publish_zero()
             return 3
         print(
-            f"START pose=({pose[0]:.3f},{pose[1]:.3f},{pose[2]:.3f}) "
+            f"START frame={args.map_frame}->{args.base_frame} "
+            f"pose=({pose[0]:.3f},{pose[1]:.3f},{pose[2]:.3f}) "
             f"start_error={start_error:.3f}m"
         )
 
@@ -143,8 +156,13 @@ def run_tracker(args: argparse.Namespace, path: list[tuple[float, float]]) -> in
             loop_started = time.monotonic()
             rclpy.spin_once(node, timeout_sec=0.0)
             try:
-                pose = lookup_pose(tf_buffer, args.map_frame, args.body_frame)
-            except TransformException as exc:
+                pose = lookup_pose(
+                    tf_buffer,
+                    args.map_frame,
+                    args.base_frame,
+                    args.max_pose_z_m,
+                )
+            except (TransformException, FrameValidationError) as exc:
                 print(f"ABORT lost_tf: {exc}")
                 publish_zero()
                 return 4
@@ -216,25 +234,42 @@ def wait_for_subscriber(node: Any, publisher: Any, topic: str) -> None:
     raise SystemExit(f"no subscriber on {topic}")
 
 
-def wait_for_pose(node: Any, tf_buffer: Any, map_frame: str, body_frame: str) -> tuple[float, float, float]:
+def wait_for_pose(
+    node: Any,
+    tf_buffer: Any,
+    map_frame: str,
+    base_frame: str,
+    max_pose_z_m: float,
+) -> tuple[float, float, float]:
     deadline = time.monotonic() + 5.0
     last_error: Exception | None = None
     while time.monotonic() < deadline:
         rclpy = sys.modules["rclpy"]
         rclpy.spin_once(node, timeout_sec=0.05)
         try:
-            return lookup_pose(tf_buffer, map_frame, body_frame)
+            return lookup_pose(tf_buffer, map_frame, base_frame, max_pose_z_m)
         except Exception as exc:  # tf2_ros exception type is imported inside run_tracker.
             last_error = exc
             time.sleep(0.05)
-    raise SystemExit(f"no TF {map_frame}->{body_frame}: {last_error}")
+    raise SystemExit(f"no valid TF {map_frame}->{base_frame}: {last_error}")
 
 
-def lookup_pose(tf_buffer: Any, map_frame: str, body_frame: str) -> tuple[float, float, float]:
+def lookup_pose(
+    tf_buffer: Any,
+    map_frame: str,
+    base_frame: str,
+    max_pose_z_m: float,
+) -> tuple[float, float, float]:
     import rclpy
 
-    transform = tf_buffer.lookup_transform(map_frame, body_frame, rclpy.time.Time())
+    transform = tf_buffer.lookup_transform(map_frame, base_frame, rclpy.time.Time())
     translation = transform.transform.translation
+    z = float(translation.z)
+    if abs(z) > max_pose_z_m:
+        raise FrameValidationError(
+            f"TF {map_frame}->{base_frame} z={z:.3f}m exceeds {max_pose_z_m:.3f}m; "
+            "check that the tracker is using the chassis frame, not FAST-LIO body"
+        )
     rotation = transform.transform.rotation
     yaw = yaw_from_quaternion(rotation.x, rotation.y, rotation.z, rotation.w)
     return float(translation.x), float(translation.y), yaw
