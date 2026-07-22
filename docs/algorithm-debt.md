@@ -11,7 +11,7 @@
 | OPEN | 差速自旋恢复 | 带滞回、速度归零和显式状态的混合运动恢复 | 正常跟踪禁用自旋；检测到非双阿克曼立即 SAFE_HOLD | Day6 状态机加入恢复状态时实现 | Day5 三次整线中一旦触发自旋即失败，不得算自动恢复成功 |
 | OPEN | 诊断 tracker | RPP 仅作可复现实验对照 | 尚未实现；配置明确为 `not_implemented` | MPPI 实车基线通过后再补，最晚首次控制器 A/B 报告前 | 不存在自动 fallback，不能因 MPPI 故障静默切换 |
 | OPEN | ROS 自定义接口 | 冻结 trajectory/body/safety status msg | Day5 用 YAML、TwistStamped、Vector3Stamped 和 JSON adapter | 字段稳定并完成车端联调后，最晚 Day8 总任务闭环前 | 临时 adapter 不是已冻结接口 |
-| OPEN | 连续 footprint 检查 | 车辆矩形/扫掠体碰撞与 clearance 约束 | 栅格中心点按 `0.30m` 膨胀检查；手册外形 `0.72x0.50m` 已记录 | 正式场地图冻结或速度提高前，最晚 Day6 场地复核 | 当前离线无碰结果不能等价为完整车体扫掠安全 |
+| OPEN | 连续 footprint 检查 | 车辆矩形/扫掠体碰撞与 clearance 约束 | 已新增离线矩形 footprint sweep checker；控制验证轨迹要求 `0.72x0.50m + 0.20m` clearance 通过。规划器内部仍是中心点按 `0.30m` 膨胀检查 | 正式场地图冻结或速度提高前，最晚 Day6 场地复核 | checker 已能拦截贴边轨迹，但尚未并入 Hybrid A* 搜索代价/约束 |
 
 ## 历史算法身份
 

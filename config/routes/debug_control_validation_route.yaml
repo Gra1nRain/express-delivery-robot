@@ -1,0 +1,38 @@
+route_name: debug_control_validation_route
+profile: debug_control_validation
+purpose: Whole-line motion-control validation without precision pickup/drop docking.
+semantic_map_file: maps/debug/semantic_map_control_validation.yaml
+effective_area_ref: debug_effective_area
+start_ref: start
+steps:
+  - id: wait_flag
+    type: WAIT_FLAG
+  - id: go_traffic_light_1
+    type: RUN_SEGMENT
+    traffic_light_guard: true
+    corridor_ref: control_go_to_pickup
+    target_ref: traffic_light_stop_line
+  - id: random_obstacle_1
+    type: RUN_SEGMENT
+    avoidance_required: true
+    corridor_ref: control_go_to_pickup
+    target_ref: pickup_pass
+  - id: cone_lane_change_1
+    type: CONE_LANE_CHANGE
+    corridor_ref: control_pickup_to_drop
+    entry_ref: cone_lane_change_entry
+    exit_ref: cone_lane_change_exit
+  - id: return_to_pickup_area
+    type: RUN_SEGMENT
+    avoidance_required: false
+    corridor_ref: control_return_to_pickup
+    target_ref: pickup_pass
+  - id: cone_lane_change_2
+    type: CONE_LANE_CHANGE
+    corridor_ref: control_pickup_to_drop
+    entry_ref: cone_lane_change_entry
+    exit_ref: cone_lane_change_exit
+  - id: finish_park
+    type: FINISH_PARK
+    corridor_ref: control_finish_return
+    target_ref: finish_park

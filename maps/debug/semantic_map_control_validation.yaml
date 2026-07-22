@@ -1,0 +1,137 @@
+schema_version: semantic_map_v1
+status: draft
+profile: debug_control_validation
+frame_id: map
+source_map: maps/debug/map.yaml
+coordinate_source: >-
+  Derived from maps/debug/semantic_map.yaml for whole-line motion-control
+  validation on 2026-07-22. Precision pickup/drop dock poses are intentionally
+  replaced by clearance-safe pass-through anchors so this route tests smooth
+  planning/control rather than task docking.
+coordinate_convention:
+  position_unit: m
+  heading_unit: rad
+  map_origin: [-2.39, -18.30, 0.0]
+  map_resolution: 0.03
+verification:
+  base_points_source: copied_from_semantic_map_yaml_2026_07_22
+  pass_points_source: offline_static_map_clearance_scan_2026_07_22
+  precision_docking: intentionally_excluded
+
+effective_area:
+  id: debug_effective_area
+  type: polygon
+  status: draft
+  vertices:
+    - [-3.11, -1.76]
+    - [19.55, -11.07]
+    - [23.73, -0.90]
+    - [20.71, 3.59]
+    - [15.62, 5.68]
+    - [11.90, 4.51]
+    - [8.20, 6.03]
+    - [0.43, 6.84]
+
+points:
+  start:
+    x: -0.376
+    y: 0.112
+    yaw: 0.020
+    role: start_area
+    status: measured
+  traffic_light_stop_line:
+    x: 2.215
+    y: 0.222
+    yaw: 0.045
+    role: traffic_light_stop_line
+    status: measured
+  random_obstacle_entry:
+    x: 3.720
+    y: 0.320
+    yaw: 0.020
+    role: random_obstacle_zone_entry
+    status: measured
+  random_obstacle_exit:
+    x: 6.679
+    y: 0.295
+    yaw: -0.016
+    role: random_obstacle_zone_exit
+    status: measured
+  pickup_pass:
+    x: 8.859
+    y: 0.300
+    yaw: 0.020
+    role: pickup_area_control_pass
+    status: derived_clearance_pass
+  cone_lane_change_entry:
+    x: 7.452
+    y: 2.844
+    yaw: 3.138
+    role: cone_lane_change_zone_entry
+    status: measured
+  cone_lane_change_exit:
+    x: 3.896
+    y: 2.866
+    yaw: -3.118
+    role: cone_lane_change_zone_exit
+    status: measured
+  drop_pass:
+    x: 2.077
+    y: 3.100
+    yaw: 3.108
+    role: drop_area_control_pass
+    status: derived_clearance_pass
+  finish_park:
+    x: -0.740
+    y: 3.185
+    yaw: 3.128
+    role: finish_parking_area
+    status: measured
+
+lane_centerlines:
+  - id: start_to_pickup_pass_lane
+    status: debug_control_validation
+    width_m: 2.40
+    points:
+      - start
+      - traffic_light_stop_line
+      - random_obstacle_entry
+      - random_obstacle_exit
+      - pickup_pass
+  - id: pickup_pass_to_drop_pass_lane
+    status: debug_control_validation
+    width_m: 2.40
+    points:
+      - pickup_pass
+      - cone_lane_change_entry
+      - cone_lane_change_exit
+      - drop_pass
+  - id: drop_pass_to_pickup_pass_lane
+    status: debug_control_validation
+    width_m: 2.40
+    points:
+      - drop_pass
+      - traffic_light_stop_line
+      - random_obstacle_entry
+      - random_obstacle_exit
+      - pickup_pass
+  - id: drop_pass_to_finish_lane
+    status: debug_control_validation
+    width_m: 2.40
+    points:
+      - drop_pass
+      - finish_park
+
+route_corridors:
+  - id: control_go_to_pickup
+    centerline_ref: start_to_pickup_pass_lane
+    allowed_steps: [go_traffic_light_1, random_obstacle_1]
+  - id: control_pickup_to_drop
+    centerline_ref: pickup_pass_to_drop_pass_lane
+    allowed_steps: [cone_lane_change_1, cone_lane_change_2]
+  - id: control_return_to_pickup
+    centerline_ref: drop_pass_to_pickup_pass_lane
+    allowed_steps: [return_to_pickup_area]
+  - id: control_finish_return
+    centerline_ref: drop_pass_to_finish_lane
+    allowed_steps: [finish_park]

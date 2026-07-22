@@ -13,6 +13,7 @@
 - 冻结轨迹保存路线、语义图、规划/优化配置、栅格 YAML 和图像的 SHA-256；控制节点启动前逐项校验，防止旧轨迹配新地图或新参数。
 - 分段验证轨迹必须在规划阶段用 `--end-ref` 重新执行 jerk-limited 参数化；控制器不再支持运行时截断轨迹。
 - launch 默认 `start_base:=false` 且 `command_output_topic:=/cmd_vel_safe`，不具备默认实车运动效果。
+- 今天用于“丝滑控制/整链稳定性”验证的是 `debug_control_validation_route.yaml`，它使用 `pickup_pass/drop_pass` 安全通过点，不使用 `pickup_dock/drop_dock` 精停点。
 
 ## 离线验证
 
@@ -20,6 +21,7 @@
 - 整链运动学闭环：4596 个 20Hz 周期、`229.80s`；最大横向误差 `0.060m`、最大航向误差 `0.128rad`、最大速度 `0.19971m/s`、0 次 `SAFE_HOLD`、11 个终点减速周期 `SAFE_LIMITED`、最终位置误差 `0.047m`、最终速度 0。
 - 分段整链：`traffic_light_stop_line` 短段 `2.600m`、285 周期、0 次 `SAFE_HOLD`；`drop_dock` 半程 `19.799m`、2052 周期、最大横向误差 `0.044m`、0 次 `SAFE_HOLD`。
 - 证据：`docs/evidence/day5/` 下的 `debug_continuous_trajectory*`、`debug_motion_validation*`、`debug_traffic_light_*` 和 `debug_drop_dock_*`。
+- 控制验证整线：`debug_control_validation_trajectory.yaml` 为 433 点、`43.196m`、`217.482s`，只在 `finish_park` 停车；`0.72m x 0.50m` 车体加 `0.20m` clearance 的静态地图 footprint sweep 检查通过，1298 个采样姿态、0 个碰撞；离线 MPPI+safety 闭环 4455 周期完成，最大横向误差 `0.047m`、0 次 `SAFE_HOLD`。
 
 ## 车端无运动验证（2026-07-22）
 
@@ -54,6 +56,7 @@
 - 事故根因不是 Nav2 在线膨胀层未触发，而是 Day5 实车链路没有启动在线 costmap/inflation/local obstacle layer；实时 Livox 当时只用于 FAST-LIO 定位，没有接入近场停车或局部绕障。
 - 事故证据与修复记录见 `docs/evidence/day5/day5_drop_dock_collision_analysis_20260722.md`。
 - `446f9f0` 后完成近场安全门无运动验证：`start_base:=false` 时 `/cloud_registered_body` 约 `9.9Hz`，`/avoidance/stop_request` 约 `10Hz`，前方 `0.40-0.45m` 合成点云可触发 `obstacle_in_stop_box`，且 `/cmd_vel_safe` 无底盘订阅者、输出保持 0。
+- `5753d94` 后完成控制验证轨迹 no-motion smoke：`start_livox:=false`、`start_fast_lio:=false`、`start_base:=false`、`start_proximity_stop:=false` 时，MPPI 成功加载 `debug_control_validation_trajectory.yaml` 及对应 route/semantic source manifest；`/cmd_vel_safe` 只有 safety 发布、0 个订阅者、输出为 0，停止后 ROS 主题回到 `/parameter_events` 和 `/rosout`。
 
 ## 无运动/实车分级步骤
 
@@ -64,6 +67,13 @@
    ```
 
    短段/半程分别在同一命令中增加 `--end-ref traffic_light_stop_line` 或 `--end-ref drop_dock`，输出到 `debug_traffic_light_trajectory.yaml` 或 `debug_drop_dock_trajectory.yaml`。不能对整线 artifact 做运行时切片。
+
+   今天只验证整体运动规控时，使用控制验证路线：
+
+   ```bash
+   ros2 run competition_planning offline_continuous_trajectory --route config/routes/debug_control_validation_route.yaml --semantic-map maps/debug/semantic_map_control_validation.yaml --planning-params config/planning/planning_params.yaml --optimizer-params config/planning/optimizer_params.yaml --output docs/evidence/day5/debug_control_validation_trajectory.yaml --report docs/evidence/day5/debug_control_validation_trajectory_summary.md
+   ros2 run competition_planning offline_footprint_check --trajectory docs/evidence/day5/debug_control_validation_trajectory.yaml --map maps/debug/map.yaml --vehicle-length-m 0.72 --vehicle-width-m 0.50 --clearance-m 0.20 --report docs/evidence/day5/debug_control_validation_footprint_check.md
+   ```
 
 2. 小车构建：
 
@@ -83,7 +93,13 @@
    ros2 launch competition_bringup day5_motion_control.launch.py start_base:=true command_output_topic:=/cmd_vel trajectory_file:=$HOME/competition_ws/docs/evidence/day5/debug_traffic_light_trajectory.yaml
    ```
 
-5. 短段通过后，把 `trajectory_file` 改为 `debug_drop_dock_trajectory.yaml`；半程通过后再改为 `debug_continuous_trajectory.yaml` 执行整线。每次只改变一个参数并保留 rosbag/视频。
+5. 今天不验证精准停车时，不使用旧 `debug_drop_dock_trajectory.yaml` 或旧 `debug_continuous_trajectory.yaml` 上车；改用 `debug_control_validation_trajectory.yaml` 验证整线流畅控制，并同步传入对应 source manifest 输入：
+
+   ```bash
+   ros2 launch competition_bringup day5_motion_control.launch.py start_base:=true command_output_topic:=/cmd_vel trajectory_file:=$HOME/competition_ws/docs/evidence/day5/debug_control_validation_trajectory.yaml route_file:=$HOME/competition_ws/config/routes/debug_control_validation_route.yaml semantic_map_file:=$HOME/competition_ws/maps/debug/semantic_map_control_validation.yaml
+   ```
+
+   每次只改变一个参数并保留 rosbag/视频。
 
 6. 整线正式通过条件：连续 3 次、最大速度 `0.20m/s`、无人接管、无 TF/pose 跳变、无意外 motion mode、无异常 safety、横向误差不超过 `0.15m`、终点可靠零速。
 
