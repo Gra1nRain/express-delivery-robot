@@ -42,6 +42,7 @@ def _launch_setup(context, *args, **kwargs):
                 "start_scan": "false",
                 "start_slam": "false",
                 "start_anchor": "true",
+                "fast_lio_config": LaunchConfiguration("fast_lio_config"),
                 "anchor_map_frame": str(estimator["map_frame"]),
                 "anchor_odom_frame": "camera_init",
                 "anchor_base_frame": str(estimator["base_frame"]),
@@ -194,6 +195,10 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument("port_name", default_value="can3"),
+            DeclareLaunchArgument(
+                "fast_lio_config",
+                default_value="fast_lio_mid360_day5_control.yaml",
+            ),
             DeclareLaunchArgument("start_livox", default_value="true"),
             DeclareLaunchArgument("start_fast_lio", default_value="true"),
             DeclareLaunchArgument(
