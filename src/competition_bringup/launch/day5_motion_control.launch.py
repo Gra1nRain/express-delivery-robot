@@ -96,6 +96,7 @@ def _launch_setup(context, *args, **kwargs):
                     "max_curvature_rate_1pmps": motion["max_curvature_rate_1pmps"],
                     "pose_timeout_s": estimator["pose_timeout_s"],
                     "velocity_timeout_s": estimator["velocity_timeout_s"],
+                    "max_pose_prediction_s": estimator["max_pose_prediction_s"],
                     "max_position_jump_m": estimator["max_position_jump_m"],
                     "max_heading_jump_deg": estimator["max_heading_jump_deg"],
                 }

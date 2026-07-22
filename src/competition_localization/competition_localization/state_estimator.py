@@ -52,6 +52,39 @@ class StateEstimate:
     reasons: tuple[str, ...]
 
 
+def predict_observation_to_time(
+    observation: StateObservation,
+    *,
+    now_s: float,
+    max_prediction_s: float,
+) -> StateObservation:
+    """Predict a delayed pose to ``now_s`` with current chassis velocity.
+
+    FAST-LIO can publish geometrically valid poses with sensor-time stamps that
+    lag wall time. The prediction is deliberately bounded; observations beyond
+    ``max_prediction_s`` are left unchanged so the freshness guard still rejects
+    them as stale.
+    """
+
+    pose_delay_s = now_s - observation.pose_stamp_s
+    if max_prediction_s <= 0.0 or pose_delay_s <= 0.0:
+        return observation
+    if pose_delay_s > max_prediction_s:
+        return observation
+
+    predicted_pose = _integrate_unicycle(
+        observation.pose,
+        observation.velocity,
+        pose_delay_s,
+    )
+    return StateObservation(
+        pose=predicted_pose,
+        velocity=observation.velocity,
+        pose_stamp_s=now_s,
+        velocity_stamp_s=observation.velocity_stamp_s,
+    )
+
+
 class StateEstimator:
     """Fuse one global pose and chassis velocity into a guarded state.
 
@@ -168,6 +201,33 @@ class StateEstimator:
         )
         self._last_accepted = accepted
         return accepted
+
+
+def _integrate_unicycle(
+    pose: Pose2D,
+    velocity: Velocity2D,
+    dt_s: float,
+) -> Pose2D:
+    if dt_s <= 0.0:
+        return pose
+
+    linear_x = velocity.linear_x_mps
+    yaw_rate = velocity.yaw_rate_radps
+    yaw0 = pose.yaw
+    if abs(yaw_rate) < 1e-6:
+        return Pose2D(
+            x=pose.x + linear_x * dt_s * math.cos(yaw0),
+            y=pose.y + linear_x * dt_s * math.sin(yaw0),
+            yaw=_wrap_angle(yaw0),
+        )
+
+    yaw1 = yaw0 + yaw_rate * dt_s
+    radius = linear_x / yaw_rate
+    return Pose2D(
+        x=pose.x + radius * (math.sin(yaw1) - math.sin(yaw0)),
+        y=pose.y - radius * (math.cos(yaw1) - math.cos(yaw0)),
+        yaw=_wrap_angle(yaw1),
+    )
 
 
 def _wrap_angle(value: float) -> float:

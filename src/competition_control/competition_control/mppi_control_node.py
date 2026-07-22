@@ -35,6 +35,7 @@ from competition_localization.state_estimator import (
     StateEstimatorLimits,
     StateObservation,
     Velocity2D,
+    predict_observation_to_time,
 )
 
 
@@ -142,6 +143,9 @@ class MPPIControlNode(Node):
                 ),
             )
         )
+        self._max_pose_prediction_s = float(
+            self.declare_parameter("max_pose_prediction_s", 0.0).value
+        )
 
         self._tf_buffer = Buffer(cache_time=Duration(seconds=5.0))
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -198,6 +202,8 @@ class MPPIControlNode(Node):
         command: BodyCommand
         valid = False
         state_reasons: tuple[str, ...] = ()
+        pose_delay_s: float | None = None
+        pose_prediction_s = 0.0
         try:
             transform = self._tf_buffer.lookup_transform(
                 self._map_frame,
@@ -219,13 +225,22 @@ class MPPIControlNode(Node):
                     float(rotation.w),
                 ),
             )
+            raw_pose_stamp_s = _stamp_to_seconds(transform.header.stamp)
+            pose_delay_s = now_s - raw_pose_stamp_s
+            observation = StateObservation(
+                pose=pose,
+                velocity=self._latest_velocity,
+                pose_stamp_s=raw_pose_stamp_s,
+                velocity_stamp_s=self._latest_velocity_stamp_s,
+            )
+            observation = predict_observation_to_time(
+                observation,
+                now_s=now_s,
+                max_prediction_s=self._max_pose_prediction_s,
+            )
+            pose_prediction_s = observation.pose_stamp_s - raw_pose_stamp_s
             estimate = self._state_estimator.update(
-                StateObservation(
-                    pose=pose,
-                    velocity=self._latest_velocity,
-                    pose_stamp_s=_stamp_to_seconds(transform.header.stamp),
-                    velocity_stamp_s=self._latest_velocity_stamp_s,
-                ),
+                observation,
                 now_s=now_s,
             )
             valid = estimate.valid
@@ -276,6 +291,8 @@ class MPPIControlNode(Node):
                         "status": command.status,
                         "target_index": command.target_index,
                         "state_reasons": list(state_reasons),
+                        "pose_delay_s": pose_delay_s,
+                        "pose_prediction_s": pose_prediction_s,
                     },
                     separators=(",", ":"),
                 )

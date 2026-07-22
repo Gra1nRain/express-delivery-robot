@@ -13,6 +13,7 @@ from competition_localization.state_estimator import (
     StateEstimatorLimits,
     StateObservation,
     Velocity2D,
+    predict_observation_to_time,
 )
 
 
@@ -98,6 +99,52 @@ class StateEstimatorTest(unittest.TestCase):
         self.assertIn("stale_pose", stale.reasons)
         self.assertIn("stale_velocity", stale.reasons)
         self.assertIn("pose_time_reversed", reversed_time.reasons)
+
+    def test_predicts_bounded_delayed_pose_to_current_time(self) -> None:
+        observation = StateObservation(
+            pose=Pose2D(1.0, 2.0, 0.0),
+            velocity=Velocity2D(0.20, 0.0),
+            pose_stamp_s=10.0,
+            velocity_stamp_s=11.48,
+        )
+
+        predicted = predict_observation_to_time(
+            observation,
+            now_s=11.5,
+            max_prediction_s=2.0,
+        )
+        estimate = StateEstimator(StateEstimatorLimits()).update(
+            predicted,
+            now_s=11.5,
+        )
+
+        self.assertAlmostEqual(predicted.pose.x, 1.30)
+        self.assertAlmostEqual(predicted.pose.y, 2.0)
+        self.assertAlmostEqual(predicted.pose_stamp_s, 11.5)
+        self.assertTrue(estimate.valid)
+        self.assertNotIn("stale_pose", estimate.reasons)
+
+    def test_keeps_over_limit_pose_stale(self) -> None:
+        observation = StateObservation(
+            pose=Pose2D(1.0, 2.0, 0.0),
+            velocity=Velocity2D(0.20, 0.0),
+            pose_stamp_s=10.0,
+            velocity_stamp_s=12.98,
+        )
+
+        unchanged = predict_observation_to_time(
+            observation,
+            now_s=13.0,
+            max_prediction_s=2.0,
+        )
+        estimate = StateEstimator(StateEstimatorLimits()).update(
+            unchanged,
+            now_s=13.0,
+        )
+
+        self.assertEqual(unchanged, observation)
+        self.assertFalse(estimate.valid)
+        self.assertIn("stale_pose", estimate.reasons)
 
 
 if __name__ == "__main__":
