@@ -18,6 +18,12 @@
 - YAML artifact：`docs/evidence/day4/debug_optimized_trajectory.yaml`。
 - SVG artifact：`docs/evidence/day4/debug_optimized_trajectory.svg`。
 - 分段 CSV：`docs/evidence/day4/csv/*.csv`。
+- 小车端已同步 PC 提交 `8bb528d` 的源码快照到 `/home/agilex/competition_ws`。
+- 小车端 `colcon build --symlink-install --packages-select competition_planning`：通过；存在同包 overlay 覆盖提示，但未导致构建失败。
+- 小车端 `ros2 run competition_planning offline_optimized_trajectory ...`：通过，6 段轨迹，0 个失败。
+- 小车端 YAML 与 PC YAML 结构化比较一致。
+- 小车端日志：`docs/evidence/day4/day4_offline_optimized_trajectory_car_20260722.txt`。
+- 小车端 artifact：`docs/evidence/day4/debug_optimized_trajectory_car.yaml`、`debug_optimized_trajectory_car_summary.md`、`debug_optimized_trajectory_car.svg`、`csv_car/*.csv`。
 
 ## 当前离线结果
 

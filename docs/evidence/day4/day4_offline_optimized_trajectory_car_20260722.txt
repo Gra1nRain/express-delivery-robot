@@ -1,0 +1,7 @@
+route=debug_route ok=True trajectories=6 failures=0
+TRAJECTORY go_traffic_light_1 target=traffic_light_stop_line points=12 length_m=2.593 duration_s=5.693
+TRAJECTORY random_obstacle_1 target=pickup_dock points=36 length_m=6.673 duration_s=18.9
+TRAJECTORY cone_lane_change_1 target=drop_dock points=53 length_m=9.049 duration_s=25.225
+TRAJECTORY return_to_pickup_area target=pickup_dock points=59 length_m=10.143 duration_s=27.891
+TRAJECTORY cone_lane_change_2 target=drop_dock points=53 length_m=9.049 duration_s=25.225
+TRAJECTORY finish_park target=finish_park points=13 length_m=2.823 duration_s=7.001

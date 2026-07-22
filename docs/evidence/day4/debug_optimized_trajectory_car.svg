@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600" viewBox="0 0 900 600">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<polyline points="70.4,549.2 90.0,548.3 109.7,547.5 129.3,546.6 149.0,545.8 168.6,545.0 188.3,544.1 207.9,543.3 227.6,542.5 247.3,541.6 266.9,540.8 286.6,540.0" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="70.4" cy="549.2" r="4" fill="#2563eb"/>
+<text x="76.4" y="543.2" font-family="Arial, sans-serif" font-size="11" fill="#111827">start</text>
+<circle cx="286.6" cy="540.0" r="4" fill="#2563eb"/>
+<text x="292.6" y="534.0" font-family="Arial, sans-serif" font-size="11" fill="#111827">traffic_light_stop_line</text>
+<polyline points="286.6,540.0 299.1,539.3 312.9,538.2 327.8,537.0 343.7,535.7 360.2,534.4 377.3,533.3 394.7,532.4 412.1,531.8 422.7,531.7 435.6,531.6 450.5,531.6 467.1,531.6 484.9,531.7 503.7,531.9 523.1,532.1 542.7,532.3 562.3,532.5 581.5,532.8 599.9,533.0 617.2,533.2 633.1,533.5 647.1,533.7 659.0,533.9 673.0,534.6 688.0,536.1 703.7,538.3 719.9,541.0 736.3,544.0 752.9,547.2 769.3,550.4 785.3,553.4 800.7,556.0 815.2,558.1 828.7,559.5 840.9,560.0" fill="none" stroke="#16a34a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="286.6" cy="540.0" r="4" fill="#16a34a"/>
+<text x="292.6" y="534.0" font-family="Arial, sans-serif" font-size="11" fill="#111827">traffic_light_stop_line</text>
+<circle cx="412.1" cy="531.8" r="4" fill="#16a34a"/>
+<text x="418.1" y="525.8" font-family="Arial, sans-serif" font-size="11" fill="#111827">random_obstacle_entry</text>
+<circle cx="659.0" cy="533.9" r="4" fill="#16a34a"/>
+<text x="665.0" y="527.9" font-family="Arial, sans-serif" font-size="11" fill="#111827">random_obstacle_exit</text>
+<circle cx="840.9" cy="560.0" r="4" fill="#16a34a"/>
+<text x="846.9" y="554.0" font-family="Arial, sans-serif" font-size="11" fill="#111827">pickup_dock</text>
+<polyline points="840.9,560.0 848.3,558.8 853.7,555.3 857.4,549.8 859.5,542.4 860.0,533.3 859.1,522.8 856.8,511.0 853.4,498.2 848.8,484.6 843.3,470.3 836.8,455.6 829.6,440.8 821.8,425.9 813.4,411.2 804.5,396.9 795.4,383.2 786.0,370.4 776.5,358.6 767.0,348.1 757.6,339.0 748.5,331.5 739.7,325.9 731.3,322.4 723.5,321.2 712.5,321.1 699.4,321.0 684.7,320.9 668.4,320.7 651.0,320.5 632.5,320.3 613.3,320.1 593.7,319.9 573.8,319.7 554.0,319.5 534.5,319.3 515.5,319.2 497.3,319.1 480.1,319.0 464.2,319.0 449.9,319.1 437.3,319.2 426.8,319.4 410.0,318.5 393.2,315.6 376.6,311.1 360.4,305.5 344.6,299.3 329.3,293.1 314.5,287.2 300.5,282.3 287.3,278.8 275.0,277.3" fill="none" stroke="#dc2626" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="840.9" cy="560.0" r="4" fill="#dc2626"/>
+<text x="846.9" y="554.0" font-family="Arial, sans-serif" font-size="11" fill="#111827">pickup_dock</text>
+<circle cx="723.5" cy="321.2" r="4" fill="#dc2626"/>
+<text x="729.5" y="315.2" font-family="Arial, sans-serif" font-size="11" fill="#111827">cone_lane_change_entry</text>
+<circle cx="426.8" cy="319.4" r="4" fill="#dc2626"/>
+<text x="432.8" y="313.4" font-family="Arial, sans-serif" font-size="11" fill="#111827">cone_lane_change_exit</text>
+<circle cx="275.0" cy="277.3" r="4" fill="#dc2626"/>
+<text x="281.0" y="271.3" font-family="Arial, sans-serif" font-size="11" fill="#111827">drop_dock</text>
+<polyline points="275.0,277.3 267.1,278.5 260.3,282.5 254.5,289.0 249.9,297.7 246.2,308.4 243.5,320.9 241.6,334.8 240.6,349.9 240.3,366.0 240.7,382.7 241.9,399.8 243.6,417.0 245.8,434.2 248.6,450.9 251.8,466.9 255.4,482.1 259.3,496.0 263.5,508.5 267.9,519.3 272.4,528.1 277.1,534.7 281.8,538.7 286.6,540.0 300.4,539.2 314.9,538.1 329.9,536.9 345.4,535.6 361.5,534.4 378.0,533.2 394.9,532.3 412.1,531.8 422.7,531.7 435.6,531.6 450.5,531.6 467.1,531.6 484.9,531.7 503.7,531.9 523.1,532.1 542.7,532.3 562.3,532.5 581.5,532.8 599.9,533.0 617.2,533.2 633.1,533.5 647.1,533.7 659.0,533.9 673.0,534.6 688.0,536.1 703.7,538.3 719.9,541.0 736.3,544.0 752.9,547.2 769.3,550.4 785.3,553.4 800.7,556.0 815.2,558.1 828.7,559.5 840.9,560.0" fill="none" stroke="#9333ea" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="275.0" cy="277.3" r="4" fill="#9333ea"/>
+<text x="281.0" y="271.3" font-family="Arial, sans-serif" font-size="11" fill="#111827">drop_dock</text>
+<circle cx="286.6" cy="540.0" r="4" fill="#9333ea"/>
+<text x="292.6" y="534.0" font-family="Arial, sans-serif" font-size="11" fill="#111827">traffic_light_stop_line</text>
+<circle cx="412.1" cy="531.8" r="4" fill="#9333ea"/>
+<text x="418.1" y="525.8" font-family="Arial, sans-serif" font-size="11" fill="#111827">random_obstacle_entry</text>
+<circle cx="659.0" cy="533.9" r="4" fill="#9333ea"/>
+<text x="665.0" y="527.9" font-family="Arial, sans-serif" font-size="11" fill="#111827">random_obstacle_exit</text>
+<circle cx="840.9" cy="560.0" r="4" fill="#9333ea"/>
+<text x="846.9" y="554.0" font-family="Arial, sans-serif" font-size="11" fill="#111827">pickup_dock</text>
+<polyline points="840.9,560.0 848.3,558.8 853.7,555.3 857.4,549.8 859.5,542.4 860.0,533.3 859.1,522.8 856.8,511.0 853.4,498.2 848.8,484.6 843.3,470.3 836.8,455.6 829.6,440.8 821.8,425.9 813.4,411.2 804.5,396.9 795.4,383.2 786.0,370.4 776.5,358.6 767.0,348.1 757.6,339.0 748.5,331.5 739.7,325.9 731.3,322.4 723.5,321.2 712.5,321.1 699.4,321.0 684.7,320.9 668.4,320.7 651.0,320.5 632.5,320.3 613.3,320.1 593.7,319.9 573.8,319.7 554.0,319.5 534.5,319.3 515.5,319.2 497.3,319.1 480.1,319.0 464.2,319.0 449.9,319.1 437.3,319.2 426.8,319.4 410.0,318.5 393.2,315.6 376.6,311.1 360.4,305.5 344.6,299.3 329.3,293.1 314.5,287.2 300.5,282.3 287.3,278.8 275.0,277.3" fill="none" stroke="#ea580c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="840.9" cy="560.0" r="4" fill="#ea580c"/>
+<text x="846.9" y="554.0" font-family="Arial, sans-serif" font-size="11" fill="#111827">pickup_dock</text>
+<circle cx="723.5" cy="321.2" r="4" fill="#ea580c"/>
+<text x="729.5" y="315.2" font-family="Arial, sans-serif" font-size="11" fill="#111827">cone_lane_change_entry</text>
+<circle cx="426.8" cy="319.4" r="4" fill="#ea580c"/>
+<text x="432.8" y="313.4" font-family="Arial, sans-serif" font-size="11" fill="#111827">cone_lane_change_exit</text>
+<circle cx="275.0" cy="277.3" r="4" fill="#ea580c"/>
+<text x="281.0" y="271.3" font-family="Arial, sans-serif" font-size="11" fill="#111827">drop_dock</text>
+<polyline points="275.0,277.3 255.5,278.6 235.9,279.9 216.3,281.2 196.7,282.5 177.1,283.7 157.5,285.0 137.9,286.3 118.3,287.6 98.8,288.9 79.2,290.2 59.6,291.5 40.0,292.7" fill="none" stroke="#0891b2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="275.0" cy="277.3" r="4" fill="#0891b2"/>
+<text x="281.0" y="271.3" font-family="Arial, sans-serif" font-size="11" fill="#111827">drop_dock</text>
+<circle cx="40.0" cy="292.7" r="4" fill="#0891b2"/>
+<text x="46.0" y="286.7" font-family="Arial, sans-serif" font-size="11" fill="#111827">finish_park</text>
+</svg>
