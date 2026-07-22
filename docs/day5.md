@@ -31,7 +31,7 @@
 - 车端日志：`log/day5_build_e1c2ff5.log`、`log/day5_car_offline_validation_e1c2ff5.log`、`log/day5_nomotion_smoke_e1c2ff5.log` 和 `log/day5_shutdown_repro_c7ae1d2.log`。
 - 实车位于起点后启动 Livox、FAST-LIO、Ranger base、anchor、MPPI 和 safety，且 `command_output_topic:=/cmd_vel_safe` 时，`/cmd_vel` 只有 Ranger 订阅、发布者为 0；底盘 `/odom` 速度保持全零。
 - 首次硬件无运动联调暴露 FAST-LIO 输出延迟：`/Odometry` 与 `camera_init -> body` TF 的 stamp age 稳定约 `1.3-1.6s`，控制器正确进入 `INVALID_STATE` / `stale_pose`，safety 保持 `SAFE_HOLD`。
-- 提交 `cca6797` 新增 `fast_lio_mid360_day5_control.yaml`，关闭 Day5 运动控制不需要的 FAST-LIO path/map/scan/cloud/PCD 输出；Day5 motion launch 默认使用该控制配置，Day1 建图配置保持不变。
+- 提交 `cca6797` 新增 `fast_lio_mid360_day5_control.yaml`，关闭 Day5 运动控制不需要的 FAST-LIO path/map/PCD 输出；碰撞复盘后的近场停车门控要求保留 `/cloud_registered_body` 点云输出。Day5 motion launch 默认使用该控制配置，Day1 建图配置保持不变。
 - 使用 `cca6797` 后，FAST-LIO-only `/Odometry` stamp age 降至约 `0.037-0.068s`；完整硬件无运动栈下 `/Odometry` stamp age 为 `0.037-0.128s`，低于 `pose_timeout_s=0.20`。
 - 发布起点 `/initialpose`（`x=-0.376, y=0.112, yaw=0.020rad`）后，控制器稳定 `TRACKING`、`state_valid=true`，safety 稳定 `SAFE_ACTIVE`；`/control/status` 约 `19.8-20.4Hz`。
 - 锚定后 `/cmd_vel_safe` 出现约 `0.01m/s` 的安全后起步命令，说明规控链已具备运动输出；该 topic 没有底盘订阅者，因此本次仍属于无运动联调。

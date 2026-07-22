@@ -23,7 +23,7 @@ Date: 2026-07-22
 ## Facts from code/config
 
 - `day5_motion_control.launch.py` included Day1 mapping with `start_scan=false`.
-- `fast_lio_mid360_day5_control.yaml` disabled `scan_bodyframe_pub_en`, so the Day5 run did not expose `/cloud_registered_body` for a local safety check.
+- `fast_lio_mid360_day5_control.yaml` did not expose `/cloud_registered_body` for a local safety check; later no-motion validation showed the master `scan_publish_en` switch must also be enabled for FAST-LIO point cloud outputs.
 - `SafetyNode` subscribed to `/avoidance/stop_request`, but Day5 launch did not start any publisher for that topic.
 - `SafetySupervisor` treated a missing avoidance source as `avoidance_stop=False`; there was no freshness requirement for avoidance input.
 - The offline planner did use static occupancy-grid inflation when generating the fixed trajectory, but that inflation only affected trajectory generation. It did not run as an online local costmap or obstacle layer during the field run.
@@ -43,7 +43,7 @@ The missing hard safety behavior was that the real-time LiDAR was used for FAST-
   It uses the same basic safety idea found in the previous `ranger_delivery_mission`
   docking/clearance code: a front sector with `0.55 m` stop distance, `0.4363 rad`
   half-angle, `3` minimum returns, and `0.5 s` sensor freshness.
-- Enable FAST-LIO body-frame cloud output for Day5 control by setting `scan_bodyframe_pub_en=true`.
+- Enable FAST-LIO body-frame cloud output for Day5 control by setting both `scan_publish_en=true` and `scan_bodyframe_pub_en=true`.
 - Start `proximity_stop_node` by default in Day5 motion launch.
 - Add regression tests:
   - missing avoidance source forces safe hold;

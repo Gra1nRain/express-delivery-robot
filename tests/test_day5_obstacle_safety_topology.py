@@ -32,6 +32,10 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
 
         publish_config = fast_lio_config["/**"]["ros__parameters"]["publish"]
         self.assertTrue(
+            publish_config["scan_publish_en"],
+            "FAST-LIO scan_publish_en is the master switch for point cloud outputs.",
+        )
+        self.assertTrue(
             publish_config["scan_bodyframe_pub_en"],
             "Day5 motion must expose body-frame FAST-LIO points for obstacle stop.",
         )
