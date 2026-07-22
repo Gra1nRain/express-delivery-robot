@@ -53,6 +53,7 @@
 - `a7b40b6` 修复 FAST-LIO 位姿延迟后，drop_dock 半程进入 `TRACKING` 并稳定贴合离线轨迹；碰撞前最大 `/cmd_vel.linear.x` 约 `0.199m/s`，最大 `/odom.linear.x` 约 `0.201m/s`，最大横向误差约 `0.044m`。
 - 事故根因不是 Nav2 在线膨胀层未触发，而是 Day5 实车链路没有启动在线 costmap/inflation/local obstacle layer；实时 Livox 当时只用于 FAST-LIO 定位，没有接入近场停车或局部绕障。
 - 事故证据与修复记录见 `docs/evidence/day5/day5_drop_dock_collision_analysis_20260722.md`。
+- `446f9f0` 后完成近场安全门无运动验证：`start_base:=false` 时 `/cloud_registered_body` 约 `9.9Hz`，`/avoidance/stop_request` 约 `10Hz`，前方 `0.40-0.45m` 合成点云可触发 `obstacle_in_stop_box`，且 `/cmd_vel_safe` 无底盘订阅者、输出保持 0。
 
 ## 无运动/实车分级步骤
 

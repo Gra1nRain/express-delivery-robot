@@ -50,6 +50,19 @@ The missing hard safety behavior was that the real-time LiDAR was used for FAST-
   - Day5 launch/config includes a live obstacle-stop source;
   - points inside the configured near-field stop sector trigger a stop request.
 
+## Post-fix no-motion validation
+
+Date: 2026-07-22
+
+- Commit `446f9f0` fixed Day5 FAST-LIO point-cloud publishing by enabling `scan_publish_en=true` while keeping `scan_bodyframe_pub_en=true`.
+- Hardware no-motion launch used `start_livox:=true`, `start_fast_lio:=true`, `start_base:=false`, `start_proximity_stop:=true`, and `command_output_topic:=/cmd_vel_safe`.
+- No `ranger_base` process was running. `/cmd_vel_safe` had one publisher (`competition_safety`) and zero subscribers.
+- `/cloud_registered_body` published at about `9.9 Hz`.
+- `/avoidance/stop_request` published at about `10 Hz`.
+- Clear scene sample: `{"stop":false,"reason":"clear","point_count":0,"frame_id":"body"}` with fresh cloud age around `0.05 s`.
+- Synthetic body-frame points at `0.40-0.45 m` in front of the vehicle triggered `{"stop":true,"reason":"obstacle_in_stop_box","point_count":3,"frame_id":"body"}`.
+- Safety output remained zero during no-motion validation because the base was intentionally not started and no chassis topics were fresh.
+
 ## Remaining risk
 
 This fix is a basic safety stop gate, not a complete obstacle-avoidance module. It can stop for a near-field obstacle or for missing point-cloud input, but it does not plan a path around obstacles. Full local avoidance still requires a local planner/costmap or avoidance module with validated sensor calibration, object filtering, and recovery behavior.
