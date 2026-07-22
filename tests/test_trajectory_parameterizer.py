@@ -13,11 +13,87 @@ sys.path.insert(0, str(REPO_ROOT / "src" / "competition_planning"))
 from competition_planning.semantic_planner import PathPoint, StepPlan, load_yaml_file
 from competition_planning.trajectory_parameterizer import (
     optimize_route_trajectory,
+    optimize_continuous_route_trajectory,
     parameterize_step_plan,
 )
 
 
 class TrajectoryParameterizerTest(unittest.TestCase):
+    def test_continuous_route_uses_jerk_limited_profile_with_only_final_stop(self) -> None:
+        route = load_yaml_file(REPO_ROOT / "config" / "routes" / "debug_route.yaml")
+        semantic_map = load_yaml_file(
+            REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
+        )
+        planning = load_yaml_file(
+            REPO_ROOT / "config" / "planning" / "planning_params.yaml"
+        )
+        planning["global_planner"].update(
+            {
+                "plugin": "hybrid_astar",
+                "min_turning_radius_m": 0.81,
+                "path_sample_spacing_m": 0.10,
+                "hybrid_step_length_m": 0.20,
+                "hybrid_heading_bins": 72,
+                "hybrid_goal_position_tolerance_m": 0.15,
+                "hybrid_goal_heading_tolerance_deg": 8.0,
+                "planning_timeout_ms": 10_000.0,
+            }
+        )
+        planning["trajectory_smoother"]["enabled"] = False
+        optimizer = {
+            "continuous_trajectory_optimizer": {
+                "plugin": "jerk_limited_s_curve",
+                "max_speed_mps": 0.20,
+                "max_acceleration_mps2": 0.20,
+                "max_deceleration_mps2": 0.30,
+                "max_jerk_mps3": 0.40,
+                "max_lateral_acceleration_mps2": 0.20,
+                "max_curvature_rate_1pmps": 0.80,
+            }
+        }
+
+        result = optimize_continuous_route_trajectory(
+            route,
+            semantic_map,
+            planning,
+            optimizer,
+        )
+
+        self.assertTrue(result.ok, result.failures)
+        self.assertEqual(result.planner_plugin, "hybrid_astar")
+        self.assertEqual(result.optimizer_plugin, "jerk_limited_s_curve")
+        self.assertEqual(result.points[0].v, 0.0)
+        self.assertEqual(result.points[-1].v, 0.0)
+        self.assertTrue(all(point.v > 0.0 for point in result.points[1:-1]))
+        self.assertLessEqual(max(point.v for point in result.points), 0.20 + 1e-9)
+        self.assertLessEqual(max(abs(point.a) for point in result.points), 0.20 + 1e-9)
+        self.assertLessEqual(max(abs(point.jerk) for point in result.points), 0.40 + 1e-9)
+        curvature_rates = [
+            abs(current.curvature - previous.curvature) / (current.t - previous.t)
+            for previous, current in zip(result.points, result.points[1:])
+        ]
+        self.assertLessEqual(max(curvature_rates), 0.80 + 1e-9)
+        self.assertTrue(
+            all(current.t > previous.t for previous, current in zip(result.points, result.points[1:]))
+        )
+        stopped_refs = [point.ref_id for point in result.points[1:] if point.v == 0.0]
+        self.assertEqual(stopped_refs, ["finish_park"])
+
+        staged = optimize_continuous_route_trajectory(
+            route,
+            semantic_map,
+            planning,
+            optimizer,
+            end_ref="traffic_light_stop_line",
+        )
+
+        self.assertTrue(staged.ok, staged.failures)
+        self.assertEqual(staged.points[-1].ref_id, "traffic_light_stop_line")
+        self.assertEqual(staged.points[-1].v, 0.0)
+        self.assertTrue(all(point.v > 0.0 for point in staged.points[1:-1]))
+        self.assertLessEqual(max(abs(point.a) for point in staged.points), 0.20 + 1e-9)
+        self.assertLessEqual(max(abs(point.jerk) for point in staged.points), 0.40 + 1e-9)
+
     def test_semantic_stops_and_obstacle_zone_speed_caps_are_applied(self) -> None:
         plan = StepPlan(
             step_id="go_pickup",

@@ -9,11 +9,18 @@
 | `/planning/corridor` | mapping -> planning | 当前语义走廊 |
 | `/planning/global_path` | planner -> optimizer | `nav_msgs/Path` 候选 |
 | `/planning/optimized_trajectory` | optimizer -> tracker | 带速度、曲率和时间的轨迹 |
-| `/control/body_cmd` | tracker -> chassis | 车体速度命令 |
+| `/control/body_cmd` | tracker -> safety | `geometry_msgs/TwistStamped`；`linear.x` 为 m/s，`angular.z` 为期望 yaw rate rad/s |
+| `/control/tracking_error` | tracker -> safety/logger | `Vector3Stamped` 临时 adapter：x=横向误差 m，y=航向误差 rad，z=target index |
+| `/control/state_valid` | state estimator -> safety | TF/odom 新鲜且连续时为 true |
+| `/control/status` | tracker -> safety/logger | 临时 JSON adapter；至少含 `status`、`target_index`、`state_reasons` |
 | `/control/wheel_cmd` | kinematics -> adapter | 四轮调试命令，是否落地待验证 |
 | `/cmd_vel_safe` | safety -> chassis | 最终安全速度出口 |
 
-`/planning/optimized_trajectory` 当前 Day4 离线字段草案为：`x`、`y`、`yaw`、`s`、`curvature`、`v`、`yaw_rate`、`t`、`ref_id`。正式 ROS2 msg 尚未冻结；当前证据先使用 YAML/CSV artifact 验证字段、单位和语义。
+`/planning/optimized_trajectory` 的 Day5 连续 artifact 字段为：`x`、`y`、`yaw`、`s`、`curvature`、`v`、`a`、`jerk`、`yaw_rate`、`t`、`ref_id`。顶层 `source_manifest` 保存路线、语义图、规划/优化参数、栅格地图 YAML 和栅格图像的 SHA-256；控制节点启动前逐项复算，不一致即拒绝运行。正式 ROS2 msg 尚未冻结；控制节点当前从 YAML 加载冻结轨迹，避免在线规划抖动直接进入底盘闭环。
+
+定位唯一权威链为锚定 FAST-LIO 的 `map -> camera_init -> body`；`/odom` 只提供 RANGER 速度反馈，不发布竞争性的 `map -> odom`。Day5 launch 不启动 AMCL。
+
+最终输出 `/cmd_vel_safe` 由 `competition_safety` 独占。实车驱动实际订阅 `/cmd_vel` 时，只允许把 safety 的 `command_output_topic` 显式设为 `/cmd_vel`，控制节点不得直接 remap 到该 topic。
 
 ## 任务与作业
 
@@ -42,3 +49,4 @@
 3. 接口变更必须同步更新测试矩阵和当天日志。
 4. 避障组未接入前，主控使用空模块或 mock publisher。
 5. 避障算法可由避障组调研，但部署适配、输入输出验收和本车验证由主控侧负责冻结。
+6. `Vector3Stamped` 和 JSON status 是 Day5 临时 adapter，不等于自定义接口已冻结；替换时必须保持 SafetySupervisor 的纯 Python interface 测试不变。

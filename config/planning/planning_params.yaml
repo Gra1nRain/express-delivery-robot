@@ -1,20 +1,27 @@
 global_planner:
-  plugin: occupancy_grid_astar
+  plugin: hybrid_astar
   map_file: maps/debug/map.yaml
-  planning_timeout_ms: 500
+  planning_timeout_ms: 12000
   corridor_margin_m: 0.20
   footprint_radius_m: 0.45
   clearance_m: 0.20
   grid_inflation_radius_m: 0.30
   grid_search_padding_m: 3.00
   grid_simplify_path: true
-  min_turning_radius_m: 0.15
+  min_turning_radius_m: 0.81
   max_speed_mps: 1.80
-  fallback_plugin: semantic_corridor
+  fallback_plugin: none
+  path_sample_spacing_m: 0.10
+  hybrid_step_length_m: 0.20
+  hybrid_curvature_bins: 9
+  hybrid_heading_bins: 72
+  hybrid_goal_position_tolerance_m: 0.15
+  hybrid_goal_heading_tolerance_deg: 8.0
+  hybrid_max_expansions: 250000
 
 trajectory_smoother:
-  enabled: true
-  plugin: cubic_bezier
+  enabled: false
+  plugin: none
   sample_spacing_m: 0.20
   tangent_scale: 0.75
 
@@ -24,6 +31,6 @@ semantic_route_graph:
   keepout_enabled: true
 
 replanning:
-  enabled: true
+  enabled: false
   max_retries: 1
   failure_action: SAFE_HOLD

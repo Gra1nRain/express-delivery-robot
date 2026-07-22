@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 from typing import Any, Sequence
 
 from competition_planning.semantic_planner import (
+    ContinuousRoutePlan,
     PathPoint,
     PlanFailure,
     RoutePlan,
     StepPlan,
+    plan_continuous_route,
     plan_route,
 )
 
@@ -99,6 +101,74 @@ class OptimizedRouteTrajectory:
         }
 
 
+@dataclass(frozen=True)
+class ContinuousTrajectoryPoint:
+    x: float
+    y: float
+    yaw: float
+    s: float
+    curvature: float
+    v: float
+    a: float
+    jerk: float
+    yaw_rate: float
+    t: float
+    ref_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "x": round(self.x, 4),
+            "y": round(self.y, 4),
+            "yaw": round(self.yaw, 4),
+            "s": round(self.s, 4),
+            "curvature": round(self.curvature, 6),
+            "v": round(self.v, 4),
+            "a": round(self.a, 4),
+            "jerk": round(self.jerk, 4),
+            "yaw_rate": round(self.yaw_rate, 4),
+            "t": round(self.t, 4),
+        }
+        if self.ref_id:
+            result["ref_id"] = self.ref_id
+        return result
+
+
+@dataclass(frozen=True)
+class ContinuousRouteTrajectory:
+    frame_id: str
+    route_name: str
+    planner_plugin: str
+    optimizer_plugin: str
+    points: tuple[ContinuousTrajectoryPoint, ...]
+    failures: tuple[PlanFailure, ...]
+
+    @property
+    def ok(self) -> bool:
+        return not self.failures
+
+    @property
+    def duration_s(self) -> float:
+        return self.points[-1].t if self.points else 0.0
+
+    @property
+    def path_length_m(self) -> float:
+        return self.points[-1].s if self.points else 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "route_name": self.route_name,
+            "frame_id": self.frame_id,
+            "ok": self.ok,
+            "planner_plugin": self.planner_plugin,
+            "optimizer_plugin": self.optimizer_plugin,
+            "point_count": len(self.points),
+            "path_length_m": round(self.path_length_m, 3),
+            "duration_s": round(self.duration_s, 3),
+            "points": [point.to_dict() for point in self.points],
+            "failures": [failure.to_dict() for failure in self.failures],
+        }
+
+
 def optimize_route_trajectory(
     route: dict[str, Any],
     semantic_map: dict[str, Any],
@@ -114,6 +184,355 @@ def optimize_route_trajectory(
 
     route_plan = plan_route(route, semantic_map, planning_config)
     return parameterize_route_plan(route_plan, semantic_map, optimizer_config)
+
+
+def optimize_continuous_route_trajectory(
+    route: dict[str, Any],
+    semantic_map: dict[str, Any],
+    planning_config: dict[str, Any] | None = None,
+    optimizer_config: dict[str, Any] | None = None,
+    *,
+    end_ref: str | None = None,
+    end_ref_occurrence: int = 1,
+) -> ContinuousRouteTrajectory:
+    """Return one whole-line path with a bounded S-curve speed profile."""
+
+    route_plan = plan_continuous_route(route, semantic_map, planning_config)
+    params = (optimizer_config or {}).get("continuous_trajectory_optimizer", {})
+    optimizer_plugin = str(params.get("plugin", "jerk_limited_s_curve"))
+    if not route_plan.ok:
+        return _empty_continuous_trajectory(route_plan, optimizer_plugin)
+    if end_ref:
+        try:
+            route_plan = _continuous_plan_through_ref(
+                route_plan,
+                end_ref,
+                occurrence=end_ref_occurrence,
+            )
+        except ValueError as exc:
+            failure = PlanFailure(
+                step_id="continuous_route",
+                step_type="CONTROL_ROUTE",
+                reason="invalid_staged_endpoint",
+                detail=str(exc),
+            )
+            return ContinuousRouteTrajectory(
+                frame_id=route_plan.frame_id,
+                route_name=route_plan.route_name,
+                planner_plugin=route_plan.planner_plugin,
+                optimizer_plugin=optimizer_plugin,
+                points=(),
+                failures=(failure,),
+            )
+    if optimizer_plugin != "jerk_limited_s_curve":
+        failure = PlanFailure(
+            step_id="continuous_route",
+            step_type="CONTROL_ROUTE",
+            reason="unsupported_continuous_optimizer",
+            detail=f"unsupported optimizer plugin {optimizer_plugin}",
+        )
+        return ContinuousRouteTrajectory(
+            frame_id=route_plan.frame_id,
+            route_name=route_plan.route_name,
+            planner_plugin=route_plan.planner_plugin,
+            optimizer_plugin=optimizer_plugin,
+            points=(),
+            failures=(failure,),
+        )
+    try:
+        points = _parameterize_continuous_path(route_plan.path, params)
+    except ValueError as exc:
+        failure = PlanFailure(
+            step_id="continuous_route",
+            step_type="CONTROL_ROUTE",
+            reason="continuous_parameterization_failed",
+            detail=str(exc),
+        )
+        return ContinuousRouteTrajectory(
+            frame_id=route_plan.frame_id,
+            route_name=route_plan.route_name,
+            planner_plugin=route_plan.planner_plugin,
+            optimizer_plugin=optimizer_plugin,
+            points=(),
+            failures=(failure,),
+        )
+    return ContinuousRouteTrajectory(
+        frame_id=route_plan.frame_id,
+        route_name=route_plan.route_name,
+        planner_plugin=route_plan.planner_plugin,
+        optimizer_plugin=optimizer_plugin,
+        points=points,
+        failures=(),
+    )
+
+
+def _continuous_plan_through_ref(
+    route_plan: ContinuousRoutePlan,
+    end_ref: str,
+    *,
+    occurrence: int,
+) -> ContinuousRoutePlan:
+    if occurrence <= 0:
+        raise ValueError("end_ref_occurrence must be positive")
+    matches = [
+        index for index, point in enumerate(route_plan.path) if point.ref_id == end_ref
+    ]
+    if len(matches) < occurrence:
+        raise ValueError(
+            f"continuous route contains {len(matches)} occurrence(s) of "
+            f"end_ref={end_ref}; requested {occurrence}"
+        )
+    end_index = matches[occurrence - 1]
+    if end_index < 1:
+        raise ValueError("staged route must contain at least two path points")
+    return replace(
+        route_plan,
+        route_name=f"{route_plan.route_name}:through:{end_ref}:{occurrence}",
+        path=route_plan.path[: end_index + 1],
+    )
+
+
+def _empty_continuous_trajectory(
+    route_plan: ContinuousRoutePlan,
+    optimizer_plugin: str,
+) -> ContinuousRouteTrajectory:
+    return ContinuousRouteTrajectory(
+        frame_id=route_plan.frame_id,
+        route_name=route_plan.route_name,
+        planner_plugin=route_plan.planner_plugin,
+        optimizer_plugin=optimizer_plugin,
+        points=(),
+        failures=route_plan.failures,
+    )
+
+
+def _parameterize_continuous_path(
+    path: Sequence[PathPoint],
+    params: dict[str, Any],
+) -> tuple[ContinuousTrajectoryPoint, ...]:
+    if len(path) < 2:
+        raise ValueError("continuous route requires at least two path points")
+    max_speed_mps = _positive_float(params, "max_speed_mps", 0.20)
+    max_acceleration_mps2 = _positive_float(
+        params,
+        "max_acceleration_mps2",
+        0.20,
+    )
+    max_deceleration_mps2 = _positive_float(
+        params,
+        "max_deceleration_mps2",
+        0.30,
+    )
+    max_jerk_mps3 = _positive_float(params, "max_jerk_mps3", 0.40)
+    max_lateral_acceleration_mps2 = _positive_float(
+        params,
+        "max_lateral_acceleration_mps2",
+        0.20,
+    )
+    max_curvature_rate_1pmps = _positive_float(
+        params,
+        "max_curvature_rate_1pmps",
+        0.80,
+    )
+
+    distances = _cumulative_distances(path)
+    if any(current <= previous for previous, current in zip(distances, distances[1:])):
+        raise ValueError("continuous route contains duplicate or reversed path samples")
+    curvatures = _path_curvatures(path)
+    curve_caps = [
+        math.sqrt(max_lateral_acceleration_mps2 / abs(curvature))
+        for curvature in curvatures
+        if abs(curvature) > 1e-9
+    ]
+    profile_speed_mps = min([max_speed_mps, *curve_caps])
+    profile = _JerkLimitedProfile(
+        distance_m=distances[-1],
+        max_speed_mps=profile_speed_mps,
+        max_acceleration_mps2=min(max_acceleration_mps2, max_deceleration_mps2),
+        max_jerk_mps3=max_jerk_mps3,
+    )
+
+    output: list[ContinuousTrajectoryPoint] = []
+    for point, distance, curvature in zip(path, distances, curvatures):
+        timestamp, speed, acceleration, jerk = profile.state_at_distance(distance)
+        output.append(
+            ContinuousTrajectoryPoint(
+                x=point.x,
+                y=point.y,
+                yaw=point.yaw,
+                s=distance,
+                curvature=curvature,
+                v=speed,
+                a=acceleration,
+                jerk=jerk,
+                yaw_rate=speed * curvature,
+                t=timestamp,
+                ref_id=point.ref_id,
+            )
+        )
+    result = tuple(output)
+    for previous, current in zip(result, result[1:]):
+        curvature_rate = abs(current.curvature - previous.curvature) / (
+            current.t - previous.t
+        )
+        if curvature_rate > max_curvature_rate_1pmps + 1e-9:
+            raise ValueError(
+                "continuous route curvature rate "
+                f"{curvature_rate:.6f} 1/m/s exceeds "
+                f"{max_curvature_rate_1pmps:.6f} 1/m/s"
+            )
+    return result
+
+
+@dataclass(frozen=True)
+class _ProfilePhase:
+    start_t: float
+    duration: float
+    start_s: float
+    start_v: float
+    start_a: float
+    jerk: float
+
+    def state(self, elapsed: float) -> tuple[float, float, float]:
+        elapsed = min(self.duration, max(0.0, elapsed))
+        acceleration = self.start_a + self.jerk * elapsed
+        speed = self.start_v + self.start_a * elapsed + 0.5 * self.jerk * elapsed**2
+        distance = (
+            self.start_s
+            + self.start_v * elapsed
+            + 0.5 * self.start_a * elapsed**2
+            + self.jerk * elapsed**3 / 6.0
+        )
+        return distance, speed, acceleration
+
+
+class _JerkLimitedProfile:
+    def __init__(
+        self,
+        *,
+        distance_m: float,
+        max_speed_mps: float,
+        max_acceleration_mps2: float,
+        max_jerk_mps3: float,
+    ) -> None:
+        if distance_m <= 0.0:
+            raise ValueError("continuous route has zero path length")
+        peak_speed = self._peak_speed(
+            distance_m,
+            max_speed_mps,
+            max_acceleration_mps2,
+            max_jerk_mps3,
+        )
+        jerk_time, constant_acceleration_time = self._acceleration_times(
+            peak_speed,
+            max_acceleration_mps2,
+            max_jerk_mps3,
+        )
+        acceleration_time = 2.0 * jerk_time + constant_acceleration_time
+        acceleration_distance = 0.5 * peak_speed * acceleration_time
+        cruise_distance = max(0.0, distance_m - 2.0 * acceleration_distance)
+        cruise_time = cruise_distance / peak_speed if cruise_distance > 0.0 else 0.0
+
+        raw_phases = [
+            (jerk_time, max_jerk_mps3),
+            (constant_acceleration_time, 0.0),
+            (jerk_time, -max_jerk_mps3),
+            (cruise_time, 0.0),
+            (jerk_time, -max_jerk_mps3),
+            (constant_acceleration_time, 0.0),
+            (jerk_time, max_jerk_mps3),
+        ]
+        phases: list[_ProfilePhase] = []
+        time_s = 0.0
+        distance = 0.0
+        speed = 0.0
+        acceleration = 0.0
+        for duration, jerk in raw_phases:
+            if duration <= 1e-12:
+                continue
+            phase = _ProfilePhase(
+                start_t=time_s,
+                duration=duration,
+                start_s=distance,
+                start_v=speed,
+                start_a=acceleration,
+                jerk=jerk,
+            )
+            phases.append(phase)
+            distance, speed, acceleration = phase.state(duration)
+            time_s += duration
+        self._distance_m = distance_m
+        self._duration_s = time_s
+        self._phases = tuple(phases)
+
+    @staticmethod
+    def _acceleration_times(
+        speed_mps: float,
+        acceleration_mps2: float,
+        jerk_mps3: float,
+    ) -> tuple[float, float]:
+        transition_speed = acceleration_mps2**2 / jerk_mps3
+        if speed_mps <= transition_speed:
+            return math.sqrt(speed_mps / jerk_mps3), 0.0
+        jerk_time = acceleration_mps2 / jerk_mps3
+        return jerk_time, speed_mps / acceleration_mps2 - jerk_time
+
+    @classmethod
+    def _peak_speed(
+        cls,
+        distance_m: float,
+        requested_speed_mps: float,
+        acceleration_mps2: float,
+        jerk_mps3: float,
+    ) -> float:
+        jerk_time, constant_time = cls._acceleration_times(
+            requested_speed_mps,
+            acceleration_mps2,
+            jerk_mps3,
+        )
+        required_distance = requested_speed_mps * (2.0 * jerk_time + constant_time)
+        if required_distance <= distance_m:
+            return requested_speed_mps
+        low = 0.0
+        high = requested_speed_mps
+        for _ in range(80):
+            candidate = 0.5 * (low + high)
+            jerk_time, constant_time = cls._acceleration_times(
+                candidate,
+                acceleration_mps2,
+                jerk_mps3,
+            )
+            candidate_distance = candidate * (2.0 * jerk_time + constant_time)
+            if candidate_distance < distance_m:
+                low = candidate
+            else:
+                high = candidate
+        return 0.5 * (low + high)
+
+    def state_at_distance(self, target_distance_m: float) -> tuple[float, float, float, float]:
+        if target_distance_m <= 0.0:
+            return 0.0, 0.0, 0.0, 0.0
+        if target_distance_m >= self._distance_m:
+            return self._duration_s, 0.0, 0.0, 0.0
+        low = 0.0
+        high = self._duration_s
+        for _ in range(64):
+            timestamp = 0.5 * (low + high)
+            distance, _, _, _ = self._state_at_time(timestamp)
+            if distance < target_distance_m:
+                low = timestamp
+            else:
+                high = timestamp
+        timestamp = 0.5 * (low + high)
+        _, speed, acceleration, jerk = self._state_at_time(timestamp)
+        return timestamp, speed, acceleration, jerk
+
+    def _state_at_time(self, timestamp: float) -> tuple[float, float, float, float]:
+        for phase in self._phases:
+            if timestamp <= phase.start_t + phase.duration + 1e-12:
+                distance, speed, acceleration = phase.state(timestamp - phase.start_t)
+                return distance, speed, acceleration, phase.jerk
+        return self._distance_m, 0.0, 0.0, 0.0
 
 
 def parameterize_route_plan(
@@ -171,6 +590,7 @@ def parameterize_step_plan(
     curvatures = _path_curvatures(plan.path)
     stop_refs = _semantic_stop_refs(semantic_map)
     obstacle_zones = _obstacle_zones(semantic_map)
+    ref_speed_limits = _semantic_ref_speed_limits(semantic_map, zone_speed_limits)
 
     speed_caps = [
         _speed_cap_for_point(
@@ -181,6 +601,7 @@ def parameterize_step_plan(
             stop_refs,
             obstacle_zones,
             zone_speed_limits,
+            ref_speed_limits,
         )
         for point, curvature in zip(plan.path, curvatures)
     ]
@@ -289,6 +710,28 @@ def _obstacle_zones(
     return zones
 
 
+def _semantic_ref_speed_limits(
+    semantic_map: dict[str, Any],
+    zone_speed_limits: dict[str, float],
+) -> dict[str, float]:
+    limits: dict[str, float] = {}
+    points = semantic_map.get("points", {})
+    if not isinstance(points, dict):
+        return limits
+    for ref_id, raw in points.items():
+        if not isinstance(raw, dict):
+            continue
+        role = str(raw.get("role", "")).upper()
+        matching = [
+            limit
+            for semantic_type, limit in zone_speed_limits.items()
+            if semantic_type.upper() in role
+        ]
+        if matching:
+            limits[str(ref_id)] = min(matching)
+    return limits
+
+
 def _polygon(raw: Any) -> list[tuple[float, float]]:
     if not isinstance(raw, list):
         return []
@@ -308,11 +751,14 @@ def _speed_cap_for_point(
     stop_refs: set[str],
     obstacle_zones: list[tuple[str, list[tuple[float, float]]]],
     zone_speed_limits: dict[str, float],
+    ref_speed_limits: dict[str, float],
 ) -> float:
     if point.ref_id in stop_refs:
         return 0.0
 
     cap = max_speed_mps
+    if point.ref_id in ref_speed_limits:
+        cap = min(cap, ref_speed_limits[point.ref_id])
     for semantic_type, polygon in obstacle_zones:
         if semantic_type in zone_speed_limits and _point_in_polygon(point.x, point.y, polygon):
             cap = min(cap, zone_speed_limits[semantic_type])

@@ -1,7 +1,7 @@
-from glob import glob
 from setuptools import setup
 
-package_name = "competition_bringup"
+
+package_name = "competition_safety"
 
 setup(
     name=package_name,
@@ -10,18 +10,16 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
-        (f"share/{package_name}/launch", glob("launch/*.launch.py")),
-        (f"share/{package_name}/rviz", glob("rviz/*.rviz")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="agilex",
     maintainer_email="agilex@todo.todo",
-    description="Launch and field-validation entry points for the competition car.",
+    description="Independent safety exit for the competition car.",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
-            "offline_motion_validation = competition_bringup.motion_validation:main",
+            "safety_node = competition_safety.safety_node:main",
         ],
     },
 )

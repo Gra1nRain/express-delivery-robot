@@ -1,11 +1,16 @@
 safety:
   command_output_topic: /cmd_vel_safe
-  sensor_timeout_s: 0.50
-  planner_timeout_s: 0.50
-  max_speed_mps: 1.80
+  command_timeout_s: 0.15
+  state_timeout_s: 0.15
+  system_state_timeout_s: 0.20
+  max_speed_mps: 0.20
+  max_acceleration_mps2: 0.20
+  max_deceleration_mps2: 0.30
+  min_turning_radius_m: 0.81
   max_lateral_error_m: 0.15
-  max_heading_error_deg: 5.0
-  require_estop_ready: true
-  require_remote_override: true
+  max_heading_error_deg: 20.0
+  require_can_control_mode: true
+  require_system_state: true
+  require_dual_ackermann_mode: true
   avoidance_stop_topic: /avoidance/stop_request
   on_fault: SAFE_HOLD

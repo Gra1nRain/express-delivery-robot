@@ -14,6 +14,7 @@ setup(
         "console_scripts": [
             "offline_global_plan = competition_planning.offline_global_plan:main",
             "offline_optimized_trajectory = competition_planning.offline_optimized_trajectory:main",
+            "offline_continuous_trajectory = competition_planning.offline_continuous_trajectory:main",
             "semantic_global_path_node = competition_planning.global_path_node:main",
         ],
     },

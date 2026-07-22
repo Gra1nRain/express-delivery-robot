@@ -104,6 +104,32 @@ class RoutePlan:
         }
 
 
+@dataclass(frozen=True)
+class ContinuousRoutePlan:
+    frame_id: str
+    route_name: str
+    path: tuple[PathPoint, ...]
+    planner_plugin: str
+    planning_time_ms: float
+    failures: tuple[PlanFailure, ...]
+
+    @property
+    def ok(self) -> bool:
+        return not self.failures
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "route_name": self.route_name,
+            "frame_id": self.frame_id,
+            "ok": self.ok,
+            "planner_plugin": self.planner_plugin,
+            "planning_time_ms": round(self.planning_time_ms, 3),
+            "point_count": len(self.path),
+            "points": [point.to_dict() for point in self.path],
+            "failures": [failure.to_dict() for failure in self.failures],
+        }
+
+
 def load_yaml_file(path: str | Path) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as stream:
         data = yaml.safe_load(stream)
@@ -136,9 +162,13 @@ def plan_route(
     map_model = _SemanticMap(semantic_map)
     grid_planner = None
     grid_planner_failure: str | None = None
-    if planner_plugin == "occupancy_grid_astar":
+    if planner_plugin in {"occupancy_grid_astar", "hybrid_astar"}:
         try:
-            grid_planner = _load_grid_planner(semantic_map, params)
+            grid_planner = (
+                _load_hybrid_planner(semantic_map, params)
+                if planner_plugin == "hybrid_astar"
+                else _load_grid_planner(semantic_map, params)
+            )
         except Exception as exc:
             grid_planner_failure = str(exc)
     current_ref = _initial_current_ref(route, map_model)
@@ -205,6 +235,176 @@ def plan_route(
         plans=tuple(plans),
         failures=tuple(failures),
     )
+
+
+def plan_continuous_route(
+    route: dict[str, Any],
+    semantic_map: dict[str, Any],
+    planning_config: dict[str, Any] | None = None,
+) -> ContinuousRoutePlan:
+    """Plan every motion step as one continuous pose-constrained path.
+
+    This seam is for whole-line control validation. It deliberately ignores
+    non-motion task stops while preserving the ordered semantic waypoints. The
+    mission planner continues to use :func:`plan_route` for per-step plans.
+    """
+
+    planning_config = planning_config or {}
+    params = planning_config.get("global_planner", {})
+    planner_plugin = str(params.get("plugin", ""))
+    frame_id = str(semantic_map.get("frame_id", "map"))
+    route_name = str(route.get("route_name", ""))
+    if planner_plugin != "hybrid_astar":
+        failure = PlanFailure(
+            step_id="continuous_route",
+            step_type="CONTROL_ROUTE",
+            reason="continuous_route_requires_hybrid_astar",
+            detail=f"configured global planner is {planner_plugin or 'unset'}",
+        )
+        return ContinuousRoutePlan(
+            frame_id=frame_id,
+            route_name=route_name,
+            path=(),
+            planner_plugin=planner_plugin,
+            planning_time_ms=0.0,
+            failures=(failure,),
+        )
+
+    map_model = _SemanticMap(semantic_map)
+    refs, failures = _continuous_route_refs(route, map_model)
+    if failures:
+        return ContinuousRoutePlan(
+            frame_id=frame_id,
+            route_name=route_name,
+            path=(),
+            planner_plugin=planner_plugin,
+            planning_time_ms=0.0,
+            failures=tuple(failures),
+        )
+    waypoints = [map_model.point(ref) for ref in refs]
+    if any(point is None for point in waypoints):
+        failure = PlanFailure(
+            step_id="continuous_route",
+            step_type="CONTROL_ROUTE",
+            reason="unknown_point_ref",
+            detail="continuous route contains an unknown semantic point",
+        )
+        return ContinuousRoutePlan(
+            frame_id=frame_id,
+            route_name=route_name,
+            path=(),
+            planner_plugin=planner_plugin,
+            planning_time_ms=0.0,
+            failures=(failure,),
+        )
+
+    started_at = time.perf_counter()
+    try:
+        planner = _load_hybrid_planner(semantic_map, params)
+        path = planner.plan([point for point in waypoints if point is not None])
+    except Exception as exc:
+        failure = PlanFailure(
+            step_id="continuous_route",
+            step_type="CONTROL_ROUTE",
+            reason="hybrid_planning_failed",
+            detail=str(exc),
+        )
+        return ContinuousRoutePlan(
+            frame_id=frame_id,
+            route_name=route_name,
+            path=(),
+            planner_plugin=planner_plugin,
+            planning_time_ms=(time.perf_counter() - started_at) * 1000.0,
+            failures=(failure,),
+        )
+
+    elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+    timeout_ms = float(params.get("planning_timeout_ms", 500.0))
+    validation_failure = _validate_path(
+        {"id": "continuous_route", "type": "CONTROL_ROUTE"},
+        path,
+        {"width_m": 1_000_000.0, "points": refs},
+        map_model,
+        margin_m=0.0,
+        min_turning_radius_m=float(params.get("min_turning_radius_m", 0.0)),
+        check_corridor_distance=False,
+    )
+    failures_out: tuple[PlanFailure, ...] = ()
+    if elapsed_ms > timeout_ms:
+        failures_out = (
+            PlanFailure(
+                step_id="continuous_route",
+                step_type="CONTROL_ROUTE",
+                reason="planning_timeout",
+                detail=f"planning took {elapsed_ms:.3f} ms; limit is {timeout_ms:.3f} ms",
+            ),
+        )
+    elif validation_failure is not None:
+        failures_out = (validation_failure,)
+
+    return ContinuousRoutePlan(
+        frame_id=frame_id,
+        route_name=route_name,
+        path=tuple(path),
+        planner_plugin=planner_plugin,
+        planning_time_ms=elapsed_ms,
+        failures=failures_out,
+    )
+
+
+def _continuous_route_refs(
+    route: dict[str, Any],
+    map_model: "_SemanticMap",
+) -> tuple[list[str], list[PlanFailure]]:
+    current_ref = _initial_current_ref(route, map_model)
+    refs = [current_ref] if current_ref else []
+    failures: list[PlanFailure] = []
+    for step in route.get("steps", []):
+        if not isinstance(step, dict):
+            continue
+        if str(step.get("type", "")) not in PLANNABLE_STEP_TYPES:
+            current_ref = _pose_ref_from_step(step) or current_ref
+            continue
+        corridor_ref = str(step.get("corridor_ref", ""))
+        corridor = map_model.corridors.get(corridor_ref)
+        if corridor is None:
+            failures.append(_failure(step, "unknown_corridor", f"unknown corridor {corridor_ref}"))
+            continue
+        allowed_steps = corridor.get("allowed_steps", [])
+        if allowed_steps and str(step.get("id", "")) not in allowed_steps:
+            failures.append(
+                _failure(
+                    step,
+                    "step_not_allowed_in_corridor",
+                    f"{step.get('id', '')} is not listed in corridor {corridor_ref} allowed_steps",
+                )
+            )
+            continue
+        centerline_ref = str(corridor.get("centerline_ref", ""))
+        centerline = map_model.centerlines.get(centerline_ref)
+        if centerline is None:
+            failures.append(
+                _failure(step, "unknown_centerline", f"unknown centerline {centerline_ref}")
+            )
+            continue
+        centerline_refs = [str(ref) for ref in centerline.get("points", [])]
+        target_ref, _ = _target_ref_for_step(step, centerline_refs)
+        if target_ref is None:
+            failures.append(_failure(step, "missing_target_ref", "step has no usable target"))
+            continue
+        segment_refs = _segment_refs_between(centerline_refs, current_ref, target_ref)
+        if not segment_refs:
+            failures.append(
+                _failure(
+                    step,
+                    "route_ref_not_on_centerline",
+                    f"cannot connect {current_ref} to {target_ref} on {centerline_ref}",
+                )
+            )
+            continue
+        refs.extend(segment_refs[1:] if refs and refs[-1] == segment_refs[0] else segment_refs)
+        current_ref = target_ref
+    return [ref for ref in refs if ref is not None], failures
 
 
 class _SemanticMap:
@@ -329,7 +529,7 @@ def _plan_step(
     semantic_path = tuple(_interpolate_path([point for point in points if point], sample_spacing_m))
     path = semantic_path
     used_plugin = "semantic_corridor"
-    if planner_plugin == "occupancy_grid_astar":
+    if planner_plugin in {"occupancy_grid_astar", "hybrid_astar"}:
         if grid_planner is None:
             if fallback_plugin != "semantic_corridor":
                 return (
@@ -344,7 +544,7 @@ def _plan_step(
         else:
             try:
                 path = grid_planner.plan([point for point in points if point])
-                used_plugin = "occupancy_grid_astar"
+                used_plugin = planner_plugin
             except Exception as exc:
                 if fallback_plugin != "semantic_corridor":
                     return (
@@ -564,6 +764,44 @@ def _load_grid_planner(semantic_map: dict[str, Any], params: dict[str, Any]) -> 
         search_padding_m=search_padding_m,
         sample_spacing_m=sample_spacing_m,
         simplify_path=simplify_path,
+    )
+
+
+def _load_hybrid_planner(semantic_map: dict[str, Any], params: dict[str, Any]) -> Any:
+    from competition_planning.hybrid_astar_planner import HybridAStarPlanner
+    from competition_planning.occupancy_grid_planner import (
+        GridPlanningError,
+        OccupancyGridMap,
+    )
+
+    configured_map_file = params.get("map_file") or semantic_map.get("source_map")
+    if not configured_map_file:
+        raise GridPlanningError("global_planner.map_file or semantic_map.source_map is required")
+    map_file = Path(str(configured_map_file))
+    if not map_file.exists():
+        raise GridPlanningError(f"occupancy map file not found: {map_file}")
+
+    footprint_radius_m = float(params.get("footprint_radius_m", 0.0))
+    clearance_m = float(params.get("clearance_m", 0.0))
+    inflation_radius_m = float(
+        params.get("grid_inflation_radius_m", footprint_radius_m + clearance_m)
+    )
+    return HybridAStarPlanner(
+        OccupancyGridMap.from_yaml(map_file),
+        inflation_radius_m=inflation_radius_m,
+        search_padding_m=float(params.get("grid_search_padding_m", 3.0)),
+        sample_spacing_m=float(params.get("path_sample_spacing_m", 0.10)),
+        min_turning_radius_m=float(params.get("min_turning_radius_m", 0.0)),
+        step_length_m=float(params.get("hybrid_step_length_m", 0.20)),
+        curvature_bins=int(params.get("hybrid_curvature_bins", 9)),
+        heading_bins=int(params.get("hybrid_heading_bins", 72)),
+        goal_position_tolerance_m=float(
+            params.get("hybrid_goal_position_tolerance_m", 0.15)
+        ),
+        goal_heading_tolerance_rad=math.radians(
+            float(params.get("hybrid_goal_heading_tolerance_deg", 8.0))
+        ),
+        max_expansions=int(params.get("hybrid_max_expansions", 250_000)),
     )
 
 

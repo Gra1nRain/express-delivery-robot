@@ -10,7 +10,11 @@ import unittest
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_planning"))
 
-from competition_planning.semantic_planner import load_yaml_file, plan_route
+from competition_planning.semantic_planner import (
+    load_yaml_file,
+    plan_continuous_route,
+    plan_route,
+)
 
 
 def _max_adjacent_yaw_delta(points) -> float:
@@ -31,6 +35,21 @@ def _segment_heading(previous, current) -> float:
     return math.atan2(current.y - previous.y, current.x - previous.x)
 
 
+def _minimum_path_radius(points) -> float:
+    radii = []
+    for first, second, third in zip(points, points[1:], points[2:]):
+        ab = math.hypot(second.x - first.x, second.y - first.y)
+        bc = math.hypot(third.x - second.x, third.y - second.y)
+        ca = math.hypot(first.x - third.x, first.y - third.y)
+        twice_area = abs(
+            (second.x - first.x) * (third.y - first.y)
+            - (second.y - first.y) * (third.x - first.x)
+        )
+        if twice_area > 1e-9:
+            radii.append(ab * bc * ca / (2.0 * twice_area))
+    return min(radii) if radii else math.inf
+
+
 class SemanticPlannerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.route = load_yaml_file(REPO_ROOT / "config" / "routes" / "debug_route.yaml")
@@ -41,6 +60,7 @@ class SemanticPlannerTest(unittest.TestCase):
             REPO_ROOT / "config" / "planning" / "planning_params.yaml"
         )
         self.params["global_planner"]["plugin"] = "semantic_corridor"
+        self.params["global_planner"]["min_turning_radius_m"] = 0.0
 
     def test_debug_route_generates_paths_for_plannable_steps(self) -> None:
         result = plan_route(self.route, self.semantic_map, self.params)
@@ -63,7 +83,7 @@ class SemanticPlannerTest(unittest.TestCase):
             self.assertGreater(plan.path_length_m, 0.0)
             self.assertLess(plan.planning_time_ms, 500.0)
 
-    def test_debug_route_uses_configured_occupancy_grid_astar(self) -> None:
+    def test_debug_route_uses_configured_hybrid_astar(self) -> None:
         params = load_yaml_file(
             REPO_ROOT / "config" / "planning" / "planning_params.yaml"
         )
@@ -73,7 +93,7 @@ class SemanticPlannerTest(unittest.TestCase):
         self.assertTrue(result.ok, result.failures)
         self.assertEqual(
             {plan.planner_plugin for plan in result.plans},
-            {"occupancy_grid_astar"},
+            {"hybrid_astar"},
         )
         self.assertEqual(len(result.plans), 6)
 
@@ -329,6 +349,135 @@ class SemanticPlannerTest(unittest.TestCase):
         self.assertTrue(result.ok, result.failures)
         self.assertIn("midpoint", [point.ref_id for point in result.plans[0].path])
 
+    def test_hybrid_astar_respects_pose_and_ackermann_radius(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = pathlib.Path(tmp_dir)
+            map_path = tmp_path / "hybrid_map.yaml"
+            pgm_path = tmp_path / "hybrid_map.pgm"
+            pgm_path.write_bytes(b"P5\n100 100\n255\n" + bytes([254] * 10_000))
+            map_path.write_text(
+                textwrap.dedent(
+                    f"""\
+                    image: {pgm_path.name}
+                    mode: trinary
+                    resolution: 0.1
+                    origin: [0.0, 0.0, 0.0]
+                    negate: 0
+                    occupied_thresh: 0.65
+                    free_thresh: 0.196
+                    """
+                ),
+                encoding="utf-8",
+            )
+            route = {
+                "route_name": "hybrid_pose_test",
+                "steps": [
+                    {
+                        "id": "turn_around",
+                        "type": "RUN_SEGMENT",
+                        "corridor_ref": "test_corridor",
+                        "target_ref": "goal",
+                    }
+                ],
+            }
+            semantic_map = {
+                "frame_id": "map",
+                "points": {
+                    "start": {"x": 2.0, "y": 2.0, "yaw": 0.0},
+                    "goal": {"x": 2.0, "y": 5.0, "yaw": math.pi},
+                },
+                "effective_area": {
+                    "vertices": [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]
+                },
+                "lane_centerlines": [
+                    {
+                        "id": "test_centerline",
+                        "width_m": 10.0,
+                        "points": ["start", "goal"],
+                    }
+                ],
+                "route_corridors": [
+                    {
+                        "id": "test_corridor",
+                        "centerline_ref": "test_centerline",
+                        "allowed_steps": ["turn_around"],
+                    }
+                ],
+            }
+            params = {
+                "global_planner": {
+                    "plugin": "hybrid_astar",
+                    "map_file": str(map_path),
+                    "grid_inflation_radius_m": 0.0,
+                    "grid_search_padding_m": 5.0,
+                    "path_sample_spacing_m": 0.10,
+                    "hybrid_step_length_m": 0.20,
+                    "hybrid_heading_bins": 72,
+                    "hybrid_goal_position_tolerance_m": 0.12,
+                    "hybrid_goal_heading_tolerance_deg": 6.0,
+                    "min_turning_radius_m": 0.81,
+                    "planning_timeout_ms": 2_000.0,
+                },
+                "trajectory_smoother": {"enabled": False},
+            }
+
+            result = plan_route(route, semantic_map, params)
+
+        self.assertTrue(result.ok, result.failures)
+        plan = result.plans[0]
+        self.assertEqual(plan.planner_plugin, "hybrid_astar")
+        self.assertEqual(plan.path[0].ref_id, "start")
+        self.assertEqual(plan.path[-1].ref_id, "goal")
+        self.assertLess(_angle_delta(plan.path[-1].yaw, math.pi), math.radians(6.0))
+        self.assertGreaterEqual(_minimum_path_radius(plan.path), 0.80)
+
+    def test_debug_route_has_one_continuous_ackermann_path(self) -> None:
+        params = load_yaml_file(
+            REPO_ROOT / "config" / "planning" / "planning_params.yaml"
+        )
+        params["global_planner"].update(
+            {
+                "plugin": "hybrid_astar",
+                "min_turning_radius_m": 0.81,
+                "path_sample_spacing_m": 0.10,
+                "hybrid_step_length_m": 0.20,
+                "hybrid_heading_bins": 72,
+                "hybrid_goal_position_tolerance_m": 0.15,
+                "hybrid_goal_heading_tolerance_deg": 8.0,
+                "planning_timeout_ms": 10_000.0,
+            }
+        )
+        params["trajectory_smoother"]["enabled"] = False
+
+        result = plan_continuous_route(self.route, self.semantic_map, params)
+
+        self.assertTrue(result.ok, result.failures)
+        self.assertEqual(result.planner_plugin, "hybrid_astar")
+        self.assertEqual(result.path[0].ref_id, "start")
+        self.assertEqual(result.path[-1].ref_id, "finish_park")
+        self.assertEqual(
+            [point.ref_id for point in result.path if point.ref_id],
+            [
+                "start",
+                "traffic_light_stop_line",
+                "random_obstacle_entry",
+                "random_obstacle_exit",
+                "pickup_dock",
+                "cone_lane_change_entry",
+                "cone_lane_change_exit",
+                "drop_dock",
+                "traffic_light_stop_line",
+                "random_obstacle_entry",
+                "random_obstacle_exit",
+                "pickup_dock",
+                "cone_lane_change_entry",
+                "cone_lane_change_exit",
+                "drop_dock",
+                "finish_park",
+            ],
+        )
+        self.assertGreaterEqual(_minimum_path_radius(result.path), 0.80)
+
     def test_cubic_bezier_smoother_preserves_anchors_and_reduces_yaw_jumps(self) -> None:
         route = {
             "route_name": "smooth_test",
@@ -394,6 +543,11 @@ class SemanticPlannerTest(unittest.TestCase):
     def test_cubic_bezier_smoother_uses_anchor_yaw_at_pickup_departure(self) -> None:
         params = load_yaml_file(
             REPO_ROOT / "config" / "planning" / "planning_params.yaml"
+        )
+        params["global_planner"]["plugin"] = "occupancy_grid_astar"
+        params["global_planner"]["min_turning_radius_m"] = 0.0
+        params["trajectory_smoother"].update(
+            {"enabled": True, "plugin": "cubic_bezier"}
         )
 
         result = plan_route(self.route, self.semantic_map, params)
