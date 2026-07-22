@@ -14,6 +14,7 @@
 - 分段验证轨迹必须在规划阶段用 `--end-ref` 重新执行 jerk-limited 参数化；控制器不再支持运行时截断轨迹。
 - launch 默认 `start_base:=false` 且 `command_output_topic:=/cmd_vel_safe`，不具备默认实车运动效果。
 - 今天用于“丝滑控制/整链稳定性”验证的是 `debug_control_validation_route.yaml`，它使用 `pickup_pass/drop_pass` 安全通过点，不使用 `pickup_dock/drop_dock` 精停点。
+- 当前 P0 主问题不是短程能否跑通，也不是 MPPI 能否贴合冻结轨迹；而是实车链路还没有像旧 `ranger_delivery_mission` 那样的在线局部避障/简单代价图能力。现有 `proximity_stop_node` 只能硬停，不能绕开货架或实时重规划局部轨迹。
 
 ## 离线验证
 
@@ -120,4 +121,5 @@
 
 - Day5 已完成 Livox、FAST-LIO、Ranger base、anchor、MPPI 和 safety 的联合无运动检查，并完成 `traffic_light_stop_line` 2.6m 短段实车；尚未执行 `drop_dock` 半程或整线实车，本记录不声称整线实车已通过。
 - 离线模型没有包含执行器延迟、轮胎侧偏、地面摩擦变化和 FAST-LIO 实际噪声。
+- 在线局部避障/简单代价图尚未实现；整线贴合冻结轨迹或 proximity hard-stop 不能证明小车具备绕开货架的能力。
 - 曲率连续非线性优化、CBF/QP、显式差速自旋恢复和连续 footprint 扫掠仍在 `docs/algorithm-debt.md` 登记。
