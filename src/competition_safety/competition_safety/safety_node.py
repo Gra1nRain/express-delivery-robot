@@ -15,6 +15,7 @@ from ranger_msgs.msg import MotionState, SystemState
 from std_msgs.msg import Bool, String
 
 from competition_control.mppi_controller import BodyCommand
+from competition_safety.shutdown_guard import publish_shutdown_zero_if_ready
 from competition_safety.supervisor import SafetyContext, SafetyLimits, SafetySupervisor
 
 
@@ -242,8 +243,10 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        zero = Twist()
-        node._command_publisher.publish(zero)
+        publish_shutdown_zero_if_ready(
+            context_is_valid=rclpy.ok,
+            publish_zero=lambda: node._command_publisher.publish(Twist()),
+        )
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
