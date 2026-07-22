@@ -247,7 +247,10 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                 encoding="utf-8"
             ).splitlines()[0]
             self.assertEqual(header, "x,y,yaw,s,curvature,v,yaw_rate,t,ref_id")
-            self.assertIn("Day 4 Optimized Trajectory Summary", report_path.read_text())
+            self.assertIn(
+                "Day 4 优化轨迹摘要",
+                report_path.read_text(encoding="utf-8"),
+            )
             self.assertIn("<svg", svg_path.read_text())
 
 

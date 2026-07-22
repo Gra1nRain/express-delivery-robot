@@ -116,9 +116,9 @@ def _write_report(
 ) -> None:
     params = optimizer_params.get("trajectory_optimizer", {})
     lines = [
-        "# Day 4 Optimized Trajectory Summary",
+        "# Day 4 优化轨迹摘要",
         "",
-        "## Facts",
+        "## 事实",
         "",
         f"- route_name: {result.route_name}",
         f"- frame_id: {result.frame_id}",
@@ -126,7 +126,7 @@ def _write_report(
         f"- trajectory_count: {len(result.trajectories)}",
         f"- failure_count: {len(result.failures)}",
         "",
-        "## Configured Limits",
+        "## 配置限值",
         "",
         f"- max_speed_mps: {params.get('max_speed_mps')}",
         f"- max_acceleration_mps2: {params.get('max_acceleration_mps2')}",
@@ -134,7 +134,7 @@ def _write_report(
         f"- max_lateral_acceleration_mps2: {params.get('max_lateral_acceleration_mps2')}",
         f"- obstacle_zone_speed_limits_mps: {params.get('obstacle_zone_speed_limits_mps')}",
         "",
-        "## Per-step Summary",
+        "## 分段摘要",
         "",
         "| step_id | points | length_m | duration_s | max_v_mps | max_abs_curvature |",
         "|---|---:|---:|---:|---:|---:|",
@@ -153,9 +153,9 @@ def _write_report(
     lines.extend(
         [
             "",
-            "## Unverified",
+            "## 未验证",
             "",
-            "- This is an offline artifact only; ROS2 publication, tracker behavior, and real-car motion are not validated here.",
+            "- 当前只是离线 artifact；ROS2 发布、tracker 行为和实车运动尚未验证。",
         ]
     )
     report_path.parent.mkdir(parents=True, exist_ok=True)
