@@ -95,6 +95,19 @@ class SafetySupervisorTest(unittest.TestCase):
         )
         self.assertIn("avoidance_stale", missing_avoidance.reasons)
 
+    def test_avoidance_stop_forces_safe_hold(self) -> None:
+        obstacle_stop = self.supervisor.filter_command(
+            _command(),
+            _healthy_context(avoidance_stop=True),
+        )
+
+        self.assertEqual(obstacle_stop.status, "SAFE_HOLD")
+        self.assertEqual(
+            (obstacle_stop.linear_x_mps, obstacle_stop.yaw_rate_radps),
+            (0.0, 0.0),
+        )
+        self.assertIn("avoidance_stop", obstacle_stop.reasons)
+
     def test_limits_acceleration_and_curvature_before_chassis(self) -> None:
         unsafe = _command(speed=0.50, yaw_rate=1.0)
 
