@@ -1,11 +1,12 @@
 trajectory_optimizer:
-  plugin: mpc
-  frequency_hz: 20.0
-  horizon_s: 3.0
-  point_interval_s: 0.10
-  max_speed_mps: 1.80
-  max_acceleration_mps2: 0.50
-  max_curvature: 0.50
+  plugin: offline_speed_time_parameterizer
+  max_speed_mps: 0.50
+  max_acceleration_mps2: 0.30
+  max_deceleration_mps2: 0.50
+  max_lateral_acceleration_mps2: 0.20
+  obstacle_zone_speed_limits_mps:
+    RANDOM_OBSTACLE: 0.30
+    CONE_LANE_CHANGE: 0.30
   invalid_trajectory_action: SAFE_HOLD
 
 avoidance_inputs:

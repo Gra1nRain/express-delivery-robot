@@ -13,6 +13,8 @@
 | `/control/wheel_cmd` | kinematics -> adapter | 四轮调试命令，是否落地待验证 |
 | `/cmd_vel_safe` | safety -> chassis | 最终安全速度出口 |
 
+`/planning/optimized_trajectory` 当前 Day4 离线字段草案为：`x`、`y`、`yaw`、`s`、`curvature`、`v`、`yaw_rate`、`t`、`ref_id`。正式 ROS2 msg 尚未冻结；当前证据先使用 YAML/CSV artifact 验证字段、单位和语义。
+
 ## 任务与作业
 
 | 接口 | 方向 | 说明 |
@@ -39,3 +41,4 @@
 2. 字段、单位、坐标系、有效期和错误处理必须写进本文件。
 3. 接口变更必须同步更新测试矩阵和当天日志。
 4. 避障组未接入前，主控使用空模块或 mock publisher。
+5. 避障算法可由避障组调研，但部署适配、输入输出验收和本车验证由主控侧负责冻结。

@@ -30,12 +30,12 @@
 | `competition_bringup` | 总启动入口和模块启动编排 |
 | `competition_localization` | FAST-LIO/全局坐标锚定等定位适配 |
 | `competition_mapping` | 语义地图、路线图和规划走廊 |
-| `competition_planning` | 目标选择、Hybrid A*/State Lattice、轨迹优化 |
+| `competition_planning` | 目标选择、全局路径规划、离线速度/时间参数化，后续可替换 Hybrid A*/State Lattice |
 | `competition_control` | tracker、运动模式、四轮运动学和底盘适配 |
 | `competition_perception` | 挥旗、红绿灯、停车牌接口 |
 | `competition_mission` | P0 状态机、dock、机械臂桥接和任务日志 |
 | `competition_safety` | 急停、断流、越界、超速和避障停车兜底 |
-| `competition_avoidance_interface` | 避障组接口适配，不实现避障组算法 |
+| `competition_avoidance_interface` | 避障输入输出接口适配；避障组可调研算法，主控侧负责本车部署适配和验证 |
 
 ## 场地配置原则
 

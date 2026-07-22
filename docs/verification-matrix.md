@@ -5,10 +5,10 @@
 | Day 1 | TF、topic、FAST-LIO、2D 地图 | topic/TF 输出、地图、rosbag |
 | Day 2 | 语义地图和 debug profile | RViz 截图、配置文件、定位记录 |
 | Day 3 | 全局路径不越界 | path 可视化、规划耗时、失败日志 |
-| Day 4 | 轨迹包含速度/曲率/时间 | 轨迹可视化、合法性检查 |
+| Day 4 | 轨迹包含速度/曲率/时间 | `docs/evidence/day4/debug_optimized_trajectory.yaml`、CSV、SVG、合法性检查 |
 | Day 5 | 跟踪误差和安全出口 | error 曲线、速度日志、视频 |
 | Day 6 | Dock 和机械臂握手 | 精停误差表、action 日志 |
-| Day 7 | 避障停车和接口断流 | stop_request 日志、安全停车记录 |
+| Day 7 | 本车部署避障输入/算法适配、停车和接口断流 | 避障离线样例、stop_request 日志、安全停车记录 |
 | Day 8 | 第一轮物流闭环 | rosbag、mission_log、异常列表 |
 | Day 9 | 两轮和故障注入 | 两轮 rosbag、故障记录、接管次数 |
 | Day 10 | 稳定性和参数冻结 | 冻结清单、最终测试表、风险清单 |
