@@ -13,4 +13,19 @@ safety:
   require_system_state: true
   require_dual_ackermann_mode: true
   avoidance_stop_topic: /avoidance/stop_request
+  require_avoidance_source: true
+  avoidance_timeout_s: 0.35
   on_fault: SAFE_HOLD
+
+proximity_stop:
+  cloud_topic: /cloud_registered_body
+  stop_request_topic: /avoidance/stop_request
+  status_topic: /avoidance/proximity_status
+  expected_frame_id: body
+  max_cloud_age_s: 0.50
+  x_min_m: 0.25
+  stop_distance_m: 0.55
+  front_half_angle_rad: 0.4363
+  z_min_m: -0.25
+  z_max_m: 0.80
+  min_points: 3

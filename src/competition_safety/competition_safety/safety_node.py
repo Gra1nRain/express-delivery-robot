@@ -27,6 +27,12 @@ class SafetyNode(Node):
         self._system_timeout_s = float(
             self.declare_parameter("system_state_timeout_s", 0.20).value
         )
+        self._require_avoidance_source = bool(
+            self.declare_parameter("require_avoidance_source", True).value
+        )
+        self._avoidance_timeout_s = float(
+            self.declare_parameter("avoidance_timeout_s", 0.30).value
+        )
         self._supervisor = SafetySupervisor(
             SafetyLimits(
                 command_timeout_s=float(
@@ -59,6 +65,8 @@ class SafetyNode(Node):
         self._controller_status = "NO_COMMAND"
         self._state_valid = False
         self._avoidance_stop = False
+        self._avoidance_seen = False
+        self._avoidance_received_s = 0.0
         self._measured_speed_mps = 0.0
         self._system_state: SystemState | None = None
         self._system_received_s = 0.0
@@ -125,6 +133,8 @@ class SafetyNode(Node):
 
     def _avoidance_callback(self, message: Bool) -> None:
         self._avoidance_stop = bool(message.data)
+        self._avoidance_seen = True
+        self._avoidance_received_s = self._now_s()
 
     def _odom_callback(self, message: Odometry) -> None:
         self._measured_speed_mps = float(message.twist.twist.linear.x)
@@ -158,6 +168,13 @@ class SafetyNode(Node):
             self._motion_mode is not None
             and now_s - self._motion_received_s <= self._system_timeout_s
         )
+        avoidance_ready = bool(
+            not self._require_avoidance_source
+            or (
+                self._avoidance_seen
+                and now_s - self._avoidance_received_s <= self._avoidance_timeout_s
+            )
+        )
         system_state = self._system_state
         estop_ready = bool(
             system_fresh
@@ -190,6 +207,7 @@ class SafetyNode(Node):
                 estop_ready=estop_ready,
                 remote_ready=can_control_ready,
                 state_valid=self._state_valid,
+                avoidance_ready=avoidance_ready,
                 avoidance_stop=self._avoidance_stop,
                 chassis_fault=chassis_fault,
                 system_ready=system_fresh and motion_fresh,

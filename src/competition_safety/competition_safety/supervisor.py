@@ -30,6 +30,7 @@ class SafetyContext:
     estop_ready: bool
     remote_ready: bool
     state_valid: bool
+    avoidance_ready: bool
     avoidance_stop: bool
     chassis_fault: bool
     system_ready: bool = True
@@ -151,6 +152,8 @@ class SafetySupervisor:
             reasons.append("remote_not_ready")
         if not context.state_valid:
             reasons.append("invalid_state")
+        if not context.avoidance_ready:
+            reasons.append("avoidance_stale")
         if context.avoidance_stop:
             reasons.append("avoidance_stop")
         if context.chassis_fault:

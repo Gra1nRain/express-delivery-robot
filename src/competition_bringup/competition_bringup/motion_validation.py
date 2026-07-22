@@ -122,6 +122,7 @@ def simulate_motion_chain(
                 estop_ready=True,
                 remote_ready=True,
                 state_valid=estimate.valid,
+                avoidance_ready=True,
                 avoidance_stop=False,
                 chassis_fault=False,
                 system_ready=True,

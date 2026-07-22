@@ -8,6 +8,7 @@
 - MPPI 使用 `yaw_rate=v*curvature` 的四轮四转曲率模型；输出半径小于 `0.81m` 会被 controller 和 safety 两层限制。
 - 状态连续性守卫会拒绝 TF/pose 超时、时间倒退、位置跳变和航向跳变；无效观测不会替换上一有效状态。
 - safety 节点从真实 `/system_state` 判断急停、错误码和 CAN 控制权，从 `/motion_state` 检测是否意外进入自旋/斜移模式。
+- 2026-07-22 碰撞复盘后，Day5 safety 默认要求 `/avoidance/stop_request` 有新鲜输入；`proximity_stop_node` 从 `/cloud_registered_body` 做前方 `0.55m`、半角 `0.4363rad`、至少 3 个点的基础停车门控。没有新鲜点云/避障输入时，safety 必须 `SAFE_HOLD/avoidance_stale`。
 - Hybrid A* 使用 9 个曲率档位并以零曲率穿越语义锚点；轨迹生成阶段硬拒绝超过 `0.80 1/m/s` 的曲率变化率。
 - 冻结轨迹保存路线、语义图、规划/优化配置、栅格 YAML 和图像的 SHA-256；控制节点启动前逐项校验，防止旧轨迹配新地图或新参数。
 - 分段验证轨迹必须在规划阶段用 `--end-ref` 重新执行 jerk-limited 参数化；控制器不再支持运行时截断轨迹。
@@ -46,6 +47,12 @@
 - 本次短段实车录包保存在小车 `/home/agilex/competition_ws/recordings/day5_short_traffic_804336e_20260722_191755`，大小 `9.6MiB`；证据摘要见 `docs/evidence/day5/day5_short_traffic_field_trial_20260722.md`。
 - rosbag metadata 中 `/initialpose` 计数为 0；该发布事件由小车 `log/day5_short_motion_monitor_804336e.txt` 记录。
 - 停止 launch 和 rosbag 后，小车端无 Day5、Livox、FAST-LIO、Ranger、MPPI、safety 或 rosbag 残留进程，ROS 主题回到 `/parameter_events` 和 `/rosout`。
+
+## 半程实车事故复盘（2026-07-22）
+
+- `a7b40b6` 修复 FAST-LIO 位姿延迟后，drop_dock 半程进入 `TRACKING` 并稳定贴合离线轨迹；碰撞前最大 `/cmd_vel.linear.x` 约 `0.199m/s`，最大 `/odom.linear.x` 约 `0.201m/s`，最大横向误差约 `0.044m`。
+- 事故根因不是 Nav2 在线膨胀层未触发，而是 Day5 实车链路没有启动在线 costmap/inflation/local obstacle layer；实时 Livox 当时只用于 FAST-LIO 定位，没有接入近场停车或局部绕障。
+- 事故证据与修复记录见 `docs/evidence/day5/day5_drop_dock_collision_analysis_20260722.md`。
 
 ## 无运动/实车分级步骤
 

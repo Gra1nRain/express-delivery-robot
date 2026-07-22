@@ -39,7 +39,7 @@
       map_en: false
       scan_publish_en: false
       dense_publish_en: false
-      scan_bodyframe_pub_en: false
+      scan_bodyframe_pub_en: true
 
     pcd_save:
       pcd_save_en: false

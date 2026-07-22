@@ -19,6 +19,7 @@ setup(
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
+            "proximity_stop_node = competition_safety.proximity_stop_node:main",
             "safety_node = competition_safety.safety_node:main",
         ],
     },

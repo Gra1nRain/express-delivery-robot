@@ -7,6 +7,7 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -29,6 +30,7 @@ def _launch_setup(context, *args, **kwargs):
     motion = control_config["motion"]
     estimator = control_config["state_estimator"]
     safety = safety_config["safety"]
+    proximity_stop = safety_config["proximity_stop"]
     bringup_pkg = get_package_share_directory("competition_bringup")
     mapping_launch = os.path.join(bringup_pkg, "launch", "day1_mapping.launch.py")
 
@@ -104,6 +106,28 @@ def _launch_setup(context, *args, **kwargs):
         ),
         Node(
             package="competition_safety",
+            executable="proximity_stop_node",
+            name="proximity_stop",
+            output="screen",
+            condition=IfCondition(LaunchConfiguration("start_proximity_stop")),
+            parameters=[
+                {
+                    "cloud_topic": proximity_stop["cloud_topic"],
+                    "stop_request_topic": proximity_stop["stop_request_topic"],
+                    "status_topic": proximity_stop["status_topic"],
+                    "expected_frame_id": proximity_stop["expected_frame_id"],
+                    "max_cloud_age_s": proximity_stop["max_cloud_age_s"],
+                    "x_min_m": proximity_stop["x_min_m"],
+                    "stop_distance_m": proximity_stop["stop_distance_m"],
+                    "front_half_angle_rad": proximity_stop["front_half_angle_rad"],
+                    "z_min_m": proximity_stop["z_min_m"],
+                    "z_max_m": proximity_stop["z_max_m"],
+                    "min_points": proximity_stop["min_points"],
+                }
+            ],
+        ),
+        Node(
+            package="competition_safety",
             executable="safety_node",
             name="competition_safety",
             output="screen",
@@ -121,6 +145,8 @@ def _launch_setup(context, *args, **kwargs):
                     "max_lateral_error_m": safety["max_lateral_error_m"],
                     "max_heading_error_deg": safety["max_heading_error_deg"],
                     "avoidance_stop_topic": safety["avoidance_stop_topic"],
+                    "require_avoidance_source": safety["require_avoidance_source"],
+                    "avoidance_timeout_s": safety["avoidance_timeout_s"],
                 }
             ],
         ),
@@ -202,6 +228,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("start_livox", default_value="true"),
             DeclareLaunchArgument("start_fast_lio", default_value="true"),
+            DeclareLaunchArgument("start_proximity_stop", default_value="true"),
             DeclareLaunchArgument(
                 "start_base",
                 default_value="false",

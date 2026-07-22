@@ -34,6 +34,7 @@ def _healthy_context(**overrides) -> SafetyContext:
         "estop_ready": True,
         "remote_ready": True,
         "state_valid": True,
+        "avoidance_ready": True,
         "avoidance_stop": False,
         "chassis_fault": False,
     }
@@ -80,6 +81,19 @@ class SafetySupervisorTest(unittest.TestCase):
         self.assertIn("invalid_state", invalid.reasons)
         self.assertIn("stale_command", stale.reasons)
         self.assertIn("stale_state", stale.reasons)
+
+    def test_missing_avoidance_source_forces_safe_hold(self) -> None:
+        missing_avoidance = self.supervisor.filter_command(
+            _command(),
+            _healthy_context(avoidance_ready=False),
+        )
+
+        self.assertEqual(missing_avoidance.status, "SAFE_HOLD")
+        self.assertEqual(
+            (missing_avoidance.linear_x_mps, missing_avoidance.yaw_rate_radps),
+            (0.0, 0.0),
+        )
+        self.assertIn("avoidance_stale", missing_avoidance.reasons)
 
     def test_limits_acceleration_and_curvature_before_chassis(self) -> None:
         unsafe = _command(speed=0.50, yaw_rate=1.0)
