@@ -3,8 +3,10 @@
 
 This is a supervised field-test helper.  It reads the offline global-plan YAML,
 concatenates the planned route steps, tracks the path from map->base_link TF,
-and publishes low-speed /cmd_vel commands.  It is intentionally separate from
-the unfinished competition_control package so the test path is explicit.
+and publishes low-speed Twist commands.  It defaults to a non-driving debug
+topic; direct /cmd_vel output requires an explicit supervised-test flag.  It is
+intentionally separate from the unfinished competition_control package so the
+test path is explicit.
 """
 
 from __future__ import annotations
@@ -39,7 +41,12 @@ def main() -> int:
     parser.add_argument("--plan", required=True, help="debug_global_plan*.yaml file")
     parser.add_argument("--step", action="append", help="Step id to follow; default is full route")
     parser.add_argument("--check-only", action="store_true", help="Parse the path and exit")
-    parser.add_argument("--cmd-topic", default="/cmd_vel")
+    parser.add_argument("--cmd-topic", default="/cmd_vel_day3_field_test")
+    parser.add_argument(
+        "--allow-direct-cmd-vel",
+        action="store_true",
+        help="Permit direct /cmd_vel output for supervised field tests.",
+    )
     parser.add_argument("--map-frame", default="map")
     parser.add_argument("--base-frame", default="base_link")
     parser.add_argument("--body-frame", dest="base_frame", help=argparse.SUPPRESS)
@@ -66,6 +73,11 @@ def main() -> int:
     print(f"first=({path[0][0]:.3f},{path[0][1]:.3f}) last=({path[-1][0]:.3f},{path[-1][1]:.3f})")
     if args.check_only:
         return 0
+    if args.cmd_topic == "/cmd_vel" and not args.allow_direct_cmd_vel:
+        raise SystemExit(
+            "refusing to publish directly to /cmd_vel without "
+            "--allow-direct-cmd-vel"
+        )
 
     return run_tracker(args, path)
 

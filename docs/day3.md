@@ -10,6 +10,8 @@
 - `debug_route.yaml` 当前是实验室适配路线：第一次卸货后，`return_to_pickup_area` 通过 `lab_return_to_pickup` 从 `drop_dock` 到 `traffic_light_stop_line`，再沿随机障碍物/取货方向到 `pickup_dock`。`debug_competition_return_route.yaml` 保留 debug 语义地图上的正式返程车道变体。
 - 2026-07-22 早期小车端运行过 RViz 诊断可视化栈；该栈只发布路径、地图和静态可视化 TF，不启动控制器、底盘驱动或机械臂动作。
 - 2026-07-22 后续为额外实车低速验证，Day3 执行链路已按之前跑通过的 `agilex_ws` 导航坐标约定修复为 `map -> odom -> base_link`；`ranger_base_node` 发布 `odom -> base_link`，`robot_state_publisher` 发布 `base_link -> livox_frame/camera_link`，AMCL 与 `amcl_tf_keepalive` 提供 `map -> odom`。
+- 当前 `day3_navigation.launch.py` 的 `start_base` 默认值为 `false`；只有现场确认 CAN、急停/安全出口、停车行为后，才允许显式设置 `start_base:=true` 启动底盘驱动。
+- 当前 `day3_follow_global_plan.py` 是 Day3 低速实车风险前置调试脚本，默认发布到非驱动 topic `/cmd_vel_day3_field_test`；若要直接发布 `/cmd_vel`，必须显式增加 `--allow-direct-cmd-vel`。
 - Day3 原计划验收范围仍限定为全局路径规划；低速实车跟踪属于 Day4/Day5 风险前置验证，不能把“能跑全程”混作 Day3 已完成项。
 
 ## 验证
@@ -87,13 +89,13 @@
 - `grid_inflation_radius_m` 不宜直接按保守外廓放得过大；debug 取货/卸货点靠近货架或边界，过大的全局膨胀层会把 dock 目标判为不可达。精准取货/卸货应交给后续 DOCK/精停链路处理。
 - Hybrid A*/State Lattice 后续可替换 `occupancy_grid_astar` 搜索 backend，不改 route/topic 接口。
 - 如需继续让轨迹更像实车可执行轨迹，下一层应补速度/时间参数化和跟踪器输入接口，而不是继续只看 `nav_msgs/Path` 的几何线。
-- 真正低速试跑前应先启动底盘驱动/安全出口，并由现场确认急停与场地安全。
+- 真正低速试跑前应先现场确认急停、场地安全、CAN 口和停车行为；启动底盘需显式使用 `day3_navigation.launch.py start_base:=true`，直接测试 `/cmd_vel` 通路需显式给 `day3_follow_global_plan.py` 增加 `--cmd-topic /cmd_vel --allow-direct-cmd-vel`。
 
 ## 未验证
 
 - 当前 footprint/clearance 已接入规划参数，debug 默认值为 `footprint_radius_m=0.45`、`clearance_m=0.20`；实车外廓仍需复核后冻结。
 - 当前 `min_turning_radius_m=0.15` 是实验室 debug 路线合法性保护阈值，尚未绑定 RANGER 实车最小转弯能力；后续底盘能力确认后必须更新并重新验收曲率。
-- 当前 cubic Bezier 输出仍是几何 `Path`，不是带速度、加速度、时间戳的最终控制轨迹；实车自动行驶前还需要确认 tracker/safety/driver 链路。
+- 当前 cubic Bezier 输出仍是几何 `Path`，不是带速度、加速度、时间戳的最终控制轨迹；`day3_follow_global_plan.py` 只是调试跟踪器，实车自动行驶前还需要确认正式 tracker/safety/driver 链路。
 - 语义点与 occupancy map 的最终几何一致性已完成一次 RViz/雷达匹配后的车体中心重标定和路径叠图复核，但仍需在正式场地重新标定后复验。
 - 当前 `map -> camera_init` 锚定是运行态进程；若重启车端、停止 `fastlio_anchor_node` 或重新启动 FAST-LIO 后，需要在起点或另一个可靠锚点重新发布 `/initialpose`。
 - 当前 Day3 低速试跑没有通过全程自动行驶闭环；主要风险是 AMCL/TF 航向跳变和简单路径跟踪器稳定性不足。该项应转入 Day4/Day5 的局部轨迹生成、跟踪器和安全出口验收。

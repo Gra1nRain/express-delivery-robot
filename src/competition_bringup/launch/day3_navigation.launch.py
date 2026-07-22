@@ -4,6 +4,8 @@
 This launch reuses the frame convention from ``agilex_ws``:
 ``map -> odom -> base_link`` for localization and control.  FAST-LIO's
 ``camera_init -> body`` chain is intentionally not part of this execution path.
+The base driver defaults off; enable it only for supervised field tests after
+CAN, safety, and stop behavior have been confirmed.
 """
 
 import os
@@ -76,7 +78,14 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument("start_description", default_value="true"),
-            DeclareLaunchArgument("start_base", default_value="true"),
+            DeclareLaunchArgument(
+                "start_base",
+                default_value="false",
+                description=(
+                    "Start Ranger base driver; set true only after CAN/safety "
+                    "confirmation for supervised field tests."
+                ),
+            ),
             DeclareLaunchArgument("start_livox", default_value="true"),
             DeclareLaunchArgument("start_scan", default_value="true"),
             DeclareLaunchArgument("start_planning", default_value="true"),
