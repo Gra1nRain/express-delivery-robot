@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Any
 
 import rclpy
-from geometry_msgs.msg import TwistStamped, Vector3Stamped
-from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseStamped, TwistStamped, Vector3Stamped
+from nav_msgs.msg import Odometry, Path as NavPath
 from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformException, TransformListener
 import yaml
@@ -21,9 +22,12 @@ from competition_planning.artifact_provenance import (
     resolve_trajectory_source_paths,
     validate_source_manifest,
 )
+from competition_planning.semantic_planner import PathPoint
+from competition_planning.trajectory_parameterizer import parameterize_local_path
 from competition_control.mppi_controller import (
     BodyCommand,
     ControlTrajectory,
+    ControlTrajectoryPoint,
     MPPIController,
     MPPIParams,
     VehicleState,
@@ -67,6 +71,18 @@ class MPPIControlNode(Node):
 
         self._map_frame = str(self.declare_parameter("map_frame", "map").value)
         self._base_frame = str(self.declare_parameter("base_frame", "body").value)
+        self._semantic_map = _load_yaml(source_paths["semantic_map"])
+        self._local_optimizer_config = _load_yaml(source_paths["optimizer_params"])
+        self._replanning_enabled = bool(
+            self.declare_parameter("replanning_enabled", False).value
+        )
+        self._local_trajectory_timeout_s = float(
+            self.declare_parameter("local_trajectory_timeout_s", 1.0).value
+        )
+        if self._local_trajectory_timeout_s <= 0.0:
+            raise ValueError("local_trajectory_timeout_s must be positive")
+        self._latest_local_plan_stamp_s: float | None = None
+        self._local_plan_error: str | None = None
         self._control_period_s = 1.0 / float(
             self.declare_parameter("frequency_hz", 20.0).value
         )
@@ -129,6 +145,17 @@ class MPPIControlNode(Node):
             params,
             random_seed=int(self.declare_parameter("random_seed", 7).value),
         )
+        local_optimizer = self._local_optimizer_config.setdefault(
+            "trajectory_optimizer",
+            {},
+        )
+        local_optimizer.update(
+            {
+                "max_speed_mps": params.max_speed_mps,
+                "max_acceleration_mps2": params.max_acceleration_mps2,
+                "max_deceleration_mps2": params.max_deceleration_mps2,
+            }
+        )
         self._state_estimator = StateEstimator(
             StateEstimatorLimits(
                 pose_timeout_s=float(self.declare_parameter("pose_timeout_s", 0.20).value),
@@ -183,6 +210,57 @@ class MPPIControlNode(Node):
             str(self.declare_parameter("status_topic", "/control/status").value),
             10,
         )
+        path_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self._reference_path_publisher = self.create_publisher(
+            NavPath,
+            str(
+                self.declare_parameter(
+                    "reference_path_topic",
+                    "/planning/optimized_trajectory",
+                ).value
+            ),
+            path_qos,
+        )
+        self._executed_path_publisher = self.create_publisher(
+            NavPath,
+            str(
+                self.declare_parameter(
+                    "executed_path_topic",
+                    "/control/executed_path",
+                ).value
+            ),
+            1,
+        )
+        self._executed_path_min_separation_m = float(
+            self.declare_parameter("executed_path_min_separation_m", 0.05).value
+        )
+        self._executed_path_max_points = int(
+            self.declare_parameter("executed_path_max_points", 2000).value
+        )
+        if self._executed_path_min_separation_m <= 0.0:
+            raise ValueError("executed_path_min_separation_m must be positive")
+        if self._executed_path_max_points < 2:
+            raise ValueError("executed_path_max_points must be at least 2")
+        self._executed_poses: list[PoseStamped] = []
+        self._reference_path_publisher.publish(
+            _control_trajectory_path(trajectory, self.get_clock().now().to_msg())
+        )
+        if self._replanning_enabled:
+            self.create_subscription(
+                NavPath,
+                str(
+                    self.declare_parameter(
+                        "local_trajectory_topic",
+                        "/planning/local_trajectory",
+                    ).value
+                ),
+                self._local_trajectory_callback,
+                1,
+            )
         self._timer = self.create_timer(self._control_period_s, self._control_cycle)
         self.get_logger().info(
             f"MPPI ready: trajectory={trajectory_file}, "
@@ -195,6 +273,55 @@ class MPPIControlNode(Node):
             yaw_rate_radps=float(message.twist.twist.angular.z),
         )
         self._latest_velocity_stamp_s = _stamp_to_seconds(message.header.stamp)
+
+    def _local_trajectory_callback(self, message: NavPath) -> None:
+        if message.header.frame_id != self._map_frame:
+            self._local_plan_error = (
+                f"frame_mismatch:{message.header.frame_id}->{self._map_frame}"
+            )
+            return
+        try:
+            geometry = tuple(
+                PathPoint(
+                    x=float(pose.pose.position.x),
+                    y=float(pose.pose.position.y),
+                    yaw=yaw_from_quaternion(
+                        float(pose.pose.orientation.x),
+                        float(pose.pose.orientation.y),
+                        float(pose.pose.orientation.z),
+                        float(pose.pose.orientation.w),
+                    ),
+                )
+                for pose in message.poses
+            )
+            parameterized = parameterize_local_path(
+                geometry,
+                self._semantic_map,
+                self._local_optimizer_config,
+            )
+            trajectory = ControlTrajectory(
+                frame_id=self._map_frame,
+                route_name="online_local_replan",
+                points=tuple(
+                    ControlTrajectoryPoint(
+                        x=point.x,
+                        y=point.y,
+                        yaw=point.yaw,
+                        s=point.s,
+                        curvature=point.curvature,
+                        v=point.v,
+                        t=point.t,
+                        ref_id=point.ref_id,
+                    )
+                    for point in parameterized.points
+                ),
+            )
+            self._controller.replace_trajectory(trajectory)
+        except (KeyError, TypeError, ValueError) as exc:
+            self._local_plan_error = str(exc)
+            return
+        self._latest_local_plan_stamp_s = _stamp_to_seconds(message.header.stamp)
+        self._local_plan_error = None
 
     def _control_cycle(self) -> None:
         now = self.get_clock().now()
@@ -246,14 +373,26 @@ class MPPIControlNode(Node):
             valid = estimate.valid
             state_reasons = estimate.reasons
             if estimate.valid:
-                command = self._controller.compute_command(
-                    VehicleState(
-                        x=estimate.pose.x,
-                        y=estimate.pose.y,
-                        yaw=estimate.pose.yaw,
-                        linear_speed_mps=estimate.velocity.linear_x_mps,
-                    )
+                vehicle_state = VehicleState(
+                    x=estimate.pose.x,
+                    y=estimate.pose.y,
+                    yaw=estimate.pose.yaw,
+                    linear_speed_mps=estimate.velocity.linear_x_mps,
                 )
+                self._publish_executed_pose(vehicle_state, now.to_msg())
+                local_plan_age_s = self._local_plan_age_s(now_s)
+                if self._replanning_enabled and (
+                    local_plan_age_s is None
+                    or local_plan_age_s > self._local_trajectory_timeout_s
+                ):
+                    command = BodyCommand.hold(
+                        target_index=0,
+                        lateral_error_m=0.0,
+                        heading_error_rad=0.0,
+                        status="LOCAL_PLAN_STALE",
+                    )
+                else:
+                    command = self._controller.compute_command(vehicle_state)
             else:
                 command = BodyCommand.hold(
                     target_index=0,
@@ -293,15 +432,68 @@ class MPPIControlNode(Node):
                         "state_reasons": list(state_reasons),
                         "pose_delay_s": pose_delay_s,
                         "pose_prediction_s": pose_prediction_s,
+                        "local_plan_age_s": self._local_plan_age_s(now_s),
+                        "local_plan_error": self._local_plan_error,
                     },
                     separators=(",", ":"),
                 )
             )
         )
 
+    def _local_plan_age_s(self, now_s: float) -> float | None:
+        if self._latest_local_plan_stamp_s is None:
+            return None
+        return now_s - self._latest_local_plan_stamp_s
+
+    def _publish_executed_pose(self, state: VehicleState, stamp) -> None:
+        if self._executed_poses:
+            last = self._executed_poses[-1].pose.position
+            if (
+                math.hypot(state.x - float(last.x), state.y - float(last.y))
+                < self._executed_path_min_separation_m
+            ):
+                return
+        pose = PoseStamped()
+        pose.header.stamp = stamp
+        pose.header.frame_id = self._map_frame
+        pose.pose.position.x = state.x
+        pose.pose.position.y = state.y
+        pose.pose.orientation.z = math.sin(state.yaw * 0.5)
+        pose.pose.orientation.w = math.cos(state.yaw * 0.5)
+        self._executed_poses.append(pose)
+        if len(self._executed_poses) > self._executed_path_max_points:
+            del self._executed_poses[: -self._executed_path_max_points]
+        message = NavPath()
+        message.header = pose.header
+        message.poses = list(self._executed_poses)
+        self._executed_path_publisher.publish(message)
+
 
 def _stamp_to_seconds(stamp: Any) -> float:
     return float(stamp.sec) + float(stamp.nanosec) / 1e9
+
+
+def _load_yaml(path: str | Path) -> dict[str, Any]:
+    with Path(path).open("r", encoding="utf-8") as stream:
+        data = yaml.safe_load(stream)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} did not contain a YAML mapping")
+    return data
+
+
+def _control_trajectory_path(trajectory: ControlTrajectory, stamp) -> NavPath:
+    message = NavPath()
+    message.header.stamp = stamp
+    message.header.frame_id = trajectory.frame_id
+    for point in trajectory.points:
+        pose = PoseStamped()
+        pose.header = message.header
+        pose.pose.position.x = point.x
+        pose.pose.position.y = point.y
+        pose.pose.orientation.z = math.sin(point.yaw * 0.5)
+        pose.pose.orientation.w = math.cos(point.yaw * 0.5)
+        message.poses.append(pose)
+    return message
 
 
 def main() -> None:

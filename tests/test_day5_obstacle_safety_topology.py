@@ -64,6 +64,25 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
             1,
             "Proximity safety must process the newest cloud instead of queued old clouds.",
         )
+        self.assertEqual(
+            proximity_config["costmap_topic"],
+            "/avoidance/local_costmap",
+        )
+        self.assertEqual(proximity_config["scan_topic"], "/avoidance/scan")
+        self.assertEqual(proximity_config["marker_topic"], "/avoidance/markers")
+        self.assertGreater(proximity_config["visualization_rate_hz"], 0.0)
+        self.assertGreaterEqual(
+            proximity_config["grid_x_max_m"],
+            proximity_config["stop_distance_m"],
+        )
+        self.assertLessEqual(
+            proximity_config["grid_y_min_m"],
+            -proximity_config["lateral_half_width_m"],
+        )
+        self.assertGreaterEqual(
+            proximity_config["grid_y_max_m"],
+            proximity_config["lateral_half_width_m"],
+        )
 
 
 if __name__ == "__main__":

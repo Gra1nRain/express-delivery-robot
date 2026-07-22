@@ -44,6 +44,8 @@ class HybridAStarPlanner:
         goal_position_tolerance_m: float,
         goal_heading_tolerance_rad: float,
         max_expansions: int = 250_000,
+        reference_path: Sequence[PathPoint] = (),
+        reference_deviation_weight: float = 0.0,
     ) -> None:
         if min_turning_radius_m <= 0.0:
             raise GridPlanningError("hybrid_astar requires a positive min_turning_radius_m")
@@ -64,6 +66,11 @@ class HybridAStarPlanner:
             goal_heading_tolerance_rad,
         )
         self._max_expansions = max(1, max_expansions)
+        if reference_deviation_weight < 0.0:
+            raise GridPlanningError("reference_deviation_weight must be non-negative")
+        self._reference_xy = tuple((point.x, point.y) for point in reference_path)
+        self._reference_deviation_weight = reference_deviation_weight
+        self._reference_distance_sq_cache: dict[tuple[int, int], float] = {}
         max_curvature = 1.0 / min_turning_radius_m
         if curvature_bins < 3 or curvature_bins % 2 == 0:
             raise GridPlanningError(
@@ -168,6 +175,7 @@ class HybridAStarPlanner:
                 )
                 tentative = g_score[current_key] + self._step_length_m * (
                     1.0 + 0.08 * curvature_fraction + 0.12 * steering_change
+                    + self._reference_deviation_cost(successor)
                 )
                 if tentative >= g_score.get(successor_key, math.inf):
                     continue
@@ -183,6 +191,20 @@ class HybridAStarPlanner:
             f"({start.x:.3f}, {start.y:.3f}, {start.yaw:.3f}) to "
             f"({goal.x:.3f}, {goal.y:.3f}, {goal.yaw:.3f})"
         )
+
+    def _reference_deviation_cost(self, node: _Node) -> float:
+        if not self._reference_xy or self._reference_deviation_weight <= 0.0:
+            return 0.0
+        cell = self._map.world_to_cell(node.x, node.y)
+        distance_squared = self._reference_distance_sq_cache.get(cell)
+        if distance_squared is None:
+            cell_x, cell_y = self._map.cell_to_world(cell)
+            distance_squared = min(
+                (cell_x - x) ** 2 + (cell_y - y) ** 2
+                for x, y in self._reference_xy
+            )
+            self._reference_distance_sq_cache[cell] = distance_squared
+        return self._reference_deviation_weight * distance_squared
 
     def _successor_curvatures(self, previous_index: int) -> range:
         return range(

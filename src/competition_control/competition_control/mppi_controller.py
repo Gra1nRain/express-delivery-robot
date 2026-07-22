@@ -160,6 +160,37 @@ class MPPIController:
         self._progress_index = 0
         self._last_curvature = 0.0
 
+    def replace_trajectory(self, trajectory: ControlTrajectory) -> None:
+        """Switch to a newly parameterized local trajectory atomically."""
+
+        if len(trajectory.points) < 2:
+            raise ValueError("MPPI requires at least two trajectory points")
+        xy = np.array([(point.x, point.y) for point in trajectory.points], dtype=float)
+        yaw = np.array([point.yaw for point in trajectory.points], dtype=float)
+        distance = np.array([point.s for point in trajectory.points], dtype=float)
+        timestamps = np.array([point.t for point in trajectory.points], dtype=float)
+        speed = np.array([point.v for point in trajectory.points], dtype=float)
+        curvature = np.array(
+            [point.curvature for point in trajectory.points],
+            dtype=float,
+        )
+        if np.any(
+            np.abs(curvature) > 1.0 / self._params.min_turning_radius_m + 1e-6
+        ):
+            raise ValueError("trajectory exceeds the runtime turning-radius envelope")
+        if np.any(np.diff(distance) <= 0.0) or np.any(np.diff(timestamps) <= 0.0):
+            raise ValueError("trajectory distance and time must be strictly increasing")
+
+        self._trajectory = trajectory
+        self._xy = xy
+        self._yaw = yaw
+        self._s = distance
+        self._time = timestamps
+        self._speed = speed
+        self._curvature = curvature
+        self._nominal.fill(0.0)
+        self._progress_index = 0
+
     def compute_command(self, state: VehicleState) -> BodyCommand:
         nearest = self._nearest_index(state)
         reference_indices = self._reference_indices(nearest)

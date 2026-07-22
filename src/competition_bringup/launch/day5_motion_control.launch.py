@@ -24,11 +24,17 @@ def _load_yaml(path: str) -> dict:
 
 def _launch_setup(context, *args, **kwargs):
     control_config = _load_yaml(LaunchConfiguration("control_params_file").perform(context))
+    planning_config = _load_yaml(
+        LaunchConfiguration("planning_params_file").perform(context)
+    )
     safety_config = _load_yaml(LaunchConfiguration("safety_params_file").perform(context))
     tracker = control_config["trajectory_tracker"]
     mppi = tracker["mppi"]
     motion = control_config["motion"]
     estimator = control_config["state_estimator"]
+    visualization = control_config["visualization"]
+    global_planner = planning_config["global_planner"]
+    replanning = planning_config["replanning"]
     safety = safety_config["safety"]
     proximity_stop = safety_config["proximity_stop"]
     bringup_pkg = get_package_share_directory("competition_bringup")
@@ -101,6 +107,68 @@ def _launch_setup(context, *args, **kwargs):
                     "max_pose_prediction_s": estimator["max_pose_prediction_s"],
                     "max_position_jump_m": estimator["max_position_jump_m"],
                     "max_heading_jump_deg": estimator["max_heading_jump_deg"],
+                    "reference_path_topic": visualization[
+                        "reference_path_topic"
+                    ],
+                    "executed_path_topic": visualization["executed_path_topic"],
+                    "executed_path_min_separation_m": visualization[
+                        "executed_path_min_separation_m"
+                    ],
+                    "executed_path_max_points": visualization[
+                        "executed_path_max_points"
+                    ],
+                    "replanning_enabled": replanning["enabled"],
+                    "local_trajectory_topic": visualization[
+                        "local_trajectory_topic"
+                    ],
+                    "local_trajectory_timeout_s": replanning[
+                        "local_trajectory_timeout_s"
+                    ],
+                }
+            ],
+        ),
+        Node(
+            package="competition_planning",
+            executable="local_replanner_node",
+            name="local_replanner",
+            output="screen",
+            condition=IfCondition(LaunchConfiguration("start_local_replanner")),
+            parameters=[
+                {
+                    "trajectory_file": LaunchConfiguration("trajectory_file"),
+                    "map_file": LaunchConfiguration("map_file"),
+                    "map_frame": estimator["map_frame"],
+                    "base_frame": estimator["base_frame"],
+                    "frequency_hz": replanning["frequency_hz"],
+                    "lookahead_distance_m": replanning["lookahead_distance_m"],
+                    "inflation_radius_m": replanning["inflation_radius_m"],
+                    "search_padding_m": replanning["search_padding_m"],
+                    "sample_spacing_m": global_planner["path_sample_spacing_m"],
+                    "min_turning_radius_m": global_planner[
+                        "min_turning_radius_m"
+                    ],
+                    "step_length_m": global_planner["hybrid_step_length_m"],
+                    "curvature_bins": global_planner["hybrid_curvature_bins"],
+                    "heading_bins": global_planner["hybrid_heading_bins"],
+                    "goal_position_tolerance_m": replanning[
+                        "goal_position_tolerance_m"
+                    ],
+                    "goal_heading_tolerance_deg": replanning[
+                        "goal_heading_tolerance_deg"
+                    ],
+                    "reference_deviation_weight": replanning[
+                        "reference_deviation_weight"
+                    ],
+                    "max_expansions": replanning["max_expansions"],
+                    "reference_search_window_points": replanning[
+                        "reference_search_window_points"
+                    ],
+                    "costmap_topic": replanning["costmap_topic"],
+                    "local_trajectory_topic": replanning[
+                        "local_trajectory_topic"
+                    ],
+                    "status_topic": replanning["status_topic"],
+                    "max_costmap_age_s": replanning["max_costmap_age_s"],
                 }
             ],
         ),
@@ -119,6 +187,12 @@ def _launch_setup(context, *args, **kwargs):
                     "cloud_qos_depth": proximity_stop["cloud_qos_depth"],
                     "stop_request_topic": proximity_stop["stop_request_topic"],
                     "status_topic": proximity_stop["status_topic"],
+                    "costmap_topic": proximity_stop["costmap_topic"],
+                    "scan_topic": proximity_stop["scan_topic"],
+                    "marker_topic": proximity_stop["marker_topic"],
+                    "visualization_rate_hz": proximity_stop[
+                        "visualization_rate_hz"
+                    ],
                     "expected_frame_id": proximity_stop["expected_frame_id"],
                     "max_cloud_age_s": proximity_stop["max_cloud_age_s"],
                     "x_min_m": proximity_stop["x_min_m"],
@@ -130,8 +204,50 @@ def _launch_setup(context, *args, **kwargs):
                     "z_min_m": proximity_stop["z_min_m"],
                     "z_max_m": proximity_stop["z_max_m"],
                     "min_points": proximity_stop["min_points"],
+                    "grid_resolution_m": proximity_stop["grid_resolution_m"],
+                    "grid_x_min_m": proximity_stop["grid_x_min_m"],
+                    "grid_x_max_m": proximity_stop["grid_x_max_m"],
+                    "grid_y_min_m": proximity_stop["grid_y_min_m"],
+                    "grid_y_max_m": proximity_stop["grid_y_max_m"],
+                    "grid_inflation_radius_m": proximity_stop[
+                        "grid_inflation_radius_m"
+                    ],
+                    "scan_bin_count": proximity_stop["scan_bin_count"],
+                    "scan_range_min_m": proximity_stop["scan_range_min_m"],
+                    "scan_range_max_m": proximity_stop["scan_range_max_m"],
+                    "vehicle_length_m": proximity_stop["vehicle_length_m"],
+                    "vehicle_width_m": proximity_stop["vehicle_width_m"],
                 }
             ],
+        ),
+        Node(
+            package="nav2_map_server",
+            executable="map_server",
+            name="day5_map_server",
+            output="screen",
+            parameters=[{"yaml_filename": LaunchConfiguration("map_file")}],
+            condition=IfCondition(LaunchConfiguration("start_map_server")),
+        ),
+        Node(
+            package="nav2_lifecycle_manager",
+            executable="lifecycle_manager",
+            name="day5_map_lifecycle_manager",
+            output="screen",
+            parameters=[
+                {
+                    "autostart": True,
+                    "node_names": ["day5_map_server"],
+                }
+            ],
+            condition=IfCondition(LaunchConfiguration("start_map_server")),
+        ),
+        Node(
+            package="rviz2",
+            executable="rviz2",
+            name="rviz2_day5_motion_control",
+            output="screen",
+            arguments=["-d", LaunchConfiguration("rviz_config")],
+            condition=IfCondition(LaunchConfiguration("rviz")),
         ),
         Node(
             package="competition_safety",
@@ -162,6 +278,7 @@ def _launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     competition_ws = os.environ.get("COMPETITION_WS", "/home/agilex/competition_ws")
+    bringup_share = get_package_share_directory("competition_bringup")
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -228,6 +345,15 @@ def generate_launch_description():
                     "safety_params.yaml",
                 ),
             ),
+            DeclareLaunchArgument(
+                "map_file",
+                default_value=os.path.join(
+                    competition_ws,
+                    "maps",
+                    "debug",
+                    "map.yaml",
+                ),
+            ),
             DeclareLaunchArgument("port_name", default_value="can3"),
             DeclareLaunchArgument(
                 "fast_lio_config",
@@ -236,6 +362,17 @@ def generate_launch_description():
             DeclareLaunchArgument("start_livox", default_value="true"),
             DeclareLaunchArgument("start_fast_lio", default_value="true"),
             DeclareLaunchArgument("start_proximity_stop", default_value="true"),
+            DeclareLaunchArgument("start_local_replanner", default_value="true"),
+            DeclareLaunchArgument("start_map_server", default_value="true"),
+            DeclareLaunchArgument("rviz", default_value="false"),
+            DeclareLaunchArgument(
+                "rviz_config",
+                default_value=os.path.join(
+                    bringup_share,
+                    "rviz",
+                    "day5_motion_control.rviz",
+                ),
+            ),
             DeclareLaunchArgument(
                 "start_base",
                 default_value="false",

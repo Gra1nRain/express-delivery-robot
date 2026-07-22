@@ -174,6 +174,27 @@ class MPPIControllerTest(unittest.TestCase):
         self.assertEqual(command.status, "TRACKING")
         self.assertLess(command.target_index, 15)
 
+    def test_replaces_global_reference_with_latest_local_trajectory(self) -> None:
+        params = replace(
+            self.params,
+            speed_noise_std_mps=0.0,
+            curvature_noise_std_1pm=0.0,
+            max_curvature_rate_1pmps=100.0,
+        )
+        controller = MPPIController(_straight_trajectory(), params, random_seed=23)
+        controller.compute_command(
+            VehicleState(x=0.0, y=0.0, yaw=0.0, linear_speed_mps=0.10)
+        )
+
+        controller.replace_trajectory(_constant_curvature_trajectory())
+        command = controller.compute_command(
+            VehicleState(x=0.0, y=0.0, yaw=0.0, linear_speed_mps=0.10)
+        )
+
+        self.assertEqual(command.status, "TRACKING")
+        self.assertLess(command.target_index, 4)
+        self.assertGreater(command.curvature_1pm, 0.80)
+
 
 if __name__ == "__main__":
     unittest.main()

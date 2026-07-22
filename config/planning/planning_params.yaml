@@ -31,6 +31,21 @@ semantic_route_graph:
   keepout_enabled: true
 
 replanning:
-  enabled: false
+  enabled: true
+  plugin: reference_aware_hybrid_astar
+  frequency_hz: 1.0
+  lookahead_distance_m: 5.0
+  reference_deviation_weight: 2.0
+  inflation_radius_m: 0.45
+  search_padding_m: 3.0
+  goal_position_tolerance_m: 0.25
+  goal_heading_tolerance_deg: 15.0
+  max_expansions: 250000
+  reference_search_window_points: 120
+  costmap_topic: /avoidance/local_costmap
+  local_trajectory_topic: /planning/local_trajectory
+  status_topic: /planning/local_replan_status
+  max_costmap_age_s: 0.75
+  local_trajectory_timeout_s: 1.25
   max_retries: 1
   failure_action: SAFE_HOLD

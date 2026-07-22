@@ -562,6 +562,30 @@ def parameterize_route_plan(
     )
 
 
+def parameterize_local_path(
+    path: Sequence[PathPoint],
+    semantic_map: dict[str, Any],
+    optimizer_config: dict[str, Any] | None = None,
+) -> OptimizedStepTrajectory:
+    """Apply the Day4 speed/time parameterizer to one online local path."""
+
+    return parameterize_step_plan(
+        StepPlan(
+            step_id="online_local_replan",
+            step_type="RUN_SEGMENT",
+            corridor_ref="active_global_reference",
+            target_ref=(path[-1].ref_id or "local_rejoin") if path else "local_rejoin",
+            target_source="global_reference_lookahead",
+            path=tuple(path),
+            planning_time_ms=0.0,
+            planner_plugin="reference_aware_hybrid_astar",
+            smoother_plugin="none",
+        ),
+        semantic_map,
+        optimizer_config,
+    )
+
+
 def parameterize_step_plan(
     plan: StepPlan,
     semantic_map: dict[str, Any],

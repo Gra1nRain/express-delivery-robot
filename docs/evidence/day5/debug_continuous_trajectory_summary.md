@@ -14,7 +14,7 @@
 - max_abs_acceleration_mps2: 0.102
 - max_abs_jerk_mps3: 0.400
 - max_abs_curvature_1pm: 1.234568
-- max_abs_curvature_rate_1pmps: 0.308805
+- max_abs_curvature_rate_1pmps: 0.308817
 - stopped_refs_after_start: ['finish_park']
 
 ## 未验证

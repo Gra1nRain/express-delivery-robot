@@ -53,3 +53,10 @@ chassis:
   driver_topic: /cmd_vel
   wheel_command_enabled: false
   lateral_motion_enabled: false
+
+visualization:
+  reference_path_topic: /planning/optimized_trajectory
+  local_trajectory_topic: /planning/local_trajectory
+  executed_path_topic: /control/executed_path
+  executed_path_min_separation_m: 0.05
+  executed_path_max_points: 2000

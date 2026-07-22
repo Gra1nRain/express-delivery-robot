@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 
 import rclpy
+from nav_msgs.msg import OccupancyGrid
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -13,12 +14,16 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
-from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import LaserScan, PointCloud2
 from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, String
+from visualization_msgs.msg import Marker, MarkerArray
 
 from competition_safety.proximity_stop import (
+    LocalClearanceResult,
+    LocalGridConfig,
     ProximityStopConfig,
+    evaluate_local_clearance,
     should_stop_for_points,
 )
 
@@ -70,6 +75,40 @@ class ProximityStopNode(Node):
             z_max_m=float(self.declare_parameter("z_max_m", 0.80).value),
             min_points=int(self.declare_parameter("min_points", 3).value),
         )
+        self._grid_config = LocalGridConfig(
+            resolution_m=float(
+                self.declare_parameter("grid_resolution_m", 0.05).value
+            ),
+            x_min_m=float(self.declare_parameter("grid_x_min_m", -0.50).value),
+            x_max_m=float(self.declare_parameter("grid_x_max_m", 3.00).value),
+            y_min_m=float(self.declare_parameter("grid_y_min_m", -1.50).value),
+            y_max_m=float(self.declare_parameter("grid_y_max_m", 1.50).value),
+            inflation_radius_m=float(
+                self.declare_parameter("grid_inflation_radius_m", 0.20).value
+            ),
+            scan_bin_count=int(self.declare_parameter("scan_bin_count", 360).value),
+            scan_range_min_m=float(
+                self.declare_parameter("scan_range_min_m", 0.10).value
+            ),
+            scan_range_max_m=float(
+                self.declare_parameter("scan_range_max_m", 6.00).value
+            ),
+        )
+        visualization_rate_hz = float(
+            self.declare_parameter("visualization_rate_hz", 2.0).value
+        )
+        if visualization_rate_hz <= 0.0:
+            raise ValueError("visualization_rate_hz must be positive")
+        self._visualization_period_s = 1.0 / visualization_rate_hz
+        self._last_visualization_s = -self._visualization_period_s
+        self._vehicle_length_m = float(
+            self.declare_parameter("vehicle_length_m", 0.72).value
+        )
+        self._vehicle_width_m = float(
+            self.declare_parameter("vehicle_width_m", 0.50).value
+        )
+        if self._vehicle_length_m <= 0.0 or self._vehicle_width_m <= 0.0:
+            raise ValueError("vehicle dimensions must be positive")
         self._stop_publisher = self.create_publisher(
             Bool,
             str(
@@ -89,6 +128,36 @@ class ProximityStopNode(Node):
                 ).value
             ),
             10,
+        )
+        self._costmap_publisher = self.create_publisher(
+            OccupancyGrid,
+            str(
+                self.declare_parameter(
+                    "costmap_topic",
+                    "/avoidance/local_costmap",
+                ).value
+            ),
+            1,
+        )
+        self._scan_publisher = self.create_publisher(
+            LaserScan,
+            str(
+                self.declare_parameter(
+                    "scan_topic",
+                    "/avoidance/scan",
+                ).value
+            ),
+            cloud_qos,
+        )
+        self._marker_publisher = self.create_publisher(
+            MarkerArray,
+            str(
+                self.declare_parameter(
+                    "marker_topic",
+                    "/avoidance/markers",
+                ).value
+            ),
+            1,
         )
         self.create_subscription(
             PointCloud2,
@@ -111,27 +180,88 @@ class ProximityStopNode(Node):
         return self.get_clock().now().nanoseconds / 1e9
 
     def _cloud_callback(self, message: PointCloud2) -> None:
+        now_s = self._now_s()
+        visualization_due = (
+            now_s - self._last_visualization_s >= self._visualization_period_s
+        )
         frame_id = message.header.frame_id
         if self._expected_frame_id and frame_id != self._expected_frame_id:
-            self._publish(True, "frame_mismatch", 0, frame_id, None)
+            self._publish(True, "frame_mismatch", 0, frame_id, None, None)
+            if visualization_due:
+                result = evaluate_local_clearance(
+                    [],
+                    self._config,
+                    self._grid_config,
+                )
+                self._publish_visualization(
+                    message.header.stamp,
+                    self._expected_frame_id,
+                    result,
+                    True,
+                    "frame_mismatch",
+                )
+                self._last_visualization_s = now_s
             return
 
         cloud_stamp_s = _stamp_to_seconds(message.header.stamp)
-        age_s = self._now_s() - cloud_stamp_s if cloud_stamp_s > 0.0 else None
+        age_s = now_s - cloud_stamp_s if cloud_stamp_s > 0.0 else None
         if age_s is not None and age_s > self._max_cloud_age_s:
-            self._publish(True, "stale_cloud", 0, frame_id, age_s)
+            self._publish(True, "stale_cloud", 0, frame_id, age_s, None)
+            if visualization_due:
+                result = evaluate_local_clearance(
+                    [],
+                    self._config,
+                    self._grid_config,
+                )
+                self._publish_visualization(
+                    message.header.stamp,
+                    frame_id,
+                    result,
+                    True,
+                    "stale_cloud",
+                )
+                self._last_visualization_s = now_s
             return
 
-        points = (
+        points = [
             (float(point[0]), float(point[1]), float(point[2]))
             for point in point_cloud2.read_points(
                 message,
                 field_names=("x", "y", "z"),
                 skip_nans=True,
             )
+        ]
+        if visualization_due:
+            result = evaluate_local_clearance(
+                points,
+                self._config,
+                self._grid_config,
+            )
+            stop = result.stop
+            count = result.point_count
+            nearest_distance_m = result.nearest_obstacle_distance_m
+        else:
+            stop, count = should_stop_for_points(points, self._config)
+            nearest_distance_m = None
+            result = None
+        reason = "obstacle_in_stop_box" if stop else "clear"
+        self._publish(
+            stop,
+            reason,
+            count,
+            frame_id,
+            age_s,
+            nearest_distance_m,
         )
-        stop, count = should_stop_for_points(points, self._config)
-        self._publish(stop, "obstacle_in_stop_box" if stop else "clear", count, frame_id, age_s)
+        if result is not None:
+            self._publish_visualization(
+                message.header.stamp,
+                frame_id,
+                result,
+                stop,
+                reason,
+            )
+            self._last_visualization_s = now_s
 
     def _publish(
         self,
@@ -140,6 +270,7 @@ class ProximityStopNode(Node):
         point_count: int,
         frame_id: str,
         cloud_age_s: float | None,
+        nearest_obstacle_distance_m: float | None,
     ) -> None:
         self._stop_publisher.publish(Bool(data=stop))
         self._status_publisher.publish(
@@ -151,11 +282,110 @@ class ProximityStopNode(Node):
                         "point_count": point_count,
                         "frame_id": frame_id,
                         "cloud_age_s": cloud_age_s,
+                        "nearest_obstacle_distance_m": nearest_obstacle_distance_m,
                     },
                     separators=(",", ":"),
                 )
             )
         )
+
+    def _publish_visualization(
+        self,
+        stamp,
+        frame_id: str,
+        result: LocalClearanceResult,
+        stop: bool,
+        reason: str,
+    ) -> None:
+        costmap = OccupancyGrid()
+        costmap.header.stamp = stamp
+        costmap.header.frame_id = frame_id
+        costmap.info.resolution = result.costmap.resolution_m
+        costmap.info.width = result.costmap.width
+        costmap.info.height = result.costmap.height
+        costmap.info.origin.position.x = result.costmap.origin_x_m
+        costmap.info.origin.position.y = result.costmap.origin_y_m
+        costmap.info.origin.orientation.w = 1.0
+        costmap.data = list(result.costmap.data)
+        self._costmap_publisher.publish(costmap)
+
+        scan = LaserScan()
+        scan.header.stamp = stamp
+        scan.header.frame_id = frame_id
+        scan.angle_min = result.scan_angle_min_rad
+        scan.angle_increment = result.scan_angle_increment_rad
+        scan.angle_max = scan.angle_min + scan.angle_increment * (
+            len(result.scan_ranges_m) - 1
+        )
+        scan.scan_time = self._visualization_period_s
+        scan.range_min = self._grid_config.scan_range_min_m
+        scan.range_max = self._grid_config.scan_range_max_m
+        scan.ranges = list(result.scan_ranges_m)
+        self._scan_publisher.publish(scan)
+
+        self._marker_publisher.publish(
+            self._visualization_markers(stamp, frame_id, result, stop, reason)
+        )
+
+    def _visualization_markers(
+        self,
+        stamp,
+        frame_id: str,
+        result: LocalClearanceResult,
+        stop: bool,
+        reason: str,
+    ) -> MarkerArray:
+        footprint = Marker()
+        footprint.header.stamp = stamp
+        footprint.header.frame_id = frame_id
+        footprint.ns = "day5_clearance"
+        footprint.id = 0
+        footprint.type = Marker.CUBE
+        footprint.action = Marker.ADD
+        footprint.pose.orientation.w = 1.0
+        footprint.pose.position.z = 0.03
+        footprint.scale.x = self._vehicle_length_m
+        footprint.scale.y = self._vehicle_width_m
+        footprint.scale.z = 0.06
+        footprint.color.b = 1.0
+        footprint.color.a = 0.25
+
+        corridor = Marker()
+        corridor.header = footprint.header
+        corridor.ns = footprint.ns
+        corridor.id = 1
+        corridor.type = Marker.CUBE
+        corridor.action = Marker.ADD
+        corridor.pose.orientation.w = 1.0
+        corridor.pose.position.x = (
+            self._config.x_min_m + self._config.stop_distance_m
+        ) / 2.0
+        corridor.pose.position.z = 0.04
+        corridor.scale.x = self._config.stop_distance_m - self._config.x_min_m
+        corridor.scale.y = 2.0 * self._config.lateral_half_width_m
+        corridor.scale.z = 0.08
+        corridor.color.r = 1.0 if stop else 0.0
+        corridor.color.g = 0.0 if stop else 1.0
+        corridor.color.a = 0.30
+
+        status = Marker()
+        status.header = footprint.header
+        status.ns = footprint.ns
+        status.id = 2
+        status.type = Marker.TEXT_VIEW_FACING
+        status.action = Marker.ADD
+        status.pose.orientation.w = 1.0
+        status.pose.position.z = 1.0
+        status.scale.z = 0.22
+        status.color.r = 1.0 if stop else 0.0
+        status.color.g = 0.0 if stop else 1.0
+        status.color.a = 1.0
+        nearest = result.nearest_obstacle_distance_m
+        nearest_text = "n/a" if nearest is None else f"{nearest:.2f}m"
+        status.text = (
+            f"{reason} | points={result.point_count} | nearest={nearest_text}"
+        )
+        return MarkerArray(markers=[footprint, corridor, status])
 
 
 def _stamp_to_seconds(stamp) -> float:

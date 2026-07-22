@@ -13,6 +13,10 @@
         ↓
 jerk-limited S 曲线局部轨迹优化
         ↓
+实时 costmap + 参考轨迹约束的短视距 Hybrid A* 重规划
+        ↓
+Day4 速度/曲率/时间参数化
+        ↓
 MPPI 轨迹跟踪（RANGER 曲率模型）
         ↓
 SafetySupervisor（硬规则，CBF/QP 待演进）

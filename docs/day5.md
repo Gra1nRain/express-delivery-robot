@@ -14,7 +14,8 @@
 - 分段验证轨迹必须在规划阶段用 `--end-ref` 重新执行 jerk-limited 参数化；控制器不再支持运行时截断轨迹。
 - launch 默认 `start_base:=false` 且 `command_output_topic:=/cmd_vel_safe`，不具备默认实车运动效果。
 - 今天用于“丝滑控制/整链稳定性”验证的是 `debug_control_validation_route.yaml`，它使用 `pickup_pass/drop_pass` 安全通过点，不使用 `pickup_dock/drop_dock` 精停点。
-- 当前 P0 主问题不是短程能否跑通，也不是 MPPI 能否贴合冻结轨迹；而是实车链路还没有像旧 `ranger_delivery_mission` 那样的在线局部避障/简单代价图能力。现有 `proximity_stop_node` 只能硬停，不能绕开货架或实时重规划局部轨迹。
+- 2026-07-22 已补入在线局部重规划的离线实现：`proximity_stop_node` 把最新 body 点云转换为 `/avoidance/local_costmap`，独立 `local_replanner_node` 合并静态地图和实时障碍，以当前位置为起点、总体轨迹前方 `5.0m` 为重合目标，使用带总体轨迹偏离代价的 Hybrid A* 生成局部几何路径；该路径继续复用 Day4 参数化后交给 MPPI。近场 hard-stop 只保留为规划失败、输入过期或来不及绕行时的最后保护。
+- 局部代价图、实时 Scan、原始 body 点云、总体轨迹、在线局部轨迹和实车轨迹已加入 `day5_motion_control.rviz`。在线避障仍是 P0 OPEN：目前只有合成障碍离线测试，没有完成车端构建、无运动 ROS 拓扑、真实货架绕行和连续整线实车验证。
 
 ## 离线验证
 
@@ -23,6 +24,9 @@
 - 分段整链：`traffic_light_stop_line` 短段 `2.600m`、285 周期、0 次 `SAFE_HOLD`；`drop_dock` 半程 `19.799m`、2052 周期、最大横向误差 `0.044m`、0 次 `SAFE_HOLD`。
 - 证据：`docs/evidence/day5/` 下的 `debug_continuous_trajectory*`、`debug_motion_validation*`、`debug_traffic_light_*` 和 `debug_drop_dock_*`。
 - 控制验证整线：`debug_control_validation_trajectory.yaml` 为 433 点、`43.196m`、`217.482s`，只在 `finish_park` 停车；`0.72m x 0.50m` 车体加 `0.20m` clearance 的静态地图 footprint sweep 检查通过，1298 个采样姿态、0 个碰撞；离线 MPPI+safety 闭环 4455 周期完成，最大横向误差 `0.047m`、0 次 `SAFE_HOLD`。
+- 在线局部重规划合成测试：无障碍时直接复用总体轨迹；`0.6m x 0.8m` 桌体横跨总体轨迹且周围存在足够自由空间时，生成前向、满足 `0.81m` 最小转弯半径的绕行路径，并在 `5.0m` 前视重合点附近回到总体轨迹。正式实现会先把约 134 万格的静态地图裁成当前局部窗口；debug 地图无障碍窗口约 9-12 万格，本机处理约 `0.4-0.6s`。开放合成地图使用 `0.45m` 膨胀时，绕桌搜索约 `0.8-0.9s`；这些是开发机基准，不是小车 CPU 的周期保证。
+- 如果静态地图与 `0.45m` 膨胀后的实时障碍之间没有满足车辆约束的自由空间，局部规划器会返回 `PLAN_FAILED`，MPPI 随后因局部轨迹过期进入 `LOCAL_PLAN_STALE` 零速，而不会为了“必须绕过去”缩小安全包络。真实碰撞位置能否找到可行绕行空间仍必须以 RViz 代价图和车端无运动回放验证。
+- 相关离线回归：局部几何规划、Day4 参数化、MPPI 轨迹切换、costmap/Scan、启动拓扑和 RViz 共 37 个测试通过；完整仓库回归和车端构建仍需在提交前后继续核对。
 
 ## 车端无运动验证（2026-07-22）
 

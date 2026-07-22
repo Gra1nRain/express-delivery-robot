@@ -17,6 +17,7 @@ setup(
             "offline_optimized_trajectory = competition_planning.offline_optimized_trajectory:main",
             "offline_continuous_trajectory = competition_planning.offline_continuous_trajectory:main",
             "semantic_global_path_node = competition_planning.global_path_node:main",
+            "local_replanner_node = competition_planning.local_replanner_node:main",
         ],
     },
     install_requires=["setuptools"],
