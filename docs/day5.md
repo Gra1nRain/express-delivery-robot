@@ -20,6 +20,15 @@
 - 分段整链：`traffic_light_stop_line` 短段 `2.600m`、285 周期、0 次 `SAFE_HOLD`；`drop_dock` 半程 `19.799m`、2052 周期、最大横向误差 `0.044m`、0 次 `SAFE_HOLD`。
 - 证据：`docs/evidence/day5/` 下的 `debug_continuous_trajectory*`、`debug_motion_validation*`、`debug_traffic_light_*` 和 `debug_drop_dock_*`。
 
+## 车端无运动验证（2026-07-22）
+
+- 小车 `/home/agilex/competition_ws` 已成功构建 `competition_planning`、`competition_localization`、`competition_control`、`competition_safety` 和 `competition_bringup`，5 个包总构建时间 `14.8s`。
+- 小车安装环境重跑整线离线闭环通过：4596 周期、最大横向误差 `0.060m`、0 次 `SAFE_HOLD`；远程命令总耗时约 `99s`，折算平均每周期约 `21.5ms`，低于 20Hz 的 `50ms` 周期预算。该数值仍不是 ROS timer 的实测抖动。
+- 在 `start_livox:=false`、`start_fast_lio:=false`、`start_base:=false`、`command_output_topic:=/cmd_vel_safe` 下，`fastlio_anchor`、`mppi_control` 和 `competition_safety` 均成功启动；`/cmd_vel` 不存在，`/cmd_vel_safe` 实测全零。
+- 无传感器和底盘输入时，controller 正确报告 `INVALID_STATE`，safety 正确报告 `SAFE_HOLD`，没有非零速度出口。
+- 首次 smoke test 暴露的 shutdown `RCLError` 已在提交 `c7ae1d2` 修复；车端 shutdown guard 回归测试 `2 passed`，节点关闭后无残留进程。
+- 车端日志：`log/day5_build_e1c2ff5.log`、`log/day5_car_offline_validation_e1c2ff5.log`、`log/day5_nomotion_smoke_e1c2ff5.log` 和 `log/day5_shutdown_repro_c7ae1d2.log`。
+
 ## 无运动/实车分级步骤
 
 1. PC 或小车生成冻结轨迹：
@@ -59,6 +68,6 @@
 
 ## 未验证
 
-- Day5 新包尚未在小车端构建或运行，本记录不声称实车已通过。
+- Day5 尚未启动 Livox、FAST-LIO 或 Ranger base 进行联合无运动检查，也没有执行任何实车运动；本记录不声称实车已通过。
 - 离线模型没有包含执行器延迟、轮胎侧偏、地面摩擦变化和 FAST-LIO 实际噪声。
 - 曲率连续非线性优化、CBF/QP、显式差速自旋恢复和连续 footprint 扫掠仍在 `docs/algorithm-debt.md` 登记。
