@@ -36,6 +36,17 @@
 - 锚定后 `/cmd_vel_safe` 出现约 `0.01m/s` 的安全后起步命令，说明规控链已具备运动输出；该 topic 没有底盘订阅者，因此本次仍属于无运动联调。
 - 追加车端日志：`log/day5_bringup_build_cca6797.log`、`log/day5_fastlio_only_baseline_961a12e.log`、`log/day5_fastlio_control_profile_cca6797.log` 和 `log/day5_hw_nomotion_cca6797.log`。
 
+## 短段实车验证（2026-07-22）
+
+- 现场确认急停有效、遥控器可接管、车前方 3m 安全后，将 safety 输出接入 `/cmd_vel`，执行 `debug_traffic_light_trajectory.yaml` 短段实车。
+- 启动前 `/cmd_vel` 拓扑为：`competition_safety` 一个发布者，`ranger_base_node` 和 `rosbag2_recorder` 两个订阅者；发布 `/initialpose` 前 `/cmd_vel` 和 `/odom` 均为零。
+- 监控脚本发布起点 `/initialpose` 前检测到 1 个订阅者；发布后约 `1.006s` 首次进入 `TRACKING`，约 `21.573s` 首次进入 `GOAL_REACHED`。
+- 运行最大 `/cmd_vel.linear.x` 为 `0.1979m/s`，最大 `/odom.twist.twist.linear.x` 为 `0.1990m/s`；最终 `/cmd_vel` 与 `/odom` 速度均回到 0。
+- 最终 tracking error 为横向 `0.013m`、航向 `0.016rad`，target index `26`；短段完成后 safety 进入 `SAFE_STOP`。
+- 本次短段实车录包保存在小车 `/home/agilex/competition_ws/recordings/day5_short_traffic_804336e_20260722_191755`，大小 `9.6MiB`；证据摘要见 `docs/evidence/day5/day5_short_traffic_field_trial_20260722.md`。
+- rosbag metadata 中 `/initialpose` 计数为 0；该发布事件由小车 `log/day5_short_motion_monitor_804336e.txt` 记录。
+- 停止 launch 和 rosbag 后，小车端无 Day5、Livox、FAST-LIO、Ranger、MPPI、safety 或 rosbag 残留进程，ROS 主题回到 `/parameter_events` 和 `/rosout`。
+
 ## 无运动/实车分级步骤
 
 1. PC 或小车生成冻结轨迹：
@@ -75,6 +86,6 @@
 
 ## 未验证
 
-- Day5 已完成 Livox、FAST-LIO、Ranger base、anchor、MPPI 和 safety 的联合无运动检查；尚未将安全输出接入 `/cmd_vel`，也没有执行任何实车运动；本记录不声称实车已通过。
+- Day5 已完成 Livox、FAST-LIO、Ranger base、anchor、MPPI 和 safety 的联合无运动检查，并完成 `traffic_light_stop_line` 2.6m 短段实车；尚未执行 `drop_dock` 半程或整线实车，本记录不声称整线实车已通过。
 - 离线模型没有包含执行器延迟、轮胎侧偏、地面摩擦变化和 FAST-LIO 实际噪声。
 - 曲率连续非线性优化、CBF/QP、显式差速自旋恢复和连续 footprint 扫掠仍在 `docs/algorithm-debt.md` 登记。
