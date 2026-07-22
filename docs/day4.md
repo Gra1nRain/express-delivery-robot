@@ -4,6 +4,7 @@
 
 - Day4 仍限定为离线工作：本次没有新增 ROS2 自定义消息、轨迹跟踪器、底盘速度命令或实车运动能力。
 - `competition_planning.trajectory_parameterizer` 会把 Day3 的 `StepPlan` 几何路径转换为带 `x`、`y`、`yaw`、`s`、`curvature`、`v`、`yaw_rate`、`t` 字段的轨迹。
+- 当前推荐的模块接口是 `optimize_route_trajectory(route, semantic_map, planning_config, optimizer_config)`。离线 CLI 和后续 ROS adapter 应优先调用这个接口，而不是在外部重复编排 `plan_route -> parameterize_route_plan`。
 - 停车点从 `semantic_map.yaml` 的 `stop_lines[].point_ref` 和 `dock_poses[].point_ref` 推导。避障区域入口和出口锚点默认按通过点处理，除非它们同时出现在停车语义来源中。
 - 当前 debug 限速配置在 `config/planning/optimizer_params.yaml` 中：普通路段 `0.50m/s`，`RANDOM_OBSTACLE` 和 `CONE_LANE_CHANGE` 区域 `0.30m/s`，最大加速度 `0.30m/s^2`，最大减速度 `0.50m/s^2`，最大横向加速度 `0.20m/s^2`。
 - `offline_optimized_trajectory` 会生成整条路线的 YAML artifact、每个轨迹 step 一份 CSV、Markdown 摘要和 SVG 俯视图。

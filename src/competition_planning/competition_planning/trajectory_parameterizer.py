@@ -6,7 +6,13 @@ from dataclasses import dataclass
 import math
 from typing import Any, Sequence
 
-from competition_planning.semantic_planner import PathPoint, PlanFailure, RoutePlan, StepPlan
+from competition_planning.semantic_planner import (
+    PathPoint,
+    PlanFailure,
+    RoutePlan,
+    StepPlan,
+    plan_route,
+)
 
 
 @dataclass(frozen=True)
@@ -91,6 +97,23 @@ class OptimizedRouteTrajectory:
             "trajectories": [trajectory.to_dict() for trajectory in self.trajectories],
             "failures": [failure.to_dict() for failure in self.failures],
         }
+
+
+def optimize_route_trajectory(
+    route: dict[str, Any],
+    semantic_map: dict[str, Any],
+    planning_config: dict[str, Any] | None = None,
+    optimizer_config: dict[str, Any] | None = None,
+) -> OptimizedRouteTrajectory:
+    """Plan a semantic route and return its optimized trajectory artifact.
+
+    This is the external seam for offline tools and future ROS adapters. Callers
+    should not need to orchestrate global planning and speed/time
+    parameterization separately.
+    """
+
+    route_plan = plan_route(route, semantic_map, planning_config)
+    return parameterize_route_plan(route_plan, semantic_map, optimizer_config)
 
 
 def parameterize_route_plan(

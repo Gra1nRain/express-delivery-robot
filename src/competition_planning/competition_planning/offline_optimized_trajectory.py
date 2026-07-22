@@ -12,10 +12,10 @@ from typing import Sequence
 
 import yaml
 
-from competition_planning.semantic_planner import load_yaml_file, plan_route
+from competition_planning.semantic_planner import load_yaml_file
 from competition_planning.trajectory_parameterizer import (
     OptimizedRouteTrajectory,
-    parameterize_route_plan,
+    optimize_route_trajectory,
 )
 
 
@@ -40,8 +40,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     planning_params = load_yaml_file(args.planning_params)
     optimizer_params = load_yaml_file(args.optimizer_params)
 
-    route_plan = plan_route(route, semantic_map, planning_params)
-    result = parameterize_route_plan(route_plan, semantic_map, optimizer_params)
+    result = optimize_route_trajectory(route, semantic_map, planning_params, optimizer_params)
     selected_result = _select_steps(result, args.step_id)
     output = selected_result.to_dict()
 

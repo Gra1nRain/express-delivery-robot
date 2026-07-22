@@ -10,8 +10,11 @@ import unittest
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_planning"))
 
-from competition_planning.semantic_planner import PathPoint, StepPlan, load_yaml_file, plan_route
-from competition_planning.trajectory_parameterizer import parameterize_step_plan
+from competition_planning.semantic_planner import PathPoint, StepPlan, load_yaml_file
+from competition_planning.trajectory_parameterizer import (
+    optimize_route_trajectory,
+    parameterize_step_plan,
+)
 
 
 class TrajectoryParameterizerTest(unittest.TestCase):
@@ -112,9 +115,7 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             self.assertLessEqual(point.v, expected_cap + 1e-9)
             self.assertAlmostEqual(point.yaw_rate, point.v * point.curvature)
 
-    def test_debug_route_generates_six_config_limited_trajectories(self) -> None:
-        from competition_planning.trajectory_parameterizer import parameterize_route_plan
-
+    def test_public_route_optimizer_generates_six_config_limited_trajectories(self) -> None:
         route = load_yaml_file(REPO_ROOT / "config" / "routes" / "debug_route.yaml")
         semantic_map = load_yaml_file(REPO_ROOT / "maps" / "debug" / "semantic_map.yaml")
         planning_params = load_yaml_file(
@@ -123,11 +124,9 @@ class TrajectoryParameterizerTest(unittest.TestCase):
         optimizer_params = load_yaml_file(
             REPO_ROOT / "config" / "planning" / "optimizer_params.yaml"
         )
-        route_plan = plan_route(route, semantic_map, planning_params)
 
-        result = parameterize_route_plan(route_plan, semantic_map, optimizer_params)
+        result = optimize_route_trajectory(route, semantic_map, planning_params, optimizer_params)
 
-        self.assertTrue(route_plan.ok, route_plan.failures)
         self.assertTrue(result.ok, result.failures)
         self.assertEqual(
             [trajectory.step_id for trajectory in result.trajectories],
