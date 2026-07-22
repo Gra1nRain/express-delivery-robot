@@ -113,6 +113,10 @@ def _launch_setup(context, *args, **kwargs):
             parameters=[
                 {
                     "cloud_topic": proximity_stop["cloud_topic"],
+                    "cloud_qos_reliability": proximity_stop[
+                        "cloud_qos_reliability"
+                    ],
+                    "cloud_qos_depth": proximity_stop["cloud_qos_depth"],
                     "stop_request_topic": proximity_stop["stop_request_topic"],
                     "status_topic": proximity_stop["status_topic"],
                     "expected_frame_id": proximity_stop["expected_frame_id"],

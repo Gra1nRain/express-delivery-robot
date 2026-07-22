@@ -54,6 +54,16 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
             0.45,
             "Proximity stop must cover the vehicle half-width plus clearance.",
         )
+        self.assertEqual(
+            proximity_config["cloud_qos_reliability"],
+            "best_effort",
+            "Dense sensor clouds must not backpressure FAST-LIO through reliable delivery.",
+        )
+        self.assertEqual(
+            proximity_config["cloud_qos_depth"],
+            1,
+            "Proximity safety must process the newest cloud instead of queued old clouds.",
+        )
 
 
 if __name__ == "__main__":

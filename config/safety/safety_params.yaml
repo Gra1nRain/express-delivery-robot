@@ -19,6 +19,8 @@ safety:
 
 proximity_stop:
   cloud_topic: /cloud_registered_body
+  cloud_qos_reliability: best_effort
+  cloud_qos_depth: 1
   stop_request_topic: /avoidance/stop_request
   status_topic: /avoidance/proximity_status
   expected_frame_id: body

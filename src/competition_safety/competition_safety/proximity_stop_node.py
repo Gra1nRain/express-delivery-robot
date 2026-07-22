@@ -7,6 +7,12 @@ import json
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, String
@@ -22,6 +28,26 @@ class ProximityStopNode(Node):
         super().__init__("proximity_stop")
         self._cloud_topic = str(
             self.declare_parameter("cloud_topic", "/cloud_registered_body").value
+        )
+        cloud_qos_reliability = str(
+            self.declare_parameter("cloud_qos_reliability", "best_effort").value
+        ).lower()
+        cloud_qos_depth = int(self.declare_parameter("cloud_qos_depth", 1).value)
+        if cloud_qos_reliability not in {"best_effort", "reliable"}:
+            raise ValueError(
+                "cloud_qos_reliability must be 'best_effort' or 'reliable'"
+            )
+        if cloud_qos_depth < 1:
+            raise ValueError("cloud_qos_depth must be at least 1")
+        cloud_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=cloud_qos_depth,
+            reliability=(
+                ReliabilityPolicy.BEST_EFFORT
+                if cloud_qos_reliability == "best_effort"
+                else ReliabilityPolicy.RELIABLE
+            ),
+            durability=DurabilityPolicy.VOLATILE,
         )
         self._expected_frame_id = str(
             self.declare_parameter("expected_frame_id", "body").value
@@ -68,7 +94,7 @@ class ProximityStopNode(Node):
             PointCloud2,
             self._cloud_topic,
             self._cloud_callback,
-            10,
+            cloud_qos,
         )
         self.get_logger().info(
             "Proximity stop ready: "
@@ -77,7 +103,8 @@ class ProximityStopNode(Node):
             f"half_angle={self._config.front_half_angle_rad:.3f}rad, "
             f"lateral_half_width={self._config.lateral_half_width_m:.2f}, "
             f"z=[{self._config.z_min_m:.2f}, {self._config.z_max_m:.2f}], "
-            f"min_points={self._config.min_points}"
+            f"min_points={self._config.min_points}, "
+            f"qos={cloud_qos_reliability}/keep_last_{cloud_qos_depth}"
         )
 
     def _now_s(self) -> float:
