@@ -1,0 +1,75 @@
+loaded path: points=221 length_m=40.331 steps=go_traffic_light_1,random_obstacle_1,cone_lane_change_1,return_to_pickup_area,cone_lane_change_2,finish_park
+first=(-0.376,0.112) last=(-0.740,3.185)
+waiting for subscriber on /cmd_vel
+waiting for subscriber on /cmd_vel
+waiting for subscriber on /cmd_vel
+waiting for subscriber on /cmd_vel
+waiting for subscriber on /cmd_vel
+waiting for subscriber on /cmd_vel
+waiting for subscriber on /cmd_vel
+waiting for subscriber on /cmd_vel
+waiting for subscriber on /cmd_vel
+waiting for subscriber on /cmd_vel
+waiting for subscriber on /cmd_vel
+waiting for subscriber on /cmd_vel
+waiting for subscriber on /cmd_vel
+START frame=map->base_link pose=(0.266,0.180,0.174) start_error=0.646m
+TRACK idx=3/220 target=5 pose=(0.27,0.18,0.17) err=0.07 goal=3.17 cmd=(0.12,-0.25)
+TRACK idx=3/220 target=5 pose=(0.27,0.18,0.17) err=0.07 goal=3.17 cmd=(0.12,-0.25)
+TRACK idx=3/220 target=5 pose=(0.27,0.18,0.17) err=0.07 goal=3.17 cmd=(0.12,-0.25)
+TRACK idx=3/220 target=5 pose=(0.31,0.19,0.05) err=0.05 goal=3.17 cmd=(0.12,-0.13)
+TRACK idx=3/220 target=5 pose=(0.28,0.19,-0.19) err=0.07 goal=3.17 cmd=(0.12,0.17)
+TRACK idx=3/220 target=5 pose=(0.28,0.19,-0.33) err=0.06 goal=3.17 cmd=(0.12,0.34)
+TRACK idx=3/220 target=5 pose=(0.28,0.19,-0.33) err=0.06 goal=3.17 cmd=(0.12,0.34)
+TRACK idx=3/220 target=5 pose=(0.28,0.19,-0.33) err=0.06 goal=3.17 cmd=(0.12,0.34)
+TRACK idx=3/220 target=5 pose=(0.28,0.19,-0.33) err=0.06 goal=3.17 cmd=(0.12,0.34)
+TRACK idx=3/220 target=5 pose=(0.35,0.12,0.28) err=0.03 goal=3.25 cmd=(0.12,-0.22)
+WARN lost_tf: Lookup would require extrapolation into the past.  Requested time 1784693778.836068 but the earliest data is at time 1784693778.947408, when looking up transform from frame [base_link] to frame [map]
+TRACK idx=3/220 target=5 pose=(0.34,0.11,0.56) err=0.03 goal=3.25 cmd=(0.11,-0.35)
+TRACK idx=3/220 target=5 pose=(0.31,0.11,0.90) err=0.03 goal=3.25 cmd=(0.08,-0.35)
+TRACK idx=3/220 target=5 pose=(0.31,0.11,0.90) err=0.04 goal=3.25 cmd=(0.08,-0.35)
+TRACK idx=3/220 target=5 pose=(0.31,0.11,0.90) err=0.04 goal=3.25 cmd=(0.08,-0.35)
+TRACK idx=3/220 target=5 pose=(0.33,0.13,0.34) err=0.01 goal=3.24 cmd=(0.12,-0.33)
+TRACK idx=3/220 target=5 pose=(0.33,0.13,0.32) err=0.01 goal=3.24 cmd=(0.12,-0.30)
+TRACK idx=3/220 target=5 pose=(0.33,0.13,0.32) err=0.01 goal=3.24 cmd=(0.12,-0.30)
+TRACK idx=3/220 target=5 pose=(0.33,0.13,0.32) err=0.01 goal=3.24 cmd=(0.12,-0.30)
+TRACK idx=3/220 target=5 pose=(0.33,0.13,0.32) err=0.01 goal=3.24 cmd=(0.12,-0.30)
+WARN lost_tf: Lookup would require extrapolation into the past.  Requested time 1784693784.159086 but the earliest data is at time 1784693784.276067, when looking up transform from frame [base_link] to frame [map]
+TRACK idx=3/220 target=5 pose=(0.33,0.09,-1.48) err=0.05 goal=3.27 cmd=(0.00,0.35)
+TRACK idx=3/220 target=5 pose=(0.33,0.09,-1.48) err=0.05 goal=3.27 cmd=(0.00,0.35)
+TRACK idx=3/220 target=5 pose=(0.33,0.07,-1.79) err=0.07 goal=3.29 cmd=(0.00,0.35)
+TRACK idx=3/220 target=5 pose=(0.32,0.07,-1.83) err=0.08 goal=3.29 cmd=(0.00,0.35)
+TRACK idx=3/220 target=5 pose=(0.32,0.06,-1.56) err=0.08 goal=3.30 cmd=(0.00,0.35)
+TRACK idx=3/220 target=5 pose=(0.31,0.04,-1.14) err=0.10 goal=3.31 cmd=(0.00,0.35)
+TRACK idx=3/220 target=5 pose=(0.31,0.05,-0.85) err=0.09 goal=3.30 cmd=(0.00,0.35)
+TRACK idx=3/220 target=5 pose=(0.31,0.05,-0.85) err=0.09 goal=3.30 cmd=(0.00,0.35)
+TRACK idx=3/220 target=5 pose=(0.31,0.05,-0.85) err=0.09 goal=3.30 cmd=(0.00,0.35)
+TRACK idx=3/220 target=5 pose=(0.31,0.05,-0.85) err=0.09 goal=3.30 cmd=(0.00,0.35)
+TRACK idx=3/220 target=5 pose=(0.33,0.09,0.67) err=0.05 goal=3.27 cmd=(0.10,-0.35)
+TRACK idx=3/220 target=5 pose=(0.33,0.11,0.97) err=0.03 goal=3.26 cmd=(0.08,-0.35)
+TRACK idx=3/220 target=5 pose=(0.34,0.13,1.23) err=0.02 goal=3.24 cmd=(0.00,-0.35)
+TRACK idx=3/220 target=5 pose=(0.34,0.13,1.27) err=0.02 goal=3.24 cmd=(0.00,-0.35)
+TRACK idx=3/220 target=5 pose=(0.33,0.13,0.76) err=0.02 goal=3.24 cmd=(0.09,-0.35)
+TRACK idx=3/220 target=5 pose=(0.33,0.13,0.39) err=0.01 goal=3.24 cmd=(0.11,-0.35)
+TRACK idx=3/220 target=5 pose=(0.34,0.14,0.00) err=0.01 goal=3.23 cmd=(0.12,0.06)
+TRACK idx=3/220 target=5 pose=(0.35,0.14,-0.03) err=0.02 goal=3.23 cmd=(0.12,0.10)
+TRACK idx=3/220 target=5 pose=(0.35,0.14,-0.03) err=0.02 goal=3.23 cmd=(0.12,0.10)
+TRACK idx=3/220 target=5 pose=(0.35,0.14,-0.03) err=0.02 goal=3.23 cmd=(0.12,0.10)
+TRACK idx=3/220 target=5 pose=(0.35,0.14,-0.03) err=0.02 goal=3.23 cmd=(0.12,0.10)
+WARN lost_tf: Lookup would require extrapolation into the past.  Requested time 1784693805.859154 but the earliest data is at time 1784693805.956078, when looking up transform from frame [base_link] to frame [map]
+TRACK idx=4/220 target=6 pose=(0.54,-0.04,-0.59) err=0.19 goal=3.47 cmd=(0.07,0.35)
+WARN lost_tf: Lookup would require extrapolation into the past.  Requested time 1784693811.056071 but the earliest data is at time 1784693811.146773, when looking up transform from frame [base_link] to frame [map]
+TRACK idx=4/220 target=6 pose=(0.55,-0.05,-0.58) err=0.20 goal=3.48 cmd=(0.07,0.35)
+TRACK idx=4/220 target=6 pose=(0.55,-0.05,-0.58) err=0.20 goal=3.48 cmd=(0.07,0.35)
+TRACK idx=4/220 target=6 pose=(0.55,-0.05,-0.58) err=0.20 goal=3.48 cmd=(0.07,0.35)
+TRACK idx=4/220 target=6 pose=(0.55,-0.05,-0.58) err=0.20 goal=3.48 cmd=(0.07,0.35)
+WARN lost_tf: Lookup would require extrapolation into the past.  Requested time 1784693811.248092 but the earliest data is at time 1784693811.436071, when looking up transform from frame [base_link] to frame [map]
+TRACK idx=5/220 target=7 pose=(0.86,-0.18,0.74) err=0.35 goal=3.73 cmd=(0.12,-0.02)
+TRACK idx=5/220 target=7 pose=(0.86,-0.18,0.74) err=0.35 goal=3.73 cmd=(0.12,-0.02)
+TRACK idx=5/220 target=7 pose=(0.86,-0.18,0.74) err=0.35 goal=3.73 cmd=(0.12,-0.02)
+TRACK idx=5/220 target=7 pose=(0.86,-0.18,0.74) err=0.35 goal=3.73 cmd=(0.12,-0.02)
+TRACK idx=5/220 target=7 pose=(0.86,-0.18,0.74) err=0.35 goal=3.73 cmd=(0.12,-0.02)
+WARN lost_tf: Lookup would require extrapolation into the past.  Requested time 1784693816.748171 but the earliest data is at time 1784693816.896077, when looking up transform from frame [base_link] to frame [map]
+TRACK idx=6/220 target=8 pose=(0.93,0.15,1.25) err=0.11 goal=3.47 cmd=(0.00,-0.35)
+WARN lost_tf: Lookup would require extrapolation into the past.  Requested time 1784693822.256070 but the earliest data is at time 1784693822.347675, when looking up transform from frame [base_link] to frame [map]
+STOP requested

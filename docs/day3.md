@@ -8,7 +8,9 @@
 - 离线入口为 `offline_global_plan`，ROS2 发布入口为 `semantic_global_path_node`，默认发布 `go_traffic_light_1` 到 `/planning/global_path`；其他当前 step 通过 `step_id` 参数切换。当前 debug 配置 `global_planner.plugin=occupancy_grid_astar`、`trajectory_smoother.plugin=cubic_bezier`，保留 `semantic_corridor` fallback。
 - `day3_global_planning.launch.py` 当前默认 `show_all_steps:=true`，会额外按 step 发布 6 个分段路径到 `/planning/global_paths/<step_id>`，用于 RViz 同时查看完整可规划路线。
 - `debug_route.yaml` 当前是实验室适配路线：第一次卸货后，`return_to_pickup_area` 通过 `lab_return_to_pickup` 从 `drop_dock` 到 `traffic_light_stop_line`，再沿随机障碍物/取货方向到 `pickup_dock`。`debug_competition_return_route.yaml` 保留 debug 语义地图上的正式返程车道变体。
-- 小车端当前运行的是 RViz 诊断可视化栈；该栈只发布路径、地图和静态可视化 TF，不启动控制器、底盘驱动或机械臂动作。2026-07-22 实车重标定后的语义点已同步小车，并已重启 day3 规划发布节点。
+- 2026-07-22 早期小车端运行过 RViz 诊断可视化栈；该栈只发布路径、地图和静态可视化 TF，不启动控制器、底盘驱动或机械臂动作。
+- 2026-07-22 后续为额外实车低速验证，Day3 执行链路已按之前跑通过的 `agilex_ws` 导航坐标约定修复为 `map -> odom -> base_link`；`ranger_base_node` 发布 `odom -> base_link`，`robot_state_publisher` 发布 `base_link -> livox_frame/camera_link`，AMCL 与 `amcl_tf_keepalive` 提供 `map -> odom`。
+- Day3 原计划验收范围仍限定为全局路径规划；低速实车跟踪属于 Day4/Day5 风险前置验证，不能把“能跑全程”混作 Day3 已完成项。
 
 ## 验证
 
@@ -27,6 +29,10 @@
 - 离线路径可视化证据已保留为当前 optimizer 栅格叠图：`docs/evidence/day3/debug_global_plan_on_map_diagnosis.png`。
 - RViz 配置已加入 `competition_bringup`：`day3_global_planning.launch.py rviz:=true` 默认加载 `maps/debug/map.yaml` 到 `/map`，叠加当前 step `/planning/global_path`，并叠加 6 个全路线分段 topic；launch 默认发布 `map -> day3_viz_anchor` 静态 TF，避免纯规划可视化时 RViz 报 `map` frame 不存在。
 - 小车端 RViz 可视化已验证：`/map` 栅格地图、`/planning/global_path` 和 6 个 `/planning/global_paths/<step_id>` 可叠加显示，Global Status 和 Map Status OK；旧 RViz 截图已清理，当前保留的路线视觉证据为 `docs/evidence/day3/debug_global_plan_on_map_diagnosis.png`。
+- 路径合法性补充报告已归档：`docs/evidence/day3/day3_path_legality_report_20260722.md`。该报告显示 6 个规划 step 的采样点 `blocked=0`、`outside_map=0`、`outside_effective=0`，最大规划耗时 `28.670ms`，均低于 `500ms` 阈值；所有采样点到对应语义走廊中心线的最大偏移小于当前 debug 走廊半宽 `1.20m`。
+- 失败原因负例已补充：临时 route 中把 `go_traffic_light_1.target_ref` 改成不存在的 `missing_debug_target` 后，离线规划返回 `ok=False`、`failures=1`，失败原因 `route_ref_not_on_centerline`，说明 route 引用错误能被明确记录。
+- Day3 导航坐标链补充证据已归档：`docs/evidence/day3/day3_navigation_launch_20260722.txt` 和 `docs/evidence/day3/day3_tf_tree_after_initialpose_20260722.txt`。TF 树采样显示 `map -> odom -> base_link -> livox_frame/camera_link` 已闭合。
+- 低速实车试跑补充记录已归档：`docs/evidence/day3/day3_field_trial_summary_20260722.md`，原始日志为 `docs/evidence/day3/day3_global_path_follower_trial_20260722.txt`。该试跑验证了 `/cmd_vel` 通路和新坐标链可驱动车辆，但未通过全程稳定跟踪。
 - 诊断事实：小车端 `/map` 元数据与 `maps/debug/map.yaml` 一致，`resolution=0.03`、`width=977`、`height=1374`、`origin=(-2.39,-18.3,0)`。
 - 历史诊断事实：按 `map.yaml` 投影规划点到 `map.pgm` 时，旧 `traffic_light_stop_line=(2.98,-0.77)` 落在占用栅格；用户将车停到红绿灯停止线后，12 个 `map -> body` 采样均值为 `(2.9882,-0.8088,yaw=0.4303)`，与旧点平面差约 `0.040m`，该阶段曾将停止线更新为 `(2.99,-0.81,yaw=0.43)`。
 - 诊断事实：校准前车端 `/Laser_map` frame 为 `camera_init`，实时 TF 为 `camera_init -> body`；当时未发现 `map -> camera_init` 锚定 TF。该事实说明校准前 FAST-LIO 实时定位链和 RViz 静态 occupancy map/path 链路尚未连通。
@@ -40,6 +46,7 @@
 - Route 修正事实：`random_obstacle_1.target_ref` 已由 `random_obstacle_exit` 改为 `pickup_dock`，因此 RViz 中随机障碍物段现在会从红绿灯停止线经随机障碍物区域连续发布到取货点。
 - 本地 optimizer/smoother 验证事实：debug 配置 `grid_inflation_radius_m=0.30m`、`min_turning_radius_m=0.15m` 时，2026-07-22 重标定语义点可生成 6 条路径、0 个失败；实验室返回取货段锚点顺序仍为 `drop_dock -> traffic_light_stop_line -> random_obstacle_entry -> random_obstacle_exit -> pickup_dock`。
 - 上一版车端运行事实：2026-07-21 车端 ROS 图只检测到规划、地图、TF/RViz 相关 topic，未检测到 `/cmd_vel`、`/cmd_vel_safe` 或 `/odom`；因此该车端状态只能验证 optimizer Path 发布，不能直接闭环实车行驶。
+- 2026-07-22 低速试跑事实：车辆从起点附近实际沿路径前进到约 index 6；最终 `map -> base_link` 约为 `(x=1.000, y=0.368, yaw=1.222rad)`，最终最近路径点 index `6/220`，路径偏差约 `0.200m`。Codex 因 AMCL/TF 航向明显跳变主动停止，停车后 `/cmd_vel` 无发布者、`/odom` twist 为 0、底盘 `error_code=0`。
 
 ## 当前 PC 本地实验室规划结果
 
@@ -87,5 +94,7 @@
 - 当前 footprint/clearance 已接入规划参数，debug 默认值为 `footprint_radius_m=0.45`、`clearance_m=0.20`；实车外廓仍需复核后冻结。
 - 当前 `min_turning_radius_m=0.15` 是实验室 debug 路线合法性保护阈值，尚未绑定 RANGER 实车最小转弯能力；后续底盘能力确认后必须更新并重新验收曲率。
 - 当前 cubic Bezier 输出仍是几何 `Path`，不是带速度、加速度、时间戳的最终控制轨迹；实车自动行驶前还需要确认 tracker/safety/driver 链路。
-- 语义点与 occupancy map 的最终几何一致性仍需用户在 RViz 目视复核和实车低速复核；2026-07-22 重标定已用车体中心位姿替代上一版点击点对齐，但尚未完成自动行驶闭环验证。
+- 语义点与 occupancy map 的最终几何一致性已完成一次 RViz/雷达匹配后的车体中心重标定和路径叠图复核，但仍需在正式场地重新标定后复验。
 - 当前 `map -> camera_init` 锚定是运行态进程；若重启车端、停止 `fastlio_anchor_node` 或重新启动 FAST-LIO 后，需要在起点或另一个可靠锚点重新发布 `/initialpose`。
+- 当前 Day3 低速试跑没有通过全程自动行驶闭环；主要风险是 AMCL/TF 航向跳变和简单路径跟踪器稳定性不足。该项应转入 Day4/Day5 的局部轨迹生成、跟踪器和安全出口验收。
+- 负例测试目前只覆盖 route 引用错误；地图膨胀堵死、目标落障碍、规划超时等负例尚未系统覆盖。
