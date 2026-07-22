@@ -10,7 +10,9 @@ coordinate_source: >-
   FAST-LIO anchored from traffic_light_stop_line. On 2026-07-21, all
   coordinate-bearing debug semantic geometry was aligned to the RViz occupancy
   map with a 3-anchor SE(2) calibration from /clicked_point anchors start,
-  traffic_light_stop_line, and random_obstacle_entry.
+  traffic_light_stop_line, and random_obstacle_entry. On 2026-07-22, current
+  debug semantic points were re-measured by driving the car to each semantic
+  pose and sampling FAST-LIO map->body after RViz map/scan alignment.
 coordinate_convention:
   position_unit: m
   heading_unit: rad
@@ -18,22 +20,28 @@ coordinate_convention:
   map_origin: [-2.39, -18.30, 0.0]
   map_resolution: 0.03
 alignment_calibration:
-  method: se2_least_squares_clicked_points
-  date: 2026-07-21
-  clicked_point_frame_id: map
-  anchors: [start, traffic_light_stop_line, random_obstacle_entry]
-  transform:
-    rotation_rad: -0.389873385
-    rotation_deg: -22.338099
-    translation_m: [-0.011642567, 1.832068285]
-  residual_rms_m: 0.130
-  residual_max_m: 0.182
+  method: fast_lio_map_body_pose_sampling
+  date: 2026-07-22
+  tf_source: map_to_body
+  anchor_source: rviz_2d_pose_estimate_at_start_then_static_map_to_camera_init_lock
+  sampled_points:
+    - start
+    - traffic_light_stop_line
+    - random_obstacle_entry
+    - random_obstacle_exit
+    - pickup_dock
+    - cone_lane_change_entry
+    - cone_lane_change_exit
+    - drop_dock
+    - finish_park
+  supersedes: se2_least_squares_clicked_points_2026_07_21
 verification:
   map_file_load: passed_car_nav2_map_server
   rviz_pose_check: passed_amcl_tf_pose_capture
   low_speed_route_check: passed_manual_low_speed_semantic_marking
   fastlio_route_review: passed_manual_low_speed_route_review
   rviz_clicked_point_alignment: passed_three_anchor_se2_calibration
+  fastlio_pose_resample: passed_manual_body_pose_sampling_2026_07_22
   return_to_start_error_check: pending
 
 # The effective area is intentionally narrower than the complete Day 1 map.
@@ -54,58 +62,58 @@ effective_area:
 
 points:
   start:
-    x: -0.07
-    y: 0.01
-    yaw: -0.05
+    x: -0.376
+    y: 0.112
+    yaw: 0.020
     role: start_area
     status: measured
   traffic_light_stop_line:
-    x: 2.45
-    y: -0.05
-    yaw: 0.04
+    x: 2.215
+    y: 0.222
+    yaw: 0.045
     role: traffic_light_stop_line
     status: measured
   pickup_dock:
-    x: 9.08
-    y: -0.02
-    yaw: 0.02
+    x: 8.859
+    y: -0.018
+    yaw: -0.003
     role: pickup_area
     status: measured
   drop_dock:
-    x: 2.24
-    y: 3.22
-    yaw: 3.12
+    x: 2.077
+    y: 3.370
+    yaw: 3.108
     role: drop_area
     status: measured
   finish_park:
-    x: -0.54
-    y: 3.03
-    yaw: -3.12
+    x: -0.740
+    y: 3.185
+    yaw: 3.128
     role: finish_parking_area
     status: measured
 
   random_obstacle_entry:
-    x: 4.20
-    y: 0.03
-    yaw: 0.01
+    x: 3.720
+    y: 0.320
+    yaw: 0.020
     role: random_obstacle_zone_entry
     status: measured
   random_obstacle_exit:
-    x: 6.93
-    y: 0.07
-    yaw: 0.04
+    x: 6.679
+    y: 0.295
+    yaw: -0.016
     role: random_obstacle_zone_exit
     status: measured
   cone_lane_change_entry:
-    x: 7.73
-    y: 2.63
-    yaw: -3.10
+    x: 7.452
+    y: 2.844
+    yaw: 3.138
     role: cone_lane_change_zone_entry
     status: measured
   cone_lane_change_exit:
-    x: 3.96
-    y: 2.69
-    yaw: 3.13
+    x: 3.896
+    y: 2.866
+    yaw: -3.118
     role: cone_lane_change_zone_exit
     status: measured
 
@@ -184,18 +192,18 @@ obstacle_zones:
     semantic_type: RANDOM_OBSTACLE
     status: derived_draft
     boundary:
-      - [4.18, 1.22]
-      - [6.91, 1.27]
-      - [6.95, -1.12]
-      - [4.21, -1.17]
+      - [3.73, 1.52]
+      - [6.69, 1.49]
+      - [6.67, -0.90]
+      - [3.71, -0.88]
   - id: cone_lane_change_zone
     semantic_type: CONE_LANE_CHANGE
     status: derived_draft
     boundary:
-      - [7.71, 1.43]
-      - [3.94, 1.48]
-      - [3.98, 3.89]
-      - [7.75, 3.83]
+      - [7.45, 1.64]
+      - [3.89, 1.67]
+      - [3.90, 4.07]
+      - [7.46, 4.04]
 
 no_go_zones:
   - id: outside_debug_effective_area
