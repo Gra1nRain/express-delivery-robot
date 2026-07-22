@@ -44,6 +44,8 @@ def main() -> int:
     parser.add_argument("--base-frame", default="base_link")
     parser.add_argument("--body-frame", dest="base_frame", help=argparse.SUPPRESS)
     parser.add_argument("--max-pose-z-m", type=float, default=0.30)
+    parser.add_argument("--tf-timeout-s", type=float, default=0.10)
+    parser.add_argument("--max-tf-dropout-s", type=float, default=0.75)
     parser.add_argument("--rate-hz", type=float, default=20.0)
     parser.add_argument("--lookahead-m", type=float, default=0.45)
     parser.add_argument("--max-speed-mps", type=float, default=0.18)
@@ -128,6 +130,7 @@ def run_tracker(args: argparse.Namespace, path: list[tuple[float, float]]) -> in
     period = 1.0 / max(args.rate_hz, 1.0)
     current_index = 0
     last_log = 0.0
+    tf_lost_since: float | None = None
 
     try:
         wait_for_subscriber(node, publisher, args.cmd_topic)
@@ -137,6 +140,7 @@ def run_tracker(args: argparse.Namespace, path: list[tuple[float, float]]) -> in
             args.map_frame,
             args.base_frame,
             args.max_pose_z_m,
+            args.tf_timeout_s,
         )
         start_error = math.hypot(pose[0] - path[0][0], pose[1] - path[0][1])
         if start_error > args.start_tolerance_m:
@@ -161,11 +165,24 @@ def run_tracker(args: argparse.Namespace, path: list[tuple[float, float]]) -> in
                     args.map_frame,
                     args.base_frame,
                     args.max_pose_z_m,
+                    args.tf_timeout_s,
                 )
             except (TransformException, FrameValidationError) as exc:
-                print(f"ABORT lost_tf: {exc}")
-                publish_zero()
-                return 4
+                publish_zero(1)
+                now = time.monotonic()
+                if tf_lost_since is None:
+                    tf_lost_since = now
+                    print(f"WARN lost_tf: {exc}", flush=True)
+                if now - tf_lost_since > args.max_tf_dropout_s:
+                    print(
+                        f"ABORT lost_tf_for={now - tf_lost_since:.3f}s: {exc}",
+                        flush=True,
+                    )
+                    publish_zero()
+                    return 4
+                time.sleep(period)
+                continue
+            tf_lost_since = None
 
             nearest_index, nearest_error = find_nearest_index(path, pose, current_index)
             current_index = nearest_index
@@ -240,6 +257,7 @@ def wait_for_pose(
     map_frame: str,
     base_frame: str,
     max_pose_z_m: float,
+    tf_timeout_s: float,
 ) -> tuple[float, float, float]:
     deadline = time.monotonic() + 5.0
     last_error: Exception | None = None
@@ -247,7 +265,7 @@ def wait_for_pose(
         rclpy = sys.modules["rclpy"]
         rclpy.spin_once(node, timeout_sec=0.05)
         try:
-            return lookup_pose(tf_buffer, map_frame, base_frame, max_pose_z_m)
+            return lookup_pose(tf_buffer, map_frame, base_frame, max_pose_z_m, tf_timeout_s)
         except Exception as exc:  # tf2_ros exception type is imported inside run_tracker.
             last_error = exc
             time.sleep(0.05)
@@ -259,10 +277,17 @@ def lookup_pose(
     map_frame: str,
     base_frame: str,
     max_pose_z_m: float,
+    tf_timeout_s: float,
 ) -> tuple[float, float, float]:
     import rclpy
+    from rclpy.duration import Duration
 
-    transform = tf_buffer.lookup_transform(map_frame, base_frame, rclpy.time.Time())
+    transform = tf_buffer.lookup_transform(
+        map_frame,
+        base_frame,
+        rclpy.time.Time(),
+        timeout=Duration(seconds=max(0.0, tf_timeout_s)),
+    )
     translation = transform.transform.translation
     z = float(translation.z)
     if abs(z) > max_pose_z_m:
