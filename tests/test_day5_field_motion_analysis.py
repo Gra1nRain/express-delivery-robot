@@ -213,6 +213,17 @@ class Day5FieldMotionAnalysisTest(unittest.TestCase):
         self.assertIn("body_cmd_x", relay_text)
         self.assertIn("max_abs_body_cmd_x_mps", relay_text)
 
+    def test_relay_can_preserve_manual_rviz_initialpose(self) -> None:
+        relay_text = (REPO_ROOT / "scripts" / "day5_full_route_relay.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('"--skip-initialpose"', relay_text)
+        self.assertIn("initialpose_skipped", relay_text)
+        self.assertIn("using_existing_map_tf", relay_text)
+        self.assertIn("are required unless", relay_text)
+        self.assertIn("--skip-initialpose is set", relay_text)
+
 
 if __name__ == "__main__":
     unittest.main()

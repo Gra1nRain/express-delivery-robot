@@ -327,6 +327,12 @@ class RelayMonitor(Node):
             time.sleep(0.03)
 
     def publish_initial_pose(self) -> None:
+        if (
+            self._args.initial_x is None
+            or self._args.initial_y is None
+            or self._args.initial_yaw is None
+        ):
+            raise ValueError("initial pose values are required when publishing initialpose")
         msg = PoseWithCovarianceStamped()
         msg.header.frame_id = "map"
         msg.pose.pose.position.x = self._args.initial_x
@@ -346,8 +352,12 @@ class RelayMonitor(Node):
             time.sleep(0.08)
 
     def prepose_ready(self) -> bool:
+        initialpose_ready = (
+            bool(self._args.skip_initialpose)
+            or self.initial_pose_pub.get_subscription_count() >= 1
+        )
         return (
-            self.initial_pose_pub.get_subscription_count() >= 1
+            initialpose_ready
             and self.age("cloud") is not None
             and self.age("cloud") < 0.8
             and self.age("odom") is not None
@@ -548,7 +558,10 @@ def run(args: argparse.Namespace) -> int:
                         "event": "script_start",
                         "label": args.label,
                         "launch_pid": args.launch_pid,
-                        "initial_pose": [args.initial_x, args.initial_y, args.initial_yaw],
+                        "initial_pose": None
+                        if args.skip_initialpose
+                        else [args.initial_x, args.initial_y, args.initial_yaw],
+                        "skip_initialpose": bool(args.skip_initialpose),
                         "route_file": args.route_file,
                         "route_point_count": route_point_count,
                         "finish_xy": finish_xy,
@@ -571,17 +584,30 @@ def run(args: argparse.Namespace) -> int:
                 jsonl.write(json.dumps({"event": "stop", "reason": stop_reason}, ensure_ascii=False) + "\n")
                 return 2
 
-            node.publish_initial_pose()
-            jsonl.write(
-                json.dumps(
-                    {
-                        "event": "initialpose_published",
-                        "snapshot": node.snapshot("initialpose"),
-                    },
-                    ensure_ascii=False,
+            if args.skip_initialpose:
+                jsonl.write(
+                    json.dumps(
+                        {
+                            "event": "initialpose_skipped",
+                            "reason": "using_existing_map_tf",
+                            "snapshot": node.snapshot("initialpose_skipped"),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
                 )
-                + "\n"
-            )
+            else:
+                node.publish_initial_pose()
+                jsonl.write(
+                    json.dumps(
+                        {
+                            "event": "initialpose_published",
+                            "snapshot": node.snapshot("initialpose"),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
 
             ready_start = time.time()
             ready_count = 0
@@ -727,7 +753,9 @@ def run(args: argparse.Namespace) -> int:
         f"route_point_count={route_point_count}",
         f"finish_xy={finish_xy}",
         f"samples={samples}",
-        f"initialpose=x={args.initial_x:.3f}, y={args.initial_y:.3f}, yaw={args.initial_yaw:.3f}",
+        "initialpose=skipped_existing_map_tf"
+        if args.skip_initialpose
+        else f"initialpose=x={args.initial_x:.3f}, y={args.initial_y:.3f}, yaw={args.initial_yaw:.3f}",
         "relay=/cmd_vel_safe -> /cmd_vel",
         f"max_abs_body_cmd_x_mps={max_body_cmd:.4f}",
         f"max_abs_safe_cmd_x_mps={max_safe_cmd:.4f}",
@@ -761,9 +789,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--label", required=True)
     parser.add_argument("--launch-pid", type=int, required=True)
-    parser.add_argument("--initial-x", type=float, required=True)
-    parser.add_argument("--initial-y", type=float, required=True)
-    parser.add_argument("--initial-yaw", type=float, required=True)
+    parser.add_argument("--initial-x", type=float)
+    parser.add_argument("--initial-y", type=float)
+    parser.add_argument("--initial-yaw", type=float)
+    parser.add_argument(
+        "--skip-initialpose",
+        action="store_true",
+        help="Use an existing map TF from RViz/manual initialpose instead of publishing one.",
+    )
     parser.add_argument("--route-file", required=True)
     parser.add_argument(
         "--global-tracking-mode",
@@ -790,6 +823,13 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    if not args.skip_initialpose and (
+        args.initial_x is None or args.initial_y is None or args.initial_yaw is None
+    ):
+        parser.error(
+            "--initial-x, --initial-y, and --initial-yaw are required unless "
+            "--skip-initialpose is set"
+        )
     return run(args)
 
 
