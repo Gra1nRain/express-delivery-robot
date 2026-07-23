@@ -54,6 +54,7 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertEqual(replanning["plugin"], "reference_aware_hybrid_astar")
         self.assertGreaterEqual(replanning["lookahead_distance_m"], 3.0)
         self.assertGreater(replanning["reference_deviation_weight"], 0.0)
+        self.assertLessEqual(replanning["search_padding_m"], 1.5)
         self.assertEqual(
             replanning["costmap_topic"],
             "/avoidance/local_costmap",

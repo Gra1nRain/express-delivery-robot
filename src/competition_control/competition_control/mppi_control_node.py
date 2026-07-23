@@ -154,6 +154,7 @@ class MPPIControlNode(Node):
                 "max_speed_mps": params.max_speed_mps,
                 "max_acceleration_mps2": params.max_acceleration_mps2,
                 "max_deceleration_mps2": params.max_deceleration_mps2,
+                "max_curvature_1pm": 1.0 / params.min_turning_radius_m,
             }
         )
         self._state_estimator = StateEstimator(

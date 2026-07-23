@@ -6,7 +6,14 @@ import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_planning"))
+sys.path.insert(0, str(REPO_ROOT / "src" / "competition_control"))
 
+from competition_control.mppi_controller import (
+    ControlTrajectory,
+    ControlTrajectoryPoint,
+    MPPIController,
+    MPPIParams,
+)
 from competition_planning.local_trajectory_planner import (
     LocalReplanConfig,
     LocalTrajectoryPlanner,
@@ -151,6 +158,105 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
             1.0 / 0.81 + 0.02,
         )
         self.assertLessEqual(max(point.v for point in trajectory.points), 0.20)
+
+    def test_bagged_local_path_with_minor_curvature_overshoot_is_mppi_acceptable(self) -> None:
+        path = (
+            PathPoint(6.6183, 0.3383, 0.0200),
+            PathPoint(6.7183, 0.3403, 0.0200),
+            PathPoint(6.8183, 0.3423, 0.0200),
+            PathPoint(6.9183, 0.3443, 0.0200),
+            PathPoint(7.0183, 0.3463, 0.0200),
+            PathPoint(7.1182, 0.3483, 0.0200),
+            PathPoint(7.2182, 0.3503, 0.0200),
+            PathPoint(7.3182, 0.3523, 0.0200),
+            PathPoint(7.4182, 0.3543, 0.0200),
+            PathPoint(7.5182, 0.3563, 0.0200),
+            PathPoint(7.6181, 0.3583, 0.0200),
+            PathPoint(7.7181, 0.3603, 0.0200),
+            PathPoint(7.8181, 0.3623, 0.0200),
+            PathPoint(7.9181, 0.3643, 0.0200),
+            PathPoint(8.0181, 0.3663, 0.0200),
+            PathPoint(8.1180, 0.3683, 0.0200),
+            PathPoint(8.2180, 0.3703, 0.0200),
+            PathPoint(8.3180, 0.3723, 0.0200),
+            PathPoint(8.4180, 0.3743, 0.0200),
+            PathPoint(8.5180, 0.3763, 0.0200),
+            PathPoint(8.6179, 0.3783, 0.0200),
+            PathPoint(8.7179, 0.3803, 0.0200),
+            PathPoint(8.8179, 0.3823, 0.0200),
+            PathPoint(8.9178, 0.3858, 0.0509),
+            PathPoint(9.0176, 0.3925, 0.0817),
+            PathPoint(9.1170, 0.4037, 0.1435),
+            PathPoint(9.2154, 0.4210, 0.2052),
+            PathPoint(9.3122, 0.4459, 0.2978),
+            PathPoint(9.4063, 0.4796, 0.3904),
+            PathPoint(9.4962, 0.5233, 0.5138),
+            PathPoint(9.5801, 0.5777, 0.6373),
+            PathPoint(9.6566, 0.6420, 0.7607),
+        )
+        runtime_curvature_limit = 1.0 / 0.81
+
+        trajectory = parameterize_local_path(
+            path,
+            semantic_map={"frame_id": "map"},
+            optimizer_config={
+                "trajectory_optimizer": {
+                    "max_speed_mps": 0.15,
+                    "max_acceleration_mps2": 0.20,
+                    "max_deceleration_mps2": 0.30,
+                    "max_lateral_acceleration_mps2": 0.20,
+                    "max_curvature_1pm": runtime_curvature_limit,
+                }
+            },
+        )
+        control_trajectory = ControlTrajectory(
+            frame_id="map",
+            route_name="bagged_local_replan",
+            points=tuple(
+                ControlTrajectoryPoint(
+                    point.x,
+                    point.y,
+                    point.yaw,
+                    point.s,
+                    point.curvature,
+                    point.v,
+                    point.t,
+                    point.ref_id,
+                )
+                for point in trajectory.points
+            ),
+        )
+
+        MPPIController(
+            control_trajectory,
+            MPPIParams(min_turning_radius_m=0.81),
+            random_seed=31,
+        )
+        self.assertLessEqual(
+            max(abs(point.curvature) for point in trajectory.points),
+            runtime_curvature_limit + 1e-9,
+        )
+
+    def test_local_path_far_outside_runtime_curvature_envelope_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "turning-radius envelope"):
+            parameterize_local_path(
+                (
+                    PathPoint(0.0, 0.0, 0.0),
+                    PathPoint(0.1, 0.0, 0.0),
+                    PathPoint(0.1, 0.1, math.pi / 2.0),
+                ),
+                semantic_map={"frame_id": "map"},
+                optimizer_config={
+                    "trajectory_optimizer": {
+                        "max_speed_mps": 0.15,
+                        "max_acceleration_mps2": 0.20,
+                        "max_deceleration_mps2": 0.30,
+                        "max_lateral_acceleration_mps2": 0.20,
+                        "max_curvature_1pm": 1.0,
+                        "curvature_overshoot_tolerance_ratio": 0.0,
+                    }
+                },
+            )
 
 
 if __name__ == "__main__":

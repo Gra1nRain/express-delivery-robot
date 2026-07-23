@@ -605,6 +605,12 @@ def parameterize_step_plan(
         "max_lateral_acceleration_mps2",
         0.20,
     )
+    max_curvature_1pm = _optional_positive_float(params, "max_curvature_1pm")
+    curvature_overshoot_tolerance_ratio = _nonnegative_float(
+        params,
+        "curvature_overshoot_tolerance_ratio",
+        0.02,
+    )
     zone_speed_limits = {
         str(key): float(value)
         for key, value in params.get("obstacle_zone_speed_limits_mps", {}).items()
@@ -612,6 +618,12 @@ def parameterize_step_plan(
 
     distances = _cumulative_distances(plan.path)
     curvatures = _path_curvatures(plan.path)
+    if max_curvature_1pm is not None:
+        curvatures = _apply_curvature_envelope(
+            curvatures,
+            max_curvature_1pm=max_curvature_1pm,
+            overshoot_tolerance_ratio=curvature_overshoot_tolerance_ratio,
+        )
     stop_refs = _semantic_stop_refs(semantic_map)
     obstacle_zones = _obstacle_zones(semantic_map)
     ref_speed_limits = _semantic_ref_speed_limits(semantic_map, zone_speed_limits)
@@ -674,6 +686,45 @@ def _positive_float(params: dict[str, Any], key: str, default: float) -> float:
     if value <= 0.0:
         raise ValueError(f"trajectory_optimizer.{key} must be positive")
     return value
+
+
+def _optional_positive_float(params: dict[str, Any], key: str) -> float | None:
+    if key not in params or params[key] is None:
+        return None
+    value = float(params[key])
+    if value <= 0.0:
+        raise ValueError(f"trajectory_optimizer.{key} must be positive")
+    return value
+
+
+def _nonnegative_float(params: dict[str, Any], key: str, default: float) -> float:
+    value = float(params.get(key, default))
+    if value < 0.0:
+        raise ValueError(f"trajectory_optimizer.{key} must be non-negative")
+    return value
+
+
+def _apply_curvature_envelope(
+    curvatures: Sequence[float],
+    *,
+    max_curvature_1pm: float,
+    overshoot_tolerance_ratio: float,
+) -> list[float]:
+    hard_limit = max_curvature_1pm * (1.0 + overshoot_tolerance_ratio)
+    bounded: list[float] = []
+    for curvature in curvatures:
+        magnitude = abs(curvature)
+        if magnitude > hard_limit + 1e-9:
+            raise ValueError(
+                "trajectory exceeds the runtime turning-radius envelope: "
+                f"|curvature|={magnitude:.6f} 1/m exceeds "
+                f"{max_curvature_1pm:.6f} 1/m"
+            )
+        if magnitude > max_curvature_1pm:
+            bounded.append(math.copysign(max_curvature_1pm, curvature))
+        else:
+            bounded.append(curvature)
+    return bounded
 
 
 def _cumulative_distances(path: Sequence[PathPoint]) -> list[float]:

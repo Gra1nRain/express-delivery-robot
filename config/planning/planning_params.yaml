@@ -37,7 +37,7 @@ replanning:
   lookahead_distance_m: 3.0
   reference_deviation_weight: 2.0
   inflation_radius_m: 0.45
-  search_padding_m: 3.0
+  search_padding_m: 1.5
   goal_position_tolerance_m: 0.25
   goal_heading_tolerance_deg: 15.0
   max_expansions: 250000
