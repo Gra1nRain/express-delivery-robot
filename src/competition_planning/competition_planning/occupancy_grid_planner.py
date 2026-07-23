@@ -86,22 +86,36 @@ class OccupancyGridMap:
                     blocked[index] = 1
             return tuple(bool(value) for value in blocked)
 
-        offsets: list[tuple[int, int]] = []
         radius_sq = radius_cells * radius_cells
-        for dy in range(-radius_cells, radius_cells + 1):
-            for dx in range(-radius_cells, radius_cells + 1):
-                if dx * dx + dy * dy <= radius_sq:
-                    offsets.append((dx, dy))
+        row_spans = tuple(
+            (dy, math.isqrt(radius_sq - dy * dy))
+            for dy in range(-radius_cells, radius_cells + 1)
+        )
+        row_deltas = [
+            [0] * (self.width + 1)
+            for _ in range(self.height)
+        ]
+        for index, occupied in enumerate(self.occupied):
+            if not occupied:
+                continue
+            row, col = divmod(index, self.width)
+            for dy, half_width in row_spans:
+                target_row = row + dy
+                if not 0 <= target_row < self.height:
+                    continue
+                start_col = max(0, col - half_width)
+                end_col = min(self.width, col + half_width + 1)
+                deltas = row_deltas[target_row]
+                deltas[start_col] += 1
+                deltas[end_col] -= 1
 
-        for row in range(self.height):
+        for row, deltas in enumerate(row_deltas):
+            active_intervals = 0
             row_offset = row * self.width
             for col in range(self.width):
-                if not self.occupied[row_offset + col]:
-                    continue
-                for dx, dy in offsets:
-                    inflated = (col + dx, row + dy)
-                    if self.contains(inflated):
-                        blocked[self.index(inflated)] = 1
+                active_intervals += deltas[col]
+                if active_intervals:
+                    blocked[row_offset + col] = 1
         return tuple(bool(value) for value in blocked)
 
 
