@@ -134,6 +134,7 @@ class LocalReplannerNode(Node):
         )
 
     def _costmap_callback(self, message: OccupancyGrid) -> None:
+        received_at_s = self.get_clock().now().nanoseconds / 1e9
         if not message.header.frame_id:
             self._publish_status("INVALID_COSTMAP_FRAME")
             return
@@ -175,7 +176,7 @@ class LocalReplannerNode(Node):
             )
             points.append((map_x, map_y))
         self._obstacle_points_map = tuple(points)
-        self._costmap_stamp_s = _stamp_to_seconds(message.header.stamp)
+        self._costmap_stamp_s = received_at_s
         self._costmap_frame = message.header.frame_id
 
     def _planning_cycle(self) -> None:
@@ -287,11 +288,6 @@ def _yaw_from_quaternion(quaternion) -> float:
         2.0 * (float(quaternion.w) * float(quaternion.z) + float(quaternion.x) * float(quaternion.y)),
         1.0 - 2.0 * (float(quaternion.y) ** 2 + float(quaternion.z) ** 2),
     )
-
-
-def _stamp_to_seconds(stamp) -> float:
-    return float(stamp.sec) + float(stamp.nanosec) / 1e9
-
 
 def main() -> None:
     rclpy.init()

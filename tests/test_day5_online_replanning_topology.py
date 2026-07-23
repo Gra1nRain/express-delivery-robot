@@ -96,6 +96,23 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertIn("rclpy.time.Time()", callback_body)
         self.assertNotIn("rclpy.time.Time.from_msg(message.header.stamp)", callback_body)
 
+    def test_local_costmap_freshness_uses_receipt_time(self) -> None:
+        replanner_node = (
+            REPO_ROOT
+            / "src"
+            / "competition_planning"
+            / "competition_planning"
+            / "local_replanner_node.py"
+        ).read_text(encoding="utf-8")
+
+        callback_body = replanner_node.split(
+            "    def _costmap_callback(self, message: OccupancyGrid) -> None:",
+            maxsplit=1,
+        )[1].split("    def _planning_cycle", maxsplit=1)[0]
+        self.assertIn("received_at_s = self.get_clock().now().nanoseconds / 1e9", callback_body)
+        self.assertIn("self._costmap_stamp_s = received_at_s", callback_body)
+        self.assertNotIn("_stamp_to_seconds(message.header.stamp)", callback_body)
+
 
 if __name__ == "__main__":
     unittest.main()
