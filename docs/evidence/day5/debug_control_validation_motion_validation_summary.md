@@ -6,11 +6,11 @@
 - completed: True
 - steps: 4455
 - simulated_duration_s: 222.75
-- max_speed_mps: 0.19967859286068634
-- max_abs_yaw_rate_radps: 0.24631506090296965
-- max_abs_lateral_error_m: 0.04749480636914788
-- max_abs_heading_error_rad: 0.11461604752935362
-- final_position_error_m: 0.04583806501620216
+- max_speed_mps: 0.19975800628756055
+- max_abs_yaw_rate_radps: 0.24601938495188336
+- max_abs_lateral_error_m: 0.04835771877154834
+- max_abs_heading_error_rad: 0.11807969074228408
+- final_position_error_m: 0.04512361777294581
 - final_speed_mps: 0.0
 - safe_hold_count: 0
 - safe_limited_count: 11
