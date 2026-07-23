@@ -64,6 +64,12 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
             1,
             "Proximity safety must process the newest cloud instead of queued old clouds.",
         )
+        self.assertGreaterEqual(
+            proximity_config["max_cloud_age_s"],
+            1.5,
+            "Day5 FAST-LIO body clouds have shown >1.4s header delay while still "
+            "arriving live; proximity freshness must not false-stop that stream.",
+        )
         self.assertEqual(
             proximity_config["costmap_topic"],
             "/avoidance/local_costmap",
