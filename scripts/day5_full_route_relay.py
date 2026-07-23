@@ -481,6 +481,32 @@ def _safe_shutdown(node: RelayMonitor, launch_pid: int) -> list[str]:
     return logs
 
 
+def _hold_after_stop(
+    node: RelayMonitor,
+    *,
+    seconds: float,
+    status_path: Path,
+    stop_reason: str,
+) -> list[str]:
+    if seconds <= 0.0:
+        return []
+    hold_log = [f"post_stop_hold_begin_s={seconds:.1f}"]
+    node.relay_active = False
+    hold_start_s = time.time()
+    while time.time() - hold_start_s < seconds:
+        node.relay_or_zero()
+        rclpy.spin_once(node, timeout_sec=0.05)
+        _write_status(
+            status_path,
+            node.snapshot("post_stop_hold", time.time() - hold_start_s),
+            stop_reason,
+        )
+        time.sleep(0.05)
+    node.publish_zero_for(0.5)
+    hold_log.append("post_stop_hold_end")
+    return hold_log
+
+
 def run(args: argparse.Namespace) -> int:
     route_point_count, finish_xy = _load_route_metadata(Path(args.route_file))
     log_dir = Path(args.log_dir)
@@ -658,6 +684,17 @@ def run(args: argparse.Namespace) -> int:
                 )
                 + "\n"
             )
+            hold_log = _hold_after_stop(
+                node,
+                seconds=args.post_stop_hold_s,
+                status_path=status_path,
+                stop_reason=stop_reason,
+            )
+            for item in hold_log:
+                jsonl.write(
+                    json.dumps({"event": "post_stop_hold", "detail": item}, ensure_ascii=False)
+                    + "\n"
+                )
             shutdown_log = _safe_shutdown(node, args.launch_pid)
     finally:
         try:
@@ -731,6 +768,16 @@ def main() -> int:
     parser.add_argument("--max-command-mps", type=float, default=0.23)
     parser.add_argument("--max-odom-mps", type=float, default=0.28)
     parser.add_argument("--max-lateral-error-m", type=float, default=0.45)
+    parser.add_argument(
+        "--post-stop-hold-s",
+        type=float,
+        default=0.0,
+        help=(
+            "After a stop condition, keep publishing zero /cmd_vel for this many "
+            "seconds before shutting down the launch tree so RViz costmap/scan "
+            "displays remain inspectable."
+        ),
+    )
     args = parser.parse_args()
     return run(args)
 
