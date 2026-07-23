@@ -10,7 +10,7 @@ Panels:
         - /Online Local Trajectory1
         - /Executed Trajectory1
         - /Live Scan1
-        - /Body Cloud1
+        - /Vehicle And Safety Markers1
     Tree Height: 720
   - Class: rviz_common/Views
     Name: Views
@@ -142,7 +142,7 @@ Visualization Manager:
       Color: 230; 230; 230
       Color Transformer: FlatColor
       Decay Time: 0.3
-      Enabled: true
+      Enabled: false
       Name: Body Cloud
       Position Transformer: XYZ
       Selectable: true
@@ -155,7 +155,7 @@ Visualization Manager:
         Reliability Policy: Best Effort
         Value: /cloud_registered_body
       Use Fixed Frame: true
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Marker Topic:
@@ -171,7 +171,7 @@ Visualization Manager:
   Global Options:
     Background Color: 38; 38; 38
     Fixed Frame: map
-    Frame Rate: 30
+    Frame Rate: 15
   Name: root
   Tools:
     - Class: rviz_default_plugins/Interact

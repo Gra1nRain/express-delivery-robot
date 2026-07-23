@@ -54,6 +54,11 @@ class Day5RvizObservabilityTest(unittest.TestCase):
         for topic in expected_topics:
             self.assertIn(topic, rviz_text)
         self.assertIn("Reliability Policy: Best Effort", rviz_text)
+        rviz_config = yaml.safe_load(rviz_text)
+        displays = rviz_config["Visualization Manager"]["Displays"]
+        body_cloud = next(display for display in displays if display["Name"] == "Body Cloud")
+        self.assertFalse(body_cloud["Enabled"])
+        self.assertFalse(body_cloud["Value"])
 
 
 if __name__ == "__main__":
