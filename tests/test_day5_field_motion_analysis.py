@@ -19,7 +19,12 @@ def _load_module():
     return module
 
 
-def _write_jsonl(path: pathlib.Path, samples: list[dict]) -> None:
+def _write_jsonl(
+    path: pathlib.Path,
+    samples: list[dict],
+    *,
+    stop_reason: str = "route_complete",
+) -> None:
     lines = [
         json.dumps({"event": "script_start", "label": "unit_day5"}, ensure_ascii=False)
     ]
@@ -28,7 +33,7 @@ def _write_jsonl(path: pathlib.Path, samples: list[dict]) -> None:
         json.dumps(
             {
                 "event": "stop_begin",
-                "reason": "route_complete",
+                "reason": stop_reason,
                 "snapshot": samples[-1],
             },
             ensure_ascii=False,
@@ -56,8 +61,52 @@ def _sample(index: int, *, heading_deg: float = 1.0) -> dict:
         "odom_y": 0.0,
         "lateral_error_m": 0.03,
         "heading_error_deg": heading_deg,
+        "tracking_target_index": index,
         "control_status_value": "TRACKING",
     }
+
+
+def _write_scenario_trajectory(path: pathlib.Path) -> None:
+    points = []
+    for index in range(60):
+        if index < 20:
+            curvature = 0.0
+            speed = 0.20
+            acceleration = 0.0
+        elif index < 40:
+            curvature = 0.40
+            speed = 0.15
+            acceleration = 0.0
+        else:
+            curvature = 0.0
+            speed = 0.20 - (index - 39) * 0.006
+            acceleration = -0.08
+        points.append(
+            {
+                "x": index * 0.1,
+                "y": 0.0,
+                "yaw": 0.0,
+                "curvature": curvature,
+                "v": max(0.02, speed),
+                "a": acceleration,
+            }
+        )
+    path.write_text(
+        "route_name: unit_scenario\npoints:\n"
+        + "\n".join(
+            [
+                f"- x: {point['x']}\n"
+                f"  y: {point['y']}\n"
+                f"  yaw: {point['yaw']}\n"
+                f"  curvature: {point['curvature']}\n"
+                f"  v: {point['v']}\n"
+                f"  a: {point['a']}"
+                for point in points
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 class Day5FieldMotionAnalysisTest(unittest.TestCase):
@@ -93,6 +142,67 @@ class Day5FieldMotionAnalysisTest(unittest.TestCase):
                 any("max_abs_heading_error" in item for item in report.failed_checks),
                 report.failed_checks,
             )
+
+    def test_reports_required_straight_turn_and_decel_scenarios(self) -> None:
+        module = _load_module()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            jsonl_path = temp_path / "run.jsonl"
+            trajectory_path = temp_path / "trajectory.yaml"
+            _write_jsonl(jsonl_path, [_sample(index) for index in range(60)])
+            _write_scenario_trajectory(trajectory_path)
+
+            report = module.analyze_jsonl(
+                jsonl_path,
+                module.AcceptanceLimits(
+                    min_samples=20,
+                    min_odom_distance_m=0.20,
+                    required_scenarios=("straight", "turn", "decel"),
+                ),
+                trajectory_path=trajectory_path,
+            )
+
+            self.assertTrue(report.passed, report.failed_checks)
+            self.assertGreaterEqual(report.scenario_metrics["straight"]["samples"], 5)
+            self.assertGreaterEqual(report.scenario_metrics["turn"]["samples"], 5)
+            self.assertGreaterEqual(report.scenario_metrics["decel"]["samples"], 5)
+
+    def test_manual_index_range_can_accept_narrow_area_scenario(self) -> None:
+        module = _load_module()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            jsonl_path = pathlib.Path(temp_dir) / "run.jsonl"
+            _write_jsonl(jsonl_path, [_sample(index) for index in range(30)])
+
+            report = module.analyze_jsonl(
+                jsonl_path,
+                module.AcceptanceLimits(
+                    min_samples=20,
+                    min_odom_distance_m=0.20,
+                    required_scenarios=("narrow",),
+                ),
+                scenario_ranges=("narrow:10:20",),
+            )
+
+            self.assertTrue(report.passed, report.failed_checks)
+            self.assertEqual(report.scenario_metrics["narrow"]["samples"], 11)
+
+    def test_missing_required_scenario_fails_acceptance(self) -> None:
+        module = _load_module()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            jsonl_path = pathlib.Path(temp_dir) / "run.jsonl"
+            _write_jsonl(jsonl_path, [_sample(index) for index in range(30)])
+
+            report = module.analyze_jsonl(
+                jsonl_path,
+                module.AcceptanceLimits(
+                    min_samples=20,
+                    min_odom_distance_m=0.20,
+                    required_scenarios=("turn",),
+                ),
+            )
+
+            self.assertFalse(report.passed)
+            self.assertIn("missing_required_scenario=turn", report.failed_checks)
 
     def test_relay_monitor_records_body_command_topic(self) -> None:
         relay_text = (REPO_ROOT / "scripts" / "day5_full_route_relay.py").read_text(

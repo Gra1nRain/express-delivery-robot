@@ -122,6 +122,22 @@
 ## 建议
 
 - 录包至少包含 `/tf`、`/tf_static`、`/odom`、`/system_state`、`/motion_state`、`/control/body_cmd`、`/control/tracking_error`、`/control/state_valid`、`/control/status`、`/safety/event` 和最终命令 topic。
+- 每次实车控制验证后，使用 `scripts/analyze_day5_field_motion.py` 对 `day5_full_route_relay.py` 产生的 JSONL 做自动验收；如果传入冻结轨迹，还可以按 `straight`、`turn`、`decel` 分场景检查横向误差 `<0.15m`、航向误差 `<5deg`。狭窄区域不能从轨迹自动判断，需用 `--scenario-index-range narrow:start:end` 标注对应 target index 窗口。
+
+  ```bash
+  python3 scripts/analyze_day5_field_motion.py \
+    --jsonl /home/agilex/competition_ws/log/<run_label>.jsonl \
+    --trajectory /home/agilex/competition_ws/docs/evidence/day5/debug_control_validation_trajectory.yaml \
+    --require-scenario straight \
+    --require-scenario turn \
+    --require-scenario decel \
+    --scenario-index-range narrow:<start_index>:<end_index> \
+    --require-scenario narrow \
+    --bag-metadata /home/agilex/competition_ws/recordings/<bag>/metadata.yaml \
+    --require-bag \
+    --output /home/agilex/competition_ws/log/<run_label>_acceptance.yaml \
+    --report /home/agilex/competition_ws/log/<run_label>_acceptance.md
+  ```
 - 首次车端运行先检查 MPPI 周期；若 768 rollouts 无法稳定 20Hz，只调整 `rollout_count` 一个变量并保存周期/误差对比，不能改用 RPP 冒充正式通过。
 
 ## 未验证

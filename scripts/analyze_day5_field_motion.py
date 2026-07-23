@@ -43,7 +43,9 @@ class AcceptanceLimits:
     min_samples: int = 20
     min_odom_distance_m: float = 0.20
     max_topic_age_s: float = 0.60
+    min_scenario_samples: int = 5
     acceptable_stop_reasons: tuple[str, ...] = ("route_complete",)
+    required_scenarios: tuple[str, ...] = ()
     require_bag: bool = False
     required_bag_topics: tuple[str, ...] = DEFAULT_REQUIRED_BAG_TOPICS
 
@@ -69,6 +71,7 @@ class FieldMotionReport:
     control_status_counts: dict[str, int]
     missing_jsonl_fields: list[str]
     fresh_topic_sample_counts: dict[str, int]
+    scenario_metrics: dict[str, dict[str, Any]]
     bag_metadata_path: str | None
     missing_bag_topics: list[str]
 
@@ -80,6 +83,8 @@ def analyze_jsonl(
     jsonl_path: Path,
     limits: AcceptanceLimits,
     *,
+    trajectory_path: Path | None = None,
+    scenario_ranges: Sequence[str] = (),
     bag_metadata_path: Path | None = None,
 ) -> FieldMotionReport:
     label, stop_reason, snapshots = _load_run(jsonl_path)
@@ -115,6 +120,11 @@ def analyze_jsonl(
     max_safe_cmd = _max_abs(metric_samples, "safe_cmd_x")
     max_relay_cmd = _max_abs(metric_samples, "relay_cmd_x")
     duration = _duration(metric_samples)
+    scenario_metrics = _scenario_metrics(
+        metric_samples,
+        _load_trajectory_scenarios(trajectory_path, scenario_ranges),
+        limits,
+    )
     missing_bag_topics = _missing_bag_topics(
         bag_metadata_path, limits.required_bag_topics
     )
@@ -136,6 +146,7 @@ def analyze_jsonl(
         control_counts=control_counts,
         missing_fields=missing_fields,
         fresh_counts=fresh_counts,
+        scenario_metrics=scenario_metrics,
         bag_metadata_path=bag_metadata_path,
         missing_bag_topics=missing_bag_topics,
     )
@@ -162,6 +173,7 @@ def analyze_jsonl(
         control_status_counts=dict(control_counts),
         missing_jsonl_fields=missing_fields,
         fresh_topic_sample_counts=fresh_counts,
+        scenario_metrics=scenario_metrics,
         bag_metadata_path=None if bag_metadata_path is None else str(bag_metadata_path),
         missing_bag_topics=missing_bag_topics,
     )
@@ -253,6 +265,104 @@ def _missing_bag_topics(
     return [topic for topic in required_topics if topic not in present]
 
 
+def _load_trajectory_scenarios(
+    trajectory_path: Path | None,
+    scenario_ranges: Sequence[str],
+) -> dict[int, set[str]]:
+    scenarios: dict[int, set[str]] = {}
+    if trajectory_path is not None:
+        data = yaml.safe_load(trajectory_path.read_text(encoding="utf-8")) or {}
+        points = data.get("points") or []
+        previous_v: float | None = None
+        for index, point in enumerate(points):
+            names: set[str] = set()
+            curvature = abs(float(point.get("curvature", 0.0) or 0.0))
+            speed = abs(float(point.get("v", 0.0) or 0.0))
+            accel = float(point.get("a", 0.0) or 0.0)
+            if speed >= 0.05 and curvature <= 0.10:
+                names.add("straight")
+            if speed >= 0.05 and curvature >= 0.25:
+                names.add("turn")
+            if speed >= 0.02 and (
+                accel <= -0.02
+                or (previous_v is not None and speed < previous_v - 0.02)
+            ):
+                names.add("decel")
+            if names:
+                scenarios.setdefault(index, set()).update(names)
+            previous_v = speed
+    for spec in scenario_ranges:
+        name, start, end = _parse_scenario_range(spec)
+        for index in range(start, end + 1):
+            scenarios.setdefault(index, set()).add(name)
+    return scenarios
+
+
+def _parse_scenario_range(spec: str) -> tuple[str, int, int]:
+    parts = spec.split(":")
+    if len(parts) != 3:
+        raise ValueError(
+            f"scenario range {spec!r} must be formatted as name:start_index:end_index"
+        )
+    name = parts[0].strip()
+    if not name:
+        raise ValueError(f"scenario range {spec!r} has an empty name")
+    start = int(parts[1])
+    end = int(parts[2])
+    if start < 0 or end < start:
+        raise ValueError(f"scenario range {spec!r} has invalid bounds")
+    return name, start, end
+
+
+def _scenario_metrics(
+    samples: list[dict[str, Any]],
+    scenario_by_index: dict[int, set[str]],
+    limits: AcceptanceLimits,
+) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for sample in samples:
+        index = _sample_target_index(sample)
+        if index is None:
+            continue
+        for name in scenario_by_index.get(index, set()):
+            grouped.setdefault(name, []).append(sample)
+    metrics: dict[str, dict[str, Any]] = {}
+    for name, scenario_samples in sorted(grouped.items()):
+        max_lateral = _max_abs(scenario_samples, "lateral_error_m")
+        max_heading = _max_abs(scenario_samples, "heading_error_deg")
+        failed: list[str] = []
+        if len(scenario_samples) < limits.min_scenario_samples:
+            failed.append(
+                f"samples {len(scenario_samples)} < required {limits.min_scenario_samples}"
+            )
+        if max_lateral is None or max_lateral > limits.max_lateral_error_m:
+            failed.append(
+                f"max_abs_lateral_error {max_lateral} > {limits.max_lateral_error_m:.3f}m"
+            )
+        if max_heading is None or max_heading > limits.max_heading_error_deg:
+            failed.append(
+                f"max_abs_heading_error {max_heading} > {limits.max_heading_error_deg:.3f}deg"
+            )
+        metrics[name] = {
+            "samples": len(scenario_samples),
+            "max_abs_lateral_error_m": max_lateral,
+            "max_abs_heading_error_deg": max_heading,
+            "max_abs_odom_speed_mps": _max_abs(scenario_samples, "odom_vx"),
+            "odom_distance_m": _odom_distance(scenario_samples),
+            "passed": not failed,
+            "failed_checks": failed,
+        }
+    return metrics
+
+
+def _sample_target_index(sample: dict[str, Any]) -> int | None:
+    for field in ("tracking_target_index", "control_target_index"):
+        value = _as_float(sample.get(field))
+        if value is not None:
+            return int(round(value))
+    return None
+
+
 def _failed_checks(
     *,
     limits: AcceptanceLimits,
@@ -269,6 +379,7 @@ def _failed_checks(
     control_counts: Counter[str],
     missing_fields: list[str],
     fresh_counts: dict[str, int],
+    scenario_metrics: dict[str, dict[str, Any]],
     bag_metadata_path: Path | None,
     missing_bag_topics: list[str],
 ) -> list[str]:
@@ -326,6 +437,13 @@ def _failed_checks(
         failed.append("bag_metadata_required_but_not_provided")
     if missing_bag_topics:
         failed.append(f"missing_bag_topics={','.join(missing_bag_topics)}")
+    for name in limits.required_scenarios:
+        metrics = scenario_metrics.get(name)
+        if metrics is None:
+            failed.append(f"missing_required_scenario={name}")
+            continue
+        for check in metrics["failed_checks"]:
+            failed.append(f"scenario_{name}:{check}")
     return failed
 
 
@@ -346,6 +464,7 @@ def _write_markdown(report: FieldMotionReport, path: Path) -> None:
         f"- max_abs_odom_speed_mps: {report.max_abs_odom_speed_mps}",
         f"- missing_jsonl_fields: {report.missing_jsonl_fields}",
         f"- missing_bag_topics: {report.missing_bag_topics}",
+        f"- scenario_metrics: {report.scenario_metrics}",
         "",
         "## Failed checks",
         "",
@@ -358,6 +477,7 @@ def _write_markdown(report: FieldMotionReport, path: Path) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--jsonl", required=True, type=Path)
+    parser.add_argument("--trajectory", type=Path)
     parser.add_argument("--bag-metadata", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--report", type=Path)
@@ -366,6 +486,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--max-odom-speed-mps", type=float, default=0.23)
     parser.add_argument("--max-command-speed-mps", type=float, default=0.23)
     parser.add_argument("--min-samples", type=int, default=20)
+    parser.add_argument("--min-scenario-samples", type=int, default=5)
     parser.add_argument("--min-odom-distance-m", type=float, default=0.20)
     parser.add_argument("--max-topic-age-s", type=float, default=0.60)
     parser.add_argument(
@@ -373,6 +494,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="append",
         default=[],
         help="May be passed more than once. Default is route_complete.",
+    )
+    parser.add_argument(
+        "--require-scenario",
+        action="append",
+        default=[],
+        help=(
+            "Require a passing scenario. Built-in scenarios from --trajectory are "
+            "straight, turn, and decel; custom names can be supplied with "
+            "--scenario-index-range."
+        ),
+    )
+    parser.add_argument(
+        "--scenario-index-range",
+        action="append",
+        default=[],
+        help="Manual scenario window formatted as name:start_index:end_index.",
     )
     parser.add_argument("--require-bag", action="store_true")
     args = parser.parse_args(argv)
@@ -383,13 +520,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_odom_speed_mps=args.max_odom_speed_mps,
         max_command_speed_mps=args.max_command_speed_mps,
         min_samples=args.min_samples,
+        min_scenario_samples=args.min_scenario_samples,
         min_odom_distance_m=args.min_odom_distance_m,
         max_topic_age_s=args.max_topic_age_s,
         acceptable_stop_reasons=tuple(args.acceptable_stop_reason)
         or ("route_complete",),
+        required_scenarios=tuple(args.require_scenario),
         require_bag=bool(args.require_bag),
     )
-    report = analyze_jsonl(args.jsonl, limits, bag_metadata_path=args.bag_metadata)
+    report = analyze_jsonl(
+        args.jsonl,
+        limits,
+        trajectory_path=args.trajectory,
+        scenario_ranges=args.scenario_index_range,
+        bag_metadata_path=args.bag_metadata,
+    )
 
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -405,7 +550,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"label={report.label} stop_reason={report.stop_reason} "
         f"run_samples={report.run_samples} "
         f"max_lateral_m={report.max_abs_lateral_error_m} "
-        f"max_heading_deg={report.max_abs_heading_error_deg}"
+        f"max_heading_deg={report.max_abs_heading_error_deg} "
+        f"scenarios={','.join(sorted(report.scenario_metrics))}"
     )
     if report.failed_checks:
         print("failed_checks:")
