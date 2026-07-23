@@ -34,7 +34,7 @@ replanning:
   enabled: true
   plugin: reference_aware_hybrid_astar
   frequency_hz: 1.0
-  lookahead_distance_m: 5.0
+  lookahead_distance_m: 3.0
   reference_deviation_weight: 2.0
   inflation_radius_m: 0.45
   search_padding_m: 3.0
