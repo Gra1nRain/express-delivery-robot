@@ -45,7 +45,7 @@ replanning:
   costmap_topic: /avoidance/local_costmap
   local_trajectory_topic: /planning/local_trajectory
   status_topic: /planning/local_replan_status
-  max_costmap_age_s: 0.75
+  max_costmap_age_s: 4.0
   local_trajectory_timeout_s: 1.25
   max_retries: 1
   failure_action: SAFE_HOLD
