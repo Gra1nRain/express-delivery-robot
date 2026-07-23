@@ -28,7 +28,7 @@ motion:
   max_inner_steering_angle_rad: 0.698
   protocol_max_speed_mps: 2.00
   protocol_turning_speed_mps: 0.70
-  max_speed_mps: 0.20
+  max_speed_mps: 0.15
   cruise_speed_mps: 0.20
   turn_speed_mps: 0.15
   max_acceleration_mps2: 0.20
