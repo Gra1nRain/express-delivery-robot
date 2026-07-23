@@ -141,7 +141,7 @@ class LocalReplannerNode(Node):
             transform = self._tf_buffer.lookup_transform(
                 self._map_frame,
                 message.header.frame_id,
-                rclpy.time.Time.from_msg(message.header.stamp),
+                rclpy.time.Time(),
                 timeout=Duration(seconds=0.02),
             )
         except TransformException as exc:
