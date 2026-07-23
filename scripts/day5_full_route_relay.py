@@ -13,6 +13,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -54,6 +56,72 @@ def _shell(command: str, timeout_s: float = 4.0) -> str:
     except Exception as exc:  # pragma: no cover - best-effort shutdown evidence.
         return f"shell_error: {exc}"
 
+
+def _pgrep(pattern: str) -> list[int]:
+    try:
+        completed = subprocess.run(
+            ["pgrep", "-f", pattern],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=2.0,
+        )
+    except Exception:
+        return []
+    pids: list[int] = []
+    own_pid = os.getpid()
+    for line in completed.stdout.splitlines():
+        try:
+            pid = int(line.strip())
+        except ValueError:
+            continue
+        if pid != own_pid:
+            pids.append(pid)
+    return sorted(set(pids))
+
+
+def _child_pids(parent_pid: int) -> list[int]:
+    try:
+        completed = subprocess.run(
+            ["pgrep", "-P", str(parent_pid)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=2.0,
+        )
+    except Exception:
+        return []
+    children: list[int] = []
+    for line in completed.stdout.splitlines():
+        try:
+            children.append(int(line.strip()))
+        except ValueError:
+            continue
+    return sorted(set(children))
+
+
+def _descendant_pids(root_pid: int) -> list[int]:
+    descendants: list[int] = []
+    stack = [root_pid]
+    while stack:
+        current = stack.pop()
+        children = _child_pids(current)
+        descendants.extend(children)
+        stack.extend(children)
+    return sorted(set(descendants))
+
+
+def _signal_pids(pids: list[int], sig: signal.Signals) -> str:
+    signaled: list[int | str] = []
+    for pid in sorted(set(pids), reverse=True):
+        try:
+            os.kill(pid, sig)
+            signaled.append(pid)
+        except ProcessLookupError:
+            continue
+        except PermissionError as exc:
+            signaled.append(f"{pid}:permission_error:{exc}")
+    return f"{sig.name}:{signaled}"
 
 def _parse_json_string(value: str | None) -> dict[str, Any] | None:
     if not value:
@@ -375,20 +443,36 @@ def _write_status(path: Path, snapshot: dict[str, Any], stop_reason: str | None 
 
 def _safe_shutdown(node: RelayMonitor, launch_pid: int) -> list[str]:
     logs: list[str] = []
+    day5_node_patterns = [
+        "/competition_control/lib/competition_control/mppi_control_node",
+        "/competition_safety/lib/competition_safety/safety_node",
+        "/competition_planning/lib/competition_planning/local_replanner_node",
+        "/competition_safety/lib/competition_safety/proximity_stop_node",
+        "/competition_localization/lib/competition_localization/fastlio_anchor_node",
+        "/fast_lio/lib/fast_lio/fastlio_mapping",
+        "/livox_ros_driver2/lib/livox_ros_driver2/livox_ros_driver2_node",
+        "/ranger_base/lib/ranger_base/ranger_base_node",
+        "__node:=day5_map_server",
+        "__node:=day5_map_lifecycle_manager",
+    ]
     node.publish_zero_for(1.2)
-    logs.append(_shell("pkill -INT -f 'mppi_control_node|__node:=mppi_control' || true", 3))
+    launch_tree = [launch_pid] + _descendant_pids(launch_pid)
+    logs.append(f"launch_tree_before={launch_tree}")
+    logs.append(_signal_pids(_pgrep(day5_node_patterns[0]), signal.SIGINT))
     node.publish_zero_for(0.8)
-    logs.append(_shell("pkill -INT -f 'safety_node|__node:=competition_safety' || true", 3))
+    logs.append(_signal_pids(_pgrep(day5_node_patterns[1]), signal.SIGINT))
     node.publish_zero_for(0.8)
-    logs.append(_shell(f"kill -INT {launch_pid} 2>/dev/null || true", 3))
+    logs.append(_signal_pids(launch_tree, signal.SIGINT))
     time.sleep(1.5)
-    logs.append(
-        _shell(
-            f"for p in $(pgrep -P {launch_pid}); do kill -TERM $p 2>/dev/null || true; done; "
-            f"kill -TERM {launch_pid} 2>/dev/null || true",
-            3,
-        )
-    )
+    remaining = [launch_pid] + _descendant_pids(launch_pid)
+    for pattern in day5_node_patterns:
+        remaining.extend(_pgrep(pattern))
+    logs.append(_signal_pids(remaining, signal.SIGTERM))
+    time.sleep(0.8)
+    still_running: list[int] = []
+    for pattern in day5_node_patterns:
+        still_running.extend(_pgrep(pattern))
+    logs.append(f"day5_nodes_after={sorted(set(still_running))}")
     node.publish_zero_for(0.5)
     return logs
 
@@ -406,6 +490,7 @@ def run(args: argparse.Namespace) -> int:
     stop_reason = "not_started"
     shutdown_log: list[str] = []
     bad_since: dict[str, float] = {}
+    final_snapshot: dict[str, Any] | None = None
     samples = 0
     max_safe_cmd = 0.0
     max_relay_cmd = 0.0
@@ -572,6 +657,10 @@ def run(args: argparse.Namespace) -> int:
             shutdown_log = _safe_shutdown(node, args.launch_pid)
     finally:
         try:
+            final_snapshot = node.snapshot("final")
+        except Exception as exc:
+            final_snapshot = {"phase": "final_snapshot_failed", "error": str(exc)}
+        try:
             rclpy.shutdown()
         except Exception:
             pass
@@ -608,7 +697,11 @@ def run(args: argparse.Namespace) -> int:
         f"shutdown_log={shutdown_log}",
     ]
     summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
-    _write_status(summary_path.with_name(f"{args.label}_final_status.json"), node.snapshot("final"), stop_reason)
+    _write_status(
+        summary_path.with_name(f"{args.label}_final_status.json"),
+        final_snapshot or {"phase": "final_snapshot_missing"},
+        stop_reason,
+    )
     return 0 if stop_reason in ("route_complete", "watchdog_timeout_route_not_complete") else 1
 
 
