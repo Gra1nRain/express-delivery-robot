@@ -22,6 +22,17 @@ def _load_yaml(path: str) -> dict:
     return data
 
 
+def _bool_override(value: str, *, default: bool) -> bool:
+    normalized = value.strip().lower()
+    if normalized in ("", "auto"):
+        return default
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    if normalized in ("0", "false", "no", "off"):
+        return False
+    raise ValueError(f"invalid boolean launch override: {value!r}")
+
+
 def _launch_setup(context, *args, **kwargs):
     control_config = _load_yaml(LaunchConfiguration("control_params_file").perform(context))
     planning_config = _load_yaml(
@@ -41,6 +52,10 @@ def _launch_setup(context, *args, **kwargs):
     )
     global_planner = planning_config["global_planner"]
     replanning = planning_config["replanning"]
+    replanning_enabled = _bool_override(
+        LaunchConfiguration("replanning_enabled").perform(context),
+        default=bool(replanning["enabled"]),
+    )
     safety = safety_config["safety"]
     proximity_stop = safety_config["proximity_stop"]
     bringup_pkg = get_package_share_directory("competition_bringup")
@@ -157,7 +172,7 @@ def _launch_setup(context, *args, **kwargs):
                     "executed_path_max_points": visualization[
                         "executed_path_max_points"
                     ],
-                    "replanning_enabled": replanning["enabled"],
+                    "replanning_enabled": replanning_enabled,
                     "local_trajectory_topic": visualization[
                         "local_trajectory_topic"
                     ],
@@ -405,6 +420,14 @@ def generate_launch_description():
             DeclareLaunchArgument("start_fast_lio", default_value="true"),
             DeclareLaunchArgument("start_proximity_stop", default_value="true"),
             DeclareLaunchArgument("start_local_replanner", default_value="true"),
+            DeclareLaunchArgument(
+                "replanning_enabled",
+                default_value="auto",
+                description=(
+                    "Override MPPI local-trajectory dependency; auto uses "
+                    "planning_params.yaml replanning.enabled."
+                ),
+            ),
             DeclareLaunchArgument("start_map_server", default_value="true"),
             DeclareLaunchArgument("rviz", default_value="false"),
             DeclareLaunchArgument(
