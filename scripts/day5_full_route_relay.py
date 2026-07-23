@@ -350,8 +350,12 @@ class RelayMonitor(Node):
         )
 
     def local_ready(self) -> bool:
+        trajectory_ready = (
+            bool(self._args.global_tracking_mode)
+            or self.data.get("local_status_value") in ("REPLANNED", "REFERENCE_CLEAR")
+        )
         return (
-            self.data.get("local_status_value") in ("REPLANNED", "REFERENCE_CLEAR")
+            trajectory_ready
             and self.data.get("control_status_value") in ("TRACKING", "GOAL_REACHED")
             and self.age("costmap") is not None
             and self.age("costmap") < 0.9
@@ -713,6 +717,11 @@ def main() -> int:
     parser.add_argument("--initial-y", type=float, required=True)
     parser.add_argument("--initial-yaw", type=float, required=True)
     parser.add_argument("--route-file", required=True)
+    parser.add_argument(
+        "--global-tracking-mode",
+        action="store_true",
+        help="Do not require /planning/local_replan_status before enabling relay.",
+    )
     parser.add_argument("--log-dir", default="/home/agilex/competition_ws/log")
     parser.add_argument("--prepose-timeout-s", type=float, default=18.0)
     parser.add_argument("--local-ready-timeout-s", type=float, default=20.0)
