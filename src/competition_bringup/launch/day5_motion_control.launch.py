@@ -33,6 +33,12 @@ def _launch_setup(context, *args, **kwargs):
     motion = control_config["motion"]
     estimator = control_config["state_estimator"]
     visualization = control_config["visualization"]
+    localization_base_frame = str(
+        estimator.get("localization_base_frame", estimator["base_frame"])
+    )
+    tracking_base_frame = str(
+        estimator.get("tracking_base_frame", estimator["base_frame"])
+    )
     global_planner = planning_config["global_planner"]
     replanning = planning_config["replanning"]
     safety = safety_config["safety"]
@@ -40,7 +46,41 @@ def _launch_setup(context, *args, **kwargs):
     bringup_pkg = get_package_share_directory("competition_bringup")
     mapping_launch = os.path.join(bringup_pkg, "launch", "day1_mapping.launch.py")
 
-    return [
+    actions = []
+    tracking_transform = estimator.get("tracking_frame_transform")
+    if isinstance(tracking_transform, dict):
+        parent_frame = str(tracking_transform.get("parent_frame", estimator["base_frame"]))
+        child_frame = str(tracking_transform.get("child_frame", tracking_base_frame))
+        if child_frame != parent_frame:
+            actions.append(
+                Node(
+                    package="tf2_ros",
+                    executable="static_transform_publisher",
+                    name=f"{parent_frame}_to_{child_frame}_static_tf",
+                    output="screen",
+                    arguments=[
+                        "--x",
+                        str(float(tracking_transform.get("x_m", 0.0))),
+                        "--y",
+                        str(float(tracking_transform.get("y_m", 0.0))),
+                        "--z",
+                        str(float(tracking_transform.get("z_m", 0.0))),
+                        "--yaw",
+                        str(float(tracking_transform.get("yaw_rad", 0.0))),
+                        "--pitch",
+                        str(float(tracking_transform.get("pitch_rad", 0.0))),
+                        "--roll",
+                        str(float(tracking_transform.get("roll_rad", 0.0))),
+                        "--frame-id",
+                        parent_frame,
+                        "--child-frame-id",
+                        child_frame,
+                    ],
+                )
+            )
+
+    actions.extend(
+        [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(mapping_launch),
             launch_arguments={
@@ -53,7 +93,7 @@ def _launch_setup(context, *args, **kwargs):
                 "fast_lio_config": LaunchConfiguration("fast_lio_config"),
                 "anchor_map_frame": str(estimator["map_frame"]),
                 "anchor_odom_frame": "camera_init",
-                "anchor_base_frame": str(estimator["base_frame"]),
+                "anchor_base_frame": localization_base_frame,
                 "port_name": LaunchConfiguration("port_name"),
                 "robot_model": "ranger_mini_v3",
                 "rviz": "false",
@@ -76,7 +116,7 @@ def _launch_setup(context, *args, **kwargs):
                         "optimizer_params_file"
                     ),
                     "map_frame": estimator["map_frame"],
-                    "base_frame": estimator["base_frame"],
+                    "base_frame": tracking_base_frame,
                     "frequency_hz": tracker["frequency_hz"],
                     "horizon_steps": mppi["horizon_steps"],
                     "rollout_count": mppi["rollout_count"],
@@ -138,7 +178,7 @@ def _launch_setup(context, *args, **kwargs):
                     "trajectory_file": LaunchConfiguration("trajectory_file"),
                     "map_file": LaunchConfiguration("map_file"),
                     "map_frame": estimator["map_frame"],
-                    "base_frame": estimator["base_frame"],
+                    "base_frame": tracking_base_frame,
                     "frequency_hz": replanning["frequency_hz"],
                     "lookahead_distance_m": replanning["lookahead_distance_m"],
                     "inflation_radius_m": replanning["inflation_radius_m"],
@@ -273,7 +313,9 @@ def _launch_setup(context, *args, **kwargs):
                 }
             ],
         ),
-    ]
+        ]
+    )
+    return actions
 
 
 def generate_launch_description():
