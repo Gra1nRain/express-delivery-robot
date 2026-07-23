@@ -7,7 +7,7 @@ trajectory_tracker:
   diagnostic_reference_tracker: regulated_pure_pursuit_not_implemented
   mppi:
     horizon_steps: 30
-    rollout_count: 768
+    rollout_count: 384
     iterations: 2
     temperature: 0.35
     speed_noise_std_mps: 0.05
