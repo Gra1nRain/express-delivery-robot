@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import rclpy
-from geometry_msgs.msg import PoseWithCovarianceStamped, Twist, Vector3Stamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, Twist, TwistStamped, Vector3Stamped
 from nav_msgs.msg import OccupancyGrid, Odometry, Path as NavPath
 from rclpy.node import Node
 from rclpy.qos import (
@@ -169,6 +169,9 @@ class RelayMonitor(Node):
 
         self.create_subscription(Twist, "/cmd_vel_safe", self._safe_cmd_cb, default_qos)
         self.create_subscription(
+            TwistStamped, "/control/body_cmd", self._body_cmd_cb, default_qos
+        )
+        self.create_subscription(
             PointCloud2, "/cloud_registered_body", self._cloud_cb, best_effort_qos
         )
         self.create_subscription(
@@ -223,6 +226,11 @@ class RelayMonitor(Node):
         self.latest_safe_cmd = msg
         self.data["safe_cmd_x"] = float(msg.linear.x)
         self.data["safe_cmd_z"] = float(msg.angular.z)
+
+    def _body_cmd_cb(self, msg: TwistStamped) -> None:
+        self._mark("body_cmd", msg)
+        self.data["body_cmd_x"] = float(msg.twist.linear.x)
+        self.data["body_cmd_z"] = float(msg.twist.angular.z)
 
     def _cloud_cb(self, msg: PointCloud2) -> None:
         self._mark("cloud", msg)
@@ -523,6 +531,7 @@ def run(args: argparse.Namespace) -> int:
     final_snapshot: dict[str, Any] | None = None
     samples = 0
     max_safe_cmd = 0.0
+    max_body_cmd = 0.0
     max_relay_cmd = 0.0
     max_odom_vx = 0.0
     max_abs_lateral_error = 0.0
@@ -605,6 +614,7 @@ def run(args: argparse.Namespace) -> int:
                 samples += 1
 
                 max_safe_cmd = max(max_safe_cmd, abs(float(node.data.get("safe_cmd_x", 0.0))))
+                max_body_cmd = max(max_body_cmd, abs(float(node.data.get("body_cmd_x", 0.0))))
                 max_relay_cmd = max(max_relay_cmd, abs(float(node.data.get("relay_cmd_x", 0.0))))
                 max_odom_vx = max(max_odom_vx, abs(float(node.data.get("odom_vx", 0.0))))
                 max_abs_lateral_error = max(
@@ -719,6 +729,7 @@ def run(args: argparse.Namespace) -> int:
         f"samples={samples}",
         f"initialpose=x={args.initial_x:.3f}, y={args.initial_y:.3f}, yaw={args.initial_yaw:.3f}",
         "relay=/cmd_vel_safe -> /cmd_vel",
+        f"max_abs_body_cmd_x_mps={max_body_cmd:.4f}",
         f"max_abs_safe_cmd_x_mps={max_safe_cmd:.4f}",
         f"max_abs_relay_cmd_x_mps={max_relay_cmd:.4f}",
         f"max_abs_odom_vx_mps={max_odom_vx:.4f}",

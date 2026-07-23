@@ -8,6 +8,22 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class Day5ChassisCenterTrackingProfileTest(unittest.TestCase):
+    def test_default_day5_control_acceptance_uses_body_frame(self) -> None:
+        control_config = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "control"
+                / "control_params.yaml"
+            ).read_text(encoding="utf-8")
+        )
+
+        estimator = control_config["state_estimator"]
+
+        self.assertEqual(estimator["base_frame"], "body")
+        self.assertNotIn("tracking_base_frame", estimator)
+        self.assertNotIn("tracking_frame_transform", estimator)
+
     def test_launch_separates_localization_anchor_from_tracking_frame(self) -> None:
         launch_text = (
             REPO_ROOT

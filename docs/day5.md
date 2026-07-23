@@ -3,12 +3,15 @@
 ## 事实
 
 - 正式链路已实现为：锚定 FAST-LIO 全局位姿 + RANGER `/odom` 速度 -> 连续 Hybrid A* -> jerk-limited S 曲线 -> MPPI -> SafetySupervisor -> `/cmd_vel_safe`。
+- 2026-07-23 重新收敛 Day5 验收口径：今天主要验证轨迹跟踪和底盘适配，不把在线绕障、定位精修和整线任务闭环计入 Day5 当天主验收。
 - `config/planning/planning_params.yaml` 默认规划器已从 occupancy-grid A* 改为 Hybrid A*，最小转弯半径按 RANGER MINI 3.0 手册设为 `0.81m`。
 - 连续控制轨迹不按任务 step 停车；起步速度为零，只有最终 `finish_park` 再次为零。
 - MPPI 使用 `yaw_rate=v*curvature` 的四轮四转曲率模型；输出半径小于 `0.81m` 会被 controller 和 safety 两层限制。
 - 状态连续性守卫会拒绝 TF/pose 超时、时间倒退、位置跳变和航向跳变；无效观测不会替换上一有效状态。
 - safety 节点从真实 `/system_state` 判断急停、错误码和 CAN 控制权，从 `/motion_state` 检测是否意外进入自旋/斜移模式。
 - 2026-07-22 碰撞复盘后，Day5 safety 默认要求 `/avoidance/stop_request` 有新鲜输入；`proximity_stop_node` 从 `/cloud_registered_body` 做近场基础停车门控。当前门控覆盖前方 `0.85m`、半角 `0.4363rad`，并额外覆盖 `0.45m` 横向半宽的车体前方矩形安全走廊，至少 3 个点触发停车。没有新鲜点云/避障输入时，safety 必须 `SAFE_HOLD/avoidance_stale`。
+- 2026-07-23 遥控直线观察显示 RViz 中 `body` 车体坐标未见明显横向偏差；因此 Day5 控制验收默认继续使用 `config/control/control_params.yaml` 的 `base_frame: body`。`control_params_day5_chassis_center_yneg020.yaml` 只保留为排查右偏的实验 profile，不能作为默认验收配置。
+- 2026-07-23 现场观察到车体贴近桌子时，静态地图显示的桌子距离仍很远；同一时刻车端 `/avoidance/proximity_status` 报 `stop=true`、`reason=obstacle_in_stop_box`、`cloud_age_s≈0.08`。当前结论是实时近场感知可信度高于静态地图距离；Day5 控制验收只允许在现场确认空旷的短段进行，不能用静态地图上的距离作为安全通过依据。
 - Hybrid A* 使用 9 个曲率档位并以零曲率穿越语义锚点；轨迹生成阶段硬拒绝超过 `0.80 1/m/s` 的曲率变化率。
 - 冻结轨迹保存路线、语义图、规划/优化配置、栅格 YAML 和图像的 SHA-256；控制节点启动前逐项校验，防止旧轨迹配新地图或新参数。
 - 分段验证轨迹必须在规划阶段用 `--end-ref` 重新执行 jerk-limited 参数化；控制器不再支持运行时截断轨迹。
