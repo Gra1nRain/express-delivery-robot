@@ -101,6 +101,14 @@ class LocalTrajectoryPlanner:
             dynamic_obstacle_points,
         )
         planner = self._planner(live_map, local_reference)
+        rejoin_index = _select_navigable_rejoin_index(
+            reference_path,
+            planner,
+            start_index=start_index,
+            preferred_rejoin_index=rejoin_index,
+        )
+        local_reference = tuple(reference_path[start_index : rejoin_index + 1])
+        planner = self._planner(live_map, local_reference)
         pose_matches_reference = (
             math.hypot(
                 current_pose.x - local_reference[0].x,
@@ -199,6 +207,32 @@ def _lookahead_index(
         if distance + 1e-9 >= lookahead_distance_m:
             return index
     return len(reference_path) - 1
+
+
+def _select_navigable_rejoin_index(
+    reference_path: Sequence[PathPoint],
+    planner: HybridAStarPlanner,
+    *,
+    start_index: int,
+    preferred_rejoin_index: int,
+) -> int:
+    """Pick a reachable forward reference point near the requested rejoin point.
+
+    Live point-cloud obstacles can temporarily occupy the exact lookahead point.
+    Failing the whole local plan in that case causes the vehicle to stop even
+    though a nearby point on the same global route is still usable.
+    """
+
+    if planner.path_is_navigable((reference_path[preferred_rejoin_index],)):
+        return preferred_rejoin_index
+
+    forward_candidates = range(preferred_rejoin_index + 1, len(reference_path))
+    backward_candidates = range(preferred_rejoin_index - 1, start_index, -1)
+    for candidates in (forward_candidates, backward_candidates):
+        for index in candidates:
+            if planner.path_is_navigable((reference_path[index],)):
+                return index
+    return preferred_rejoin_index
 
 
 def _overlay_obstacles(

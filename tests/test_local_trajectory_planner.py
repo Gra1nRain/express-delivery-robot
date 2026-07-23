@@ -95,6 +95,26 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertLess(math.hypot(result.path[-1].x - 5.0, result.path[-1].y), 0.26)
         self.assertLess(abs(result.path[-1].yaw), math.radians(15.1))
 
+    def test_blocked_rejoin_point_uses_nearby_global_reference_target(self) -> None:
+        planner = LocalTrajectoryPlanner(_empty_map(), self.config)
+
+        result = planner.plan(
+            reference_path=self.reference,
+            current_pose=self.reference[0],
+            dynamic_obstacle_points=((5.0, 0.0),),
+        )
+
+        self.assertEqual(result.status, "REPLANNED")
+        self.assertGreater(result.rejoin_index, 50)
+        self.assertTrue(result.path_is_navigable)
+        self.assertLess(
+            math.hypot(
+                result.path[-1].x - self.reference[result.rejoin_index].x,
+                result.path[-1].y - self.reference[result.rejoin_index].y,
+            ),
+            0.26,
+        )
+
     def test_replanned_geometry_reuses_day4_time_parameterization(self) -> None:
         planner = LocalTrajectoryPlanner(_empty_map(), self.config)
         local_plan = planner.plan(
