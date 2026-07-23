@@ -1,0 +1,637 @@
+#!/usr/bin/env python3
+"""Run Day5 field validation through a supervised /cmd_vel_safe relay.
+
+The launch file is started with ``command_output_topic:=/cmd_vel_safe`` so the
+controller and safety node can settle without moving the chassis.  This helper
+publishes the initial pose, waits for a live local plan, then relays
+``/cmd_vel_safe`` to the real ``/cmd_vel`` until the global route finishes or a
+safety condition asks it to stop.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import subprocess
+import time
+from pathlib import Path
+from typing import Any
+
+import rclpy
+from geometry_msgs.msg import PoseWithCovarianceStamped, Twist, Vector3Stamped
+from nav_msgs.msg import OccupancyGrid, Odometry, Path as NavPath
+from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
+from sensor_msgs.msg import LaserScan, PointCloud2
+from std_msgs.msg import Bool, String
+
+try:
+    import yaml
+except Exception:  # pragma: no cover - yaml is present on the robot image.
+    yaml = None
+
+try:
+    from ranger_msgs.msg import SystemState
+except Exception:  # pragma: no cover - local unit environments may not have it.
+    SystemState = None
+
+
+def _shell(command: str, timeout_s: float = 4.0) -> str:
+    try:
+        return subprocess.run(
+            ["bash", "-lc", command],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=timeout_s,
+        ).stdout.strip()
+    except Exception as exc:  # pragma: no cover - best-effort shutdown evidence.
+        return f"shell_error: {exc}"
+
+
+def _parse_json_string(value: str | None) -> dict[str, Any] | None:
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _load_route_metadata(path: Path) -> tuple[int | None, tuple[float, float] | None]:
+    if yaml is None or not path.exists():
+        return None, None
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    points = data.get("points") or []
+    if not points:
+        return None, None
+    finish = points[-1]
+    return len(points), (float(finish["x"]), float(finish["y"]))
+
+
+class RelayMonitor(Node):
+    def __init__(self, args: argparse.Namespace, route_point_count: int | None) -> None:
+        super().__init__("day5_full_route_relay_monitor")
+        self._args = args
+        self._route_point_count = route_point_count
+        self.data: dict[str, Any] = {}
+        self.wall_stamp: dict[str, float] = {}
+        self.header_stamp: dict[str, float] = {}
+        self.latest_safe_cmd = Twist()
+        self.relay_active = False
+
+        default_qos = QoSProfile(depth=10)
+        best_effort_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=5,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        self.cmd_pub = self.create_publisher(Twist, "/cmd_vel", 10)
+        self.initial_pose_pub = self.create_publisher(
+            PoseWithCovarianceStamped, "/initialpose", 10
+        )
+
+        self.create_subscription(Twist, "/cmd_vel_safe", self._safe_cmd_cb, default_qos)
+        self.create_subscription(
+            PointCloud2, "/cloud_registered_body", self._cloud_cb, best_effort_qos
+        )
+        self.create_subscription(
+            OccupancyGrid, "/avoidance/local_costmap", self._costmap_cb, default_qos
+        )
+        self.create_subscription(LaserScan, "/avoidance/scan", self._scan_cb, best_effort_qos)
+        self.create_subscription(Odometry, "/odom", self._odom_cb, best_effort_qos)
+        self.create_subscription(
+            String, "/avoidance/proximity_status", lambda msg: self._string_cb("proximity", msg), default_qos
+        )
+        self.create_subscription(
+            Bool, "/avoidance/stop_request", lambda msg: self._bool_cb("stop_request", msg), default_qos
+        )
+        self.create_subscription(
+            String, "/planning/local_replan_status", lambda msg: self._string_cb("local_status", msg), default_qos
+        )
+        self.create_subscription(
+            String, "/control/status", lambda msg: self._string_cb("control_status", msg), default_qos
+        )
+        self.create_subscription(
+            Vector3Stamped, "/control/tracking_error", self._tracking_error_cb, default_qos
+        )
+        self.create_subscription(
+            NavPath, "/control/executed_path", self._executed_path_cb, default_qos
+        )
+        if SystemState is not None:
+            self.create_subscription(SystemState, "/system_state", self._system_cb, default_qos)
+
+    def _mark(self, topic: str, msg: Any | None = None) -> None:
+        self.wall_stamp[topic] = time.time()
+        if msg is not None:
+            try:
+                self.header_stamp[topic] = (
+                    msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+                )
+            except Exception:
+                pass
+
+    def age(self, topic: str) -> float | None:
+        if topic not in self.wall_stamp:
+            return None
+        return max(0.0, time.time() - self.wall_stamp[topic])
+
+    def header_age(self, topic: str) -> float | None:
+        if topic not in self.header_stamp:
+            return None
+        now_s = self.get_clock().now().nanoseconds * 1e-9
+        return max(0.0, now_s - self.header_stamp[topic])
+
+    def _safe_cmd_cb(self, msg: Twist) -> None:
+        self._mark("cmd_vel_safe")
+        self.latest_safe_cmd = msg
+        self.data["safe_cmd_x"] = float(msg.linear.x)
+        self.data["safe_cmd_z"] = float(msg.angular.z)
+
+    def _cloud_cb(self, msg: PointCloud2) -> None:
+        self._mark("cloud", msg)
+        self.data["cloud_points_width"] = int(msg.width)
+
+    def _costmap_cb(self, msg: OccupancyGrid) -> None:
+        self._mark("costmap", msg)
+        self.data["costmap_width"] = int(msg.info.width)
+        self.data["costmap_height"] = int(msg.info.height)
+        self.data["costmap_resolution"] = float(msg.info.resolution)
+
+    def _scan_cb(self, msg: LaserScan) -> None:
+        self._mark("scan", msg)
+        finite = [value for value in msg.ranges if math.isfinite(value)]
+        self.data["scan_min"] = float(min(finite)) if finite else None
+        self.data["scan_count"] = len(msg.ranges)
+
+    def _odom_cb(self, msg: Odometry) -> None:
+        self._mark("odom", msg)
+        self.data["odom_x"] = float(msg.pose.pose.position.x)
+        self.data["odom_y"] = float(msg.pose.pose.position.y)
+        self.data["odom_vx"] = float(msg.twist.twist.linear.x)
+        self.data["odom_wz"] = float(msg.twist.twist.angular.z)
+
+    def _string_cb(self, key: str, msg: String) -> None:
+        self._mark(key)
+        self.data[key] = str(msg.data)
+        parsed = _parse_json_string(msg.data)
+        if key == "control_status" and parsed is not None:
+            self.data["control_status_value"] = parsed.get("status")
+            self.data["control_target_index"] = parsed.get("target_index")
+            self.data["control_state_reasons"] = parsed.get("state_reasons")
+            self.data["pose_delay_s"] = parsed.get("pose_delay_s")
+            self.data["local_plan_age_s"] = parsed.get("local_plan_age_s")
+        elif key == "local_status" and parsed is not None:
+            self.data["local_status_value"] = parsed.get("status")
+            self.data["local_reference_start_index"] = parsed.get("reference_start_index")
+            self.data["local_rejoin_index"] = parsed.get("rejoin_index")
+            self.data["local_dynamic_obstacle_count"] = parsed.get("dynamic_obstacle_count")
+            self.data["local_path_point_count"] = parsed.get("path_point_count")
+        elif key == "proximity" and parsed is not None:
+            self.data["proximity_stop"] = parsed.get("stop")
+            self.data["proximity_reason"] = parsed.get("reason")
+            self.data["nearest_obstacle_distance_m"] = parsed.get(
+                "nearest_obstacle_distance_m"
+            )
+
+    def _bool_cb(self, key: str, msg: Bool) -> None:
+        self._mark(key)
+        self.data[key] = bool(msg.data)
+
+    def _tracking_error_cb(self, msg: Vector3Stamped) -> None:
+        self._mark("tracking", msg)
+        self.data["lateral_error_m"] = float(msg.vector.x)
+        self.data["heading_error_rad"] = float(msg.vector.y)
+        self.data["heading_error_deg"] = float(math.degrees(msg.vector.y))
+        self.data["tracking_target_index"] = int(round(float(msg.vector.z)))
+
+    def _executed_path_cb(self, msg: NavPath) -> None:
+        self._mark("executed_path", msg)
+        self.data["exec_points"] = len(msg.poses)
+        if msg.poses:
+            pose = msg.poses[-1].pose.position
+            self.data["exec_last_x"] = float(pose.x)
+            self.data["exec_last_y"] = float(pose.y)
+
+    def _system_cb(self, msg: Any) -> None:
+        self._mark("system_state")
+        for field in ("error_code", "base_state", "vehicle_state", "control_mode"):
+            if hasattr(msg, field):
+                value = getattr(msg, field)
+                try:
+                    value = int(value)
+                except Exception:
+                    value = str(value)
+                self.data[f"system_{field}"] = value
+
+    def relay_or_zero(self) -> None:
+        if self.relay_active and self.age("cmd_vel_safe") is not None and self.age("cmd_vel_safe") < 0.4:
+            self.cmd_pub.publish(self.latest_safe_cmd)
+            self.data["relay_cmd_x"] = float(self.latest_safe_cmd.linear.x)
+            self.data["relay_cmd_z"] = float(self.latest_safe_cmd.angular.z)
+        else:
+            self.cmd_pub.publish(Twist())
+            self.data["relay_cmd_x"] = 0.0
+            self.data["relay_cmd_z"] = 0.0
+
+    def publish_zero_for(self, seconds: float) -> None:
+        self.relay_active = False
+        end = time.time() + seconds
+        while time.time() < end:
+            self.cmd_pub.publish(Twist())
+            rclpy.spin_once(self, timeout_sec=0.02)
+            time.sleep(0.03)
+
+    def publish_initial_pose(self) -> None:
+        msg = PoseWithCovarianceStamped()
+        msg.header.frame_id = "map"
+        msg.pose.pose.position.x = self._args.initial_x
+        msg.pose.pose.position.y = self._args.initial_y
+        msg.pose.pose.orientation.z = math.sin(self._args.initial_yaw / 2.0)
+        msg.pose.pose.orientation.w = math.cos(self._args.initial_yaw / 2.0)
+        covariance = [0.0] * 36
+        covariance[0] = 0.04
+        covariance[7] = 0.04
+        covariance[35] = 0.01
+        msg.pose.covariance = covariance
+        for _ in range(6):
+            msg.header.stamp = self.get_clock().now().to_msg()
+            self.initial_pose_pub.publish(msg)
+            self.cmd_pub.publish(Twist())
+            rclpy.spin_once(self, timeout_sec=0.05)
+            time.sleep(0.08)
+
+    def prepose_ready(self) -> bool:
+        return (
+            self.initial_pose_pub.get_subscription_count() >= 1
+            and self.age("cloud") is not None
+            and self.age("cloud") < 0.8
+            and self.age("odom") is not None
+            and self.age("odom") < 0.8
+            and self.age("cmd_vel_safe") is not None
+            and self.age("cmd_vel_safe") < 0.8
+            and not bool(self.data.get("stop_request", False))
+        )
+
+    def local_ready(self) -> bool:
+        return (
+            self.data.get("local_status_value") in ("REPLANNED", "REFERENCE_CLEAR")
+            and self.data.get("control_status_value") in ("TRACKING", "GOAL_REACHED")
+            and self.age("costmap") is not None
+            and self.age("costmap") < 0.9
+            and self.age("scan") is not None
+            and self.age("scan") < 0.9
+            and self.age("cmd_vel_safe") is not None
+            and self.age("cmd_vel_safe") < 0.4
+            and not bool(self.data.get("stop_request", False))
+            and not bool(self.data.get("proximity_stop", False))
+        )
+
+    def snapshot(self, phase: str, elapsed_s: float | None = None) -> dict[str, Any]:
+        snapshot = {
+            "t_wall": time.time(),
+            "phase": phase,
+            "elapsed_s": None if elapsed_s is None else round(float(elapsed_s), 3),
+            "init_subscribers": self.initial_pose_pub.get_subscription_count(),
+            "relay_active": self.relay_active,
+            "rx_age": {
+                key: round(value, 3)
+                for key in sorted(self.wall_stamp)
+                if (value := self.age(key)) is not None
+            },
+            "header_age": {
+                key: round(value, 3)
+                for key in sorted(self.header_stamp)
+                if (value := self.header_age(key)) is not None
+            },
+        }
+        snapshot.update(self.data)
+        return snapshot
+
+
+def _sustained(
+    bad_since: dict[str, float],
+    key: str,
+    bad: bool,
+    now_s: float,
+    duration_s: float,
+) -> bool:
+    if bad:
+        bad_since.setdefault(key, now_s)
+        return now_s - bad_since[key] >= duration_s
+    bad_since.pop(key, None)
+    return False
+
+
+def _route_complete(
+    node: RelayMonitor,
+    route_point_count: int | None,
+    finish_xy: tuple[float, float] | None,
+) -> bool:
+    status = node.data.get("control_status_value")
+    start_index = node.data.get("local_reference_start_index")
+    rejoin_index = node.data.get("local_rejoin_index")
+    near_final_rejoin = (
+        route_point_count is not None
+        and isinstance(rejoin_index, int)
+        and rejoin_index >= route_point_count - 2
+    )
+    near_final_start = (
+        route_point_count is not None
+        and isinstance(start_index, int)
+        and start_index >= route_point_count - 2
+    )
+    near_finish_pose = False
+    if finish_xy is not None and "exec_last_x" in node.data and "exec_last_y" in node.data:
+        near_finish_pose = (
+            math.hypot(
+                float(node.data["exec_last_x"]) - finish_xy[0],
+                float(node.data["exec_last_y"]) - finish_xy[1],
+            )
+            <= 0.55
+        )
+    return bool(
+        (status == "GOAL_REACHED" and (near_final_rejoin or near_finish_pose))
+        or near_final_start
+    )
+
+
+def _write_status(path: Path, snapshot: dict[str, Any], stop_reason: str | None = None) -> None:
+    status = dict(snapshot)
+    if stop_reason is not None:
+        status["stop_reason"] = stop_reason
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(status, ensure_ascii=False, separators=(",", ":")) + "\n")
+    tmp.replace(path)
+
+
+def _safe_shutdown(node: RelayMonitor, launch_pid: int) -> list[str]:
+    logs: list[str] = []
+    node.publish_zero_for(1.2)
+    logs.append(_shell("pkill -INT -f 'mppi_control_node|__node:=mppi_control' || true", 3))
+    node.publish_zero_for(0.8)
+    logs.append(_shell("pkill -INT -f 'safety_node|__node:=competition_safety' || true", 3))
+    node.publish_zero_for(0.8)
+    logs.append(_shell(f"kill -INT {launch_pid} 2>/dev/null || true", 3))
+    time.sleep(1.5)
+    logs.append(
+        _shell(
+            f"for p in $(pgrep -P {launch_pid}); do kill -TERM $p 2>/dev/null || true; done; "
+            f"kill -TERM {launch_pid} 2>/dev/null || true",
+            3,
+        )
+    )
+    node.publish_zero_for(0.5)
+    return logs
+
+
+def run(args: argparse.Namespace) -> int:
+    route_point_count, finish_xy = _load_route_metadata(Path(args.route_file))
+    log_dir = Path(args.log_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = log_dir / f"{args.label}.jsonl"
+    summary_path = log_dir / f"{args.label}_summary.txt"
+    status_path = log_dir / f"{args.label}_status.json"
+
+    rclpy.init()
+    node = RelayMonitor(args, route_point_count)
+    stop_reason = "not_started"
+    shutdown_log: list[str] = []
+    bad_since: dict[str, float] = {}
+    samples = 0
+    max_safe_cmd = 0.0
+    max_relay_cmd = 0.0
+    max_odom_vx = 0.0
+    max_abs_lateral_error = 0.0
+    max_abs_heading_error = 0.0
+    min_scan: float | None = None
+    first_odom: tuple[float, float] | None = None
+    last_odom: tuple[float, float] | None = None
+
+    try:
+        with jsonl_path.open("w", encoding="utf-8") as jsonl:
+            jsonl.write(
+                json.dumps(
+                    {
+                        "event": "script_start",
+                        "label": args.label,
+                        "launch_pid": args.launch_pid,
+                        "initial_pose": [args.initial_x, args.initial_y, args.initial_yaw],
+                        "route_file": args.route_file,
+                        "route_point_count": route_point_count,
+                        "finish_xy": finish_xy,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+
+            gate_start = time.time()
+            while time.time() - gate_start < args.prepose_timeout_s:
+                node.relay_active = False
+                node.relay_or_zero()
+                rclpy.spin_once(node, timeout_sec=0.05)
+                if node.prepose_ready():
+                    break
+                _write_status(status_path, node.snapshot("prepose_gate", time.time() - gate_start))
+            else:
+                stop_reason = "prepose_gate_timeout"
+                jsonl.write(json.dumps({"event": "stop", "reason": stop_reason}, ensure_ascii=False) + "\n")
+                return 2
+
+            node.publish_initial_pose()
+            jsonl.write(
+                json.dumps(
+                    {
+                        "event": "initialpose_published",
+                        "snapshot": node.snapshot("initialpose"),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+
+            ready_start = time.time()
+            ready_count = 0
+            while time.time() - ready_start < args.local_ready_timeout_s:
+                node.relay_active = False
+                node.relay_or_zero()
+                rclpy.spin_once(node, timeout_sec=0.05)
+                ready_count = ready_count + 1 if node.local_ready() else 0
+                snapshot = node.snapshot("local_ready_gate", time.time() - ready_start)
+                _write_status(status_path, snapshot)
+                if ready_count >= 3:
+                    break
+            else:
+                stop_reason = "local_ready_timeout_no_motion"
+                jsonl.write(json.dumps({"event": "stop", "reason": stop_reason}, ensure_ascii=False) + "\n")
+                return 3
+
+            node.relay_active = True
+            run_start = time.time()
+            last_status_write_s = 0.0
+            jsonl.write(json.dumps({"event": "relay_start", "snapshot": node.snapshot("relay_start", 0.0)}, ensure_ascii=False) + "\n")
+
+            while True:
+                rclpy.spin_once(node, timeout_sec=0.03)
+                node.relay_or_zero()
+                now_s = time.time()
+                elapsed_s = now_s - run_start
+                snapshot = node.snapshot("run", elapsed_s)
+                jsonl.write(json.dumps(snapshot, ensure_ascii=False) + "\n")
+                samples += 1
+
+                max_safe_cmd = max(max_safe_cmd, abs(float(node.data.get("safe_cmd_x", 0.0))))
+                max_relay_cmd = max(max_relay_cmd, abs(float(node.data.get("relay_cmd_x", 0.0))))
+                max_odom_vx = max(max_odom_vx, abs(float(node.data.get("odom_vx", 0.0))))
+                max_abs_lateral_error = max(
+                    max_abs_lateral_error,
+                    abs(float(node.data.get("lateral_error_m", 0.0))),
+                )
+                max_abs_heading_error = max(
+                    max_abs_heading_error,
+                    abs(float(node.data.get("heading_error_deg", 0.0))),
+                )
+                if node.data.get("scan_min") is not None:
+                    scan_min = float(node.data["scan_min"])
+                    min_scan = scan_min if min_scan is None else min(min_scan, scan_min)
+                if "odom_x" in node.data and "odom_y" in node.data:
+                    current_odom = (
+                        float(node.data["odom_x"]),
+                        float(node.data["odom_y"]),
+                    )
+                    first_odom = first_odom or current_odom
+                    last_odom = current_odom
+
+                if elapsed_s - last_status_write_s >= 1.0:
+                    last_status_write_s = elapsed_s
+                    _write_status(status_path, snapshot)
+                    jsonl.flush()
+
+                local_status = str(node.data.get("local_status_value", ""))
+                control_status = str(node.data.get("control_status_value", ""))
+                control_reasons = node.data.get("control_state_reasons") or []
+                if _route_complete(node, route_point_count, finish_xy):
+                    stop_reason = "route_complete"
+                    break
+                if bool(node.data.get("stop_request", False)) or bool(node.data.get("proximity_stop", False)):
+                    stop_reason = "proximity_stop_request"
+                    break
+                if node.data.get("scan_min") is not None and float(node.data["scan_min"]) < args.scan_stop_m:
+                    stop_reason = f"scan_min_under_{args.scan_stop_m:.2f}m"
+                    break
+                if abs(float(node.data.get("safe_cmd_x", 0.0))) > args.max_command_mps:
+                    stop_reason = "safe_command_over_limit"
+                    break
+                if abs(float(node.data.get("relay_cmd_x", 0.0))) > args.max_command_mps:
+                    stop_reason = "relay_command_over_limit"
+                    break
+                if abs(float(node.data.get("odom_vx", 0.0))) > args.max_odom_mps:
+                    stop_reason = "odom_velocity_over_limit"
+                    break
+                if node.age("cmd_vel_safe") is None or node.age("cmd_vel_safe") > 0.6:
+                    stop_reason = "cmd_vel_safe_stale"
+                    break
+                local_bad = any(
+                    token in local_status
+                    for token in ("UNAVAILABLE", "STALE", "FAILED", "ERROR")
+                )
+                if elapsed_s > 6.0 and _sustained(
+                    bad_since, "local_bad", local_bad, now_s, args.sustained_error_s
+                ):
+                    stop_reason = f"local_status_sustained_{node.data.get('local_status')}"
+                    break
+                control_bad = control_status in ("INVALID_STATE", "ERROR", "RECOVERY_REQUIRED") and bool(control_reasons)
+                if elapsed_s > 6.0 and _sustained(
+                    bad_since, "control_bad", control_bad, now_s, args.sustained_error_s
+                ):
+                    stop_reason = f"control_status_sustained_{node.data.get('control_status')}"
+                    break
+                if elapsed_s > 6.0 and abs(float(node.data.get("lateral_error_m", 0.0))) > args.max_lateral_error_m:
+                    stop_reason = "tracking_lateral_error_over_limit"
+                    break
+                if elapsed_s >= args.watchdog_timeout_s:
+                    stop_reason = "watchdog_timeout_route_not_complete"
+                    break
+
+            jsonl.write(
+                json.dumps(
+                    {"event": "stop_begin", "reason": stop_reason, "snapshot": node.snapshot("stop_begin", time.time() - run_start)},
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            shutdown_log = _safe_shutdown(node, args.launch_pid)
+    finally:
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
+
+    odom_dx = None
+    odom_dy = None
+    if first_odom is not None and last_odom is not None:
+        odom_dx = last_odom[0] - first_odom[0]
+        odom_dy = last_odom[1] - first_odom[1]
+    summary_lines = [
+        f"label={args.label}",
+        f"stop_reason={stop_reason}",
+        f"route_point_count={route_point_count}",
+        f"finish_xy={finish_xy}",
+        f"samples={samples}",
+        f"initialpose=x={args.initial_x:.3f}, y={args.initial_y:.3f}, yaw={args.initial_yaw:.3f}",
+        "relay=/cmd_vel_safe -> /cmd_vel",
+        f"max_abs_safe_cmd_x_mps={max_safe_cmd:.4f}",
+        f"max_abs_relay_cmd_x_mps={max_relay_cmd:.4f}",
+        f"max_abs_odom_vx_mps={max_odom_vx:.4f}",
+        f"odom_delta_x_m={None if odom_dx is None else round(odom_dx, 4)}",
+        f"odom_delta_y_m={None if odom_dy is None else round(odom_dy, 4)}",
+        f"max_abs_lateral_error_m={max_abs_lateral_error:.4f}",
+        f"max_abs_heading_error_deg={max_abs_heading_error:.3f}",
+        f"min_scan_m={None if min_scan is None else round(min_scan, 4)}",
+        f"last_local_status={node.data.get('local_status')}",
+        f"last_control_status={node.data.get('control_status')}",
+        f"last_proximity_status={node.data.get('proximity')}",
+        f"last_stop_request={node.data.get('stop_request')}",
+        f"last_exec_points={node.data.get('exec_points')}",
+        f"last_exec_pose=({node.data.get('exec_last_x')}, {node.data.get('exec_last_y')})",
+        f"jsonl={jsonl_path}",
+        f"status={status_path}",
+        f"shutdown_log={shutdown_log}",
+    ]
+    summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    _write_status(summary_path.with_name(f"{args.label}_final_status.json"), node.snapshot("final"), stop_reason)
+    return 0 if stop_reason in ("route_complete", "watchdog_timeout_route_not_complete") else 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--label", required=True)
+    parser.add_argument("--launch-pid", type=int, required=True)
+    parser.add_argument("--initial-x", type=float, required=True)
+    parser.add_argument("--initial-y", type=float, required=True)
+    parser.add_argument("--initial-yaw", type=float, required=True)
+    parser.add_argument("--route-file", required=True)
+    parser.add_argument("--log-dir", default="/home/agilex/competition_ws/log")
+    parser.add_argument("--prepose-timeout-s", type=float, default=18.0)
+    parser.add_argument("--local-ready-timeout-s", type=float, default=20.0)
+    parser.add_argument("--watchdog-timeout-s", type=float, default=420.0)
+    parser.add_argument("--sustained-error-s", type=float, default=4.0)
+    parser.add_argument("--scan-stop-m", type=float, default=0.34)
+    parser.add_argument("--max-command-mps", type=float, default=0.23)
+    parser.add_argument("--max-odom-mps", type=float, default=0.28)
+    parser.add_argument("--max-lateral-error-m", type=float, default=0.45)
+    args = parser.parse_args()
+    return run(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
