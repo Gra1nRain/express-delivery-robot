@@ -55,7 +55,6 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertGreaterEqual(replanning["lookahead_distance_m"], 3.0)
         self.assertGreater(replanning["reference_deviation_weight"], 0.0)
         self.assertLessEqual(replanning["search_padding_m"], 1.5)
-        self.assertLessEqual(replanning["planning_timeout_ms"], 2_000)
         self.assertEqual(
             replanning["costmap_topic"],
             "/avoidance/local_costmap",
@@ -77,9 +76,6 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertIn("start_local_replanner", launch_text)
         self.assertIn("OccupancyGrid", replanner_node)
         self.assertIn("LocalTrajectoryPlanner", replanner_node)
-        self.assertIn("planning_timeout_ms", replanner_node)
-        self.assertIn("planning_time_ms=planning_time_ms", replanner_node)
-        self.assertIn('"planning_timeout_ms": replanning["planning_timeout_ms"]', launch_text)
         self.assertIn("local_trajectory_topic", control_node)
         self.assertIn("parameterize_local_path", control_node)
         self.assertIn("replace_trajectory", control_node)

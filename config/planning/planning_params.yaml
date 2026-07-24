@@ -41,7 +41,6 @@ replanning:
   goal_position_tolerance_m: 0.25
   goal_heading_tolerance_deg: 15.0
   max_expansions: 250000
-  planning_timeout_ms: 1500
   reference_search_window_points: 120
   costmap_topic: /avoidance/local_costmap
   local_trajectory_topic: /planning/local_trajectory

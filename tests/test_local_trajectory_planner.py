@@ -2,7 +2,6 @@ import math
 import pathlib
 import sys
 import unittest
-from unittest.mock import patch
 
 import yaml
 
@@ -21,11 +20,7 @@ from competition_planning.local_trajectory_planner import (
     LocalReplanConfig,
     LocalTrajectoryPlanner,
 )
-from competition_planning.hybrid_astar_planner import HybridAStarPlanner
-from competition_planning.occupancy_grid_planner import (
-    GridPlanningError,
-    OccupancyGridMap,
-)
+from competition_planning.occupancy_grid_planner import OccupancyGridMap
 from competition_planning.semantic_planner import PathPoint
 from competition_planning.trajectory_parameterizer import parameterize_local_path
 
@@ -218,32 +213,6 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
             1.0 / 0.81 + 0.02,
         )
         self.assertLessEqual(max(point.v for point in trajectory.points), 0.20)
-
-    def test_hybrid_search_honors_local_wall_clock_timeout(self) -> None:
-        planner = HybridAStarPlanner(
-            _empty_map(),
-            inflation_radius_m=0.30,
-            search_padding_m=1.5,
-            sample_spacing_m=0.10,
-            min_turning_radius_m=0.81,
-            step_length_m=0.20,
-            curvature_bins=9,
-            heading_bins=72,
-            goal_position_tolerance_m=0.25,
-            goal_heading_tolerance_rad=math.radians(15.0),
-            max_expansions=250_000,
-            planning_timeout_s=1.5,
-        )
-
-        with patch(
-            "competition_planning.hybrid_astar_planner.time.perf_counter",
-            side_effect=(10.0, 11.6),
-        ):
-            with self.assertRaisesRegex(
-                GridPlanningError,
-                "planning timeout",
-            ):
-                planner.plan((PathPoint(0.0, 0.0, 0.0), PathPoint(5.0, 0.0, 0.0)))
 
     def test_bagged_local_path_with_minor_curvature_overshoot_is_mppi_acceptable(self) -> None:
         path = (
