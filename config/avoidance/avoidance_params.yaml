@@ -1,0 +1,66 @@
+avoidance_manager:
+  ros__parameters:
+    dry_run: true
+    enable_chassis_output: false
+    operation_mode: dry_run
+
+    cloud_topic: /cloud_registered_body
+    odometry_topic: /odom
+    map_frame: map
+    expected_cloud_frame: body
+    maximum_cloud_age_s: 0.50
+    perception_timeout_s: 0.30
+    odometry_timeout_s: 0.30
+    transform_timeout_s: 0.05
+    stop_publish_frequency_hz: 20.0
+    corridor_ttl_s: 0.50
+
+    status_topic: /avoidance/status
+    objects_topic: /avoidance/objects
+    corridor_update_topic: /avoidance/corridor_update
+    stop_request_topic: /avoidance/stop_request
+    local_costmap_topic: /avoidance/local_costmap
+
+    # Conservative limits inherited from the frozen global-planning envelope.
+    planning_min_turning_radius_m: 0.81
+    maximum_speed_mps: 0.15
+    maximum_acceleration_mps2: 0.20
+    maximum_deceleration_mps2: 0.30
+    vehicle_length_m: 0.72
+    vehicle_width_m: 0.50
+
+    proximity_x_min_m: 0.25
+    proximity_stop_distance_m: 0.85
+    proximity_front_half_angle_rad: 0.4363
+    proximity_lateral_half_width_m: 0.45
+    proximity_z_min_m: -0.25
+    proximity_z_max_m: 0.80
+    proximity_min_points: 3
+
+    grid_resolution_m: 0.05
+    grid_x_min_m: -0.50
+    grid_x_max_m: 5.50
+    grid_y_min_m: -2.50
+    grid_y_max_m: 2.50
+    grid_inflation_radius_m: 0.20
+
+    perception_z_max_m: 2.20
+    ground_max_z_m: -0.20
+    voxel_size_m: 0.08
+    cluster_tolerance_m: 0.30
+    minimum_cluster_points: 6
+
+    association_gate_m: 0.80
+    track_timeout_s: 0.80
+    minimum_confirmed_hits: 2
+    moving_speed_mps: 0.20
+    static_speed_mps: 0.08
+    moving_confirmation_count: 2
+    static_confirmation_count: 3
+
+    prediction_horizon_s: 3.0
+    dynamic_emergency_distance_m: 0.85
+    dynamic_collision_distance_m: 1.00
+    dynamic_slowdown_distance_m: 1.50
+    dynamic_reaction_time_s: 0.35
+    dynamic_safety_margin_m: 0.40
