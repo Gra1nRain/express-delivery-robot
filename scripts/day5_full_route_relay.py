@@ -33,6 +33,11 @@ from rclpy.qos import (
 from sensor_msgs.msg import LaserScan, PointCloud2
 from std_msgs.msg import Bool, String
 
+from competition_control.ranger_twist_adapter import (
+    RangerMiniV3Geometry,
+    adapt_yaw_rate_for_ranger_driver,
+)
+
 try:
     import yaml
 except Exception:  # pragma: no cover - yaml is present on the robot image.
@@ -310,13 +315,34 @@ class RelayMonitor(Node):
 
     def relay_or_zero(self) -> None:
         if self.relay_active and self.age("cmd_vel_safe") is not None and self.age("cmd_vel_safe") < 0.4:
-            self.cmd_pub.publish(self.latest_safe_cmd)
-            self.data["relay_cmd_x"] = float(self.latest_safe_cmd.linear.x)
-            self.data["relay_cmd_z"] = float(self.latest_safe_cmd.angular.z)
+            command = self._relay_command(self.latest_safe_cmd)
+            self.cmd_pub.publish(command)
+            self.data["relay_cmd_x"] = float(command.linear.x)
+            self.data["relay_cmd_z"] = float(command.angular.z)
         else:
             self.cmd_pub.publish(Twist())
             self.data["relay_cmd_x"] = 0.0
             self.data["relay_cmd_z"] = 0.0
+
+    def _relay_command(self, safe_command: Twist) -> Twist:
+        command = Twist()
+        command.linear.x = safe_command.linear.x
+        command.linear.y = safe_command.linear.y
+        command.linear.z = safe_command.linear.z
+        command.angular.x = safe_command.angular.x
+        command.angular.y = safe_command.angular.y
+        command.angular.z = safe_command.angular.z
+        if self._args.adapt_ranger_twist:
+            command.angular.z = adapt_yaw_rate_for_ranger_driver(
+                linear_x_mps=float(safe_command.linear.x),
+                desired_yaw_rate_radps=float(safe_command.angular.z),
+                geometry=RangerMiniV3Geometry(
+                    wheelbase_m=self._args.ranger_wheelbase_m,
+                    track_width_m=self._args.ranger_track_width_m,
+                    driver_min_turn_radius_m=self._args.ranger_driver_min_turn_radius_m,
+                ),
+            )
+        return command
 
     def publish_zero_for(self, seconds: float) -> None:
         self.relay_active = False
@@ -812,6 +838,18 @@ def main() -> int:
     parser.add_argument("--max-command-mps", type=float, default=0.23)
     parser.add_argument("--max-odom-mps", type=float, default=0.28)
     parser.add_argument("--max-lateral-error-m", type=float, default=0.45)
+    parser.add_argument(
+        "--adapt-ranger-twist",
+        action="store_true",
+        help="Adapt body yaw-rate to the Ranger driver's dual-Ackermann Twist semantics.",
+    )
+    parser.add_argument("--ranger-wheelbase-m", type=float, default=0.494)
+    parser.add_argument("--ranger-track-width-m", type=float, default=0.364)
+    parser.add_argument(
+        "--ranger-driver-min-turn-radius-m",
+        type=float,
+        default=0.47644,
+    )
     parser.add_argument(
         "--post-stop-hold-s",
         type=float,

@@ -224,6 +224,16 @@ class Day5FieldMotionAnalysisTest(unittest.TestCase):
         self.assertIn("are required unless", relay_text)
         self.assertIn("--skip-initialpose is set", relay_text)
 
+    def test_relay_can_apply_ranger_twist_semantics_after_safety(self) -> None:
+        relay_text = (REPO_ROOT / "scripts" / "day5_full_route_relay.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('"--adapt-ranger-twist"', relay_text)
+        self.assertIn("adapt_yaw_rate_for_ranger_driver", relay_text)
+        self.assertIn("command = self._relay_command(self.latest_safe_cmd)", relay_text)
+        self.assertIn("self.cmd_pub.publish(command)", relay_text)
+
 
 if __name__ == "__main__":
     unittest.main()
