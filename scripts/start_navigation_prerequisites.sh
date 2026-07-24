@@ -21,8 +21,10 @@ LOG_DIR="$COMPETITION_WS/log/navigation_prerequisites"
 RUN_ID="$(date +%Y%m%d_%H%M%S)"
 MAPPING_LOG="$LOG_DIR/${RUN_ID}_mapping.log"
 AVOIDANCE_LOG="$LOG_DIR/${RUN_ID}_avoidance.log"
+ODOMETRY_ADAPTER_LOG="$LOG_DIR/${RUN_ID}_odometry_adapter.log"
 MAPPING_PID=""
 AVOIDANCE_PID=""
+ODOMETRY_ADAPTER_PID=""
 mkdir -p "$LOG_DIR"
 
 node_exists() {
@@ -94,6 +96,7 @@ cleanup() {
   trap - EXIT INT TERM
   echo "Stopping navigation prerequisite nodes..."
   stop_process_group "$AVOIDANCE_PID"
+  stop_process_group "$ODOMETRY_ADAPTER_PID"
   stop_process_group "$MAPPING_PID"
   echo "Stopped. Logs remain in $LOG_DIR"
   exit "$status"
@@ -115,6 +118,12 @@ refuse_if_process_running \
 refuse_if_process_running \
   "/competition_avoidance/lib/competition_avoidance/avoidance_manager_node" \
   "avoidance manager"
+refuse_if_process_running \
+  "ros2 run competition_avoidance odometry_adapter_node" \
+  "odometry adapter"
+refuse_if_process_running \
+  "/competition_avoidance/lib/competition_avoidance/odometry_adapter_node" \
+  "odometry adapter"
 
 echo "Starting Livox, FAST-LIO and pointcloud_to_laserscan..."
 setsid ros2 launch competition_bringup day1_mapping.launch.py \
@@ -132,6 +141,16 @@ wait_for_node /livox_lidar_publisher
 wait_for_node /laser_mapping
 wait_for_topic /cloud_registered_body
 wait_for_topic /Odometry
+
+echo "Starting FAST-LIO odometry interface adapter..."
+setsid ros2 run competition_avoidance odometry_adapter_node \
+  --ros-args \
+  -p input_topic:=/Odometry \
+  -p output_topic:=/odom >"$ODOMETRY_ADAPTER_LOG" 2>&1 &
+ODOMETRY_ADAPTER_PID=$!
+
+wait_for_node /odometry_adapter
+wait_for_topic /odom
 
 echo "Starting additive avoidance in dry-run mode..."
 setsid ros2 run competition_avoidance avoidance_manager_node \
@@ -151,15 +170,16 @@ fi
 
 echo
 echo "NAVIGATION_PREREQUISITES_READY"
-echo "mapping_pid=$MAPPING_PID avoidance_pid=$AVOIDANCE_PID"
+echo "mapping_pid=$MAPPING_PID odometry_adapter_pid=$ODOMETRY_ADAPTER_PID avoidance_pid=$AVOIDANCE_PID"
 echo "mapping_log=$MAPPING_LOG"
+echo "odometry_adapter_log=$ODOMETRY_ADAPTER_LOG"
 echo "avoidance_log=$AVOIDANCE_LOG"
 echo "Safety gates: start_base=false, no chassis adapter, /cmd_vel absent."
 echo "Keep this terminal open. Press Ctrl+C to stop all nodes started here."
 echo
 
 set +e
-wait -n "$MAPPING_PID" "$AVOIDANCE_PID"
+wait -n "$MAPPING_PID" "$ODOMETRY_ADAPTER_PID" "$AVOIDANCE_PID"
 status=$?
 set -e
 echo "ERROR: a prerequisite process exited unexpectedly." >&2

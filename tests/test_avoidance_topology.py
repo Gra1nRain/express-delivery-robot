@@ -60,6 +60,26 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertNotIn('"/cmd_vel"', node_text)
         self.assertNotIn('"/planning/local_trajectory"', node_text)
 
+    def test_odometry_adapter_bridges_fast_lio_without_touching_navigation(self) -> None:
+        setup_text = (
+            REPO_ROOT / "src" / "competition_avoidance" / "setup.py"
+        ).read_text(encoding="utf-8")
+        startup_text = (
+            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "odometry_adapter_node = "
+            "competition_avoidance.odometry_adapter_node:main",
+            setup_text,
+        )
+        self.assertIn(
+            "ros2 run competition_avoidance odometry_adapter_node",
+            startup_text,
+        )
+        self.assertIn("wait_for_topic /odom", startup_text)
+        self.assertNotIn("topic_tools relay", startup_text)
+
 
 if __name__ == "__main__":
     unittest.main()
