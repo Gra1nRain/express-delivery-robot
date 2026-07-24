@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import heapq
 import math
+import time
 from typing import Sequence
 
 from competition_planning.occupancy_grid_planner import (
@@ -46,6 +47,7 @@ class HybridAStarPlanner:
         max_expansions: int = 250_000,
         reference_path: Sequence[PathPoint] = (),
         reference_deviation_weight: float = 0.0,
+        planning_timeout_s: float | None = None,
     ) -> None:
         if min_turning_radius_m <= 0.0:
             raise GridPlanningError("hybrid_astar requires a positive min_turning_radius_m")
@@ -66,6 +68,9 @@ class HybridAStarPlanner:
             goal_heading_tolerance_rad,
         )
         self._max_expansions = max(1, max_expansions)
+        if planning_timeout_s is not None and planning_timeout_s <= 0.0:
+            raise GridPlanningError("planning_timeout_s must be positive")
+        self._planning_timeout_s = planning_timeout_s
         if reference_deviation_weight < 0.0:
             raise GridPlanningError("reference_deviation_weight must be non-negative")
         self._reference_xy = tuple((point.x, point.y) for point in reference_path)
@@ -135,8 +140,19 @@ class HybridAStarPlanner:
         ]
         closed: set[tuple[int, int, int, int]] = set()
         sequence = 0
+        search_started_at = time.perf_counter()
 
-        for _ in range(self._max_expansions):
+        for expansion_index in range(self._max_expansions):
+            if (
+                self._planning_timeout_s is not None
+                and expansion_index % 64 == 0
+                and time.perf_counter() - search_started_at
+                >= self._planning_timeout_s
+            ):
+                raise GridPlanningError(
+                    "hybrid_astar planning timeout after "
+                    f"{expansion_index} expansions"
+                )
             if not open_heap:
                 break
             _, _, current_key = heapq.heappop(open_heap)

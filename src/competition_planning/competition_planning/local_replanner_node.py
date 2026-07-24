@@ -74,6 +74,10 @@ class LocalReplannerNode(Node):
             max_expansions=int(
                 self.declare_parameter("max_expansions", 250_000).value
             ),
+            planning_timeout_s=(
+                float(self.declare_parameter("planning_timeout_ms", 1500.0).value)
+                / 1000.0
+            ),
             reference_search_window_points=int(
                 self.declare_parameter("reference_search_window_points", 120).value
             ),
@@ -138,6 +142,7 @@ class LocalReplannerNode(Node):
         if not message.header.frame_id:
             self._publish_status("INVALID_COSTMAP_FRAME")
             return
+        started_at = time.perf_counter()
         try:
             transform = self._tf_buffer.lookup_transform(
                 self._map_frame,
@@ -201,7 +206,6 @@ class LocalReplannerNode(Node):
                 y=float(transform.transform.translation.y),
                 yaw=_yaw_from_quaternion(transform.transform.rotation),
             )
-            started_at = time.perf_counter()
             result = self._planner.plan(
                 reference_path=self._reference_path,
                 current_pose=current_pose,
@@ -210,7 +214,13 @@ class LocalReplannerNode(Node):
             )
             planning_time_ms = (time.perf_counter() - started_at) * 1000.0
         except (TransformException, GridPlanningError, ValueError) as exc:
-            self._publish_status("PLAN_FAILED", detail=str(exc), costmap_age_s=age_s)
+            planning_time_ms = (time.perf_counter() - started_at) * 1000.0
+            self._publish_status(
+                "PLAN_FAILED",
+                detail=str(exc),
+                costmap_age_s=age_s,
+                planning_time_ms=planning_time_ms,
+            )
             return
 
         self._previous_reference_index = result.reference_start_index

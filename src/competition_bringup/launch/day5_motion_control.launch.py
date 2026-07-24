@@ -217,6 +217,7 @@ def _launch_setup(context, *args, **kwargs):
                         "reference_deviation_weight"
                     ],
                     "max_expansions": replanning["max_expansions"],
+                    "planning_timeout_ms": replanning["planning_timeout_ms"],
                     "reference_search_window_points": replanning[
                         "reference_search_window_points"
                     ],
