@@ -51,12 +51,12 @@ avoidance_manager:
     cluster_tolerance_m: 0.30
     minimum_cluster_points: 6
 
-    association_gate_m: 0.80
+    association_gate_m: 0.35
     track_timeout_s: 0.80
     minimum_confirmed_hits: 2
-    moving_speed_mps: 0.20
-    static_speed_mps: 0.08
-    moving_confirmation_count: 2
+    moving_speed_mps: 0.35
+    static_speed_mps: 0.18
+    moving_confirmation_count: 3
     static_confirmation_count: 3
 
     prediction_horizon_s: 3.0

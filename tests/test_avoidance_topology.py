@@ -23,6 +23,10 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertEqual(config["maximum_acceleration_mps2"], 0.20)
         self.assertEqual(config["maximum_deceleration_mps2"], 0.30)
         self.assertEqual(config["maximum_processing_frequency_hz"], 10.0)
+        self.assertEqual(config["association_gate_m"], 0.35)
+        self.assertEqual(config["moving_speed_mps"], 0.35)
+        self.assertEqual(config["static_speed_mps"], 0.18)
+        self.assertEqual(config["moving_confirmation_count"], 3)
         self.assertEqual(config["proximity_stop_distance_m"], 0.85)
         self.assertGreaterEqual(config["dynamic_safety_margin_m"], 0.40)
 

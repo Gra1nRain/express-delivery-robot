@@ -24,6 +24,16 @@ def _person(x: float, y: float) -> ObstacleDetection:
     )
 
 
+def _vehicle_profile() -> TrackerConfig:
+    return TrackerConfig(
+        association_gate_m=0.35,
+        moving_speed_mps=0.35,
+        static_speed_mps=0.18,
+        moving_confirmation_count=3,
+        static_confirmation_count=3,
+    )
+
+
 class AvoidanceTrackerTest(unittest.TestCase):
     def test_crossing_person_keeps_id_and_becomes_dynamic(self) -> None:
         tracker = ObstacleTracker(
@@ -51,6 +61,34 @@ class AvoidanceTrackerTest(unittest.TestCase):
         self.assertEqual(tracker.update((), timestamp_s=1.6), ())
         with self.assertRaisesRegex(ValueError, "timestamps must increase"):
             tracker.update((), timestamp_s=1.5)
+
+    def test_vehicle_profile_rejects_stationary_cluster_jitter(self) -> None:
+        tracker = ObstacleTracker(_vehicle_profile())
+        result = ()
+        for index, x in enumerate(
+            (0.00, 0.02, -0.02, 0.01, -0.01, 0.015, -0.015, 0.01)
+        ):
+            result = tracker.update(
+                (_person(x, 0.0),),
+                timestamp_s=1.0 + 0.1 * index,
+            )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].motion_state, "STATIC")
+        self.assertLess(result[0].speed_mps, 0.18)
+
+    def test_vehicle_profile_confirms_walking_obstacle(self) -> None:
+        tracker = ObstacleTracker(_vehicle_profile())
+        result = ()
+        for index in range(6):
+            result = tracker.update(
+                (_person(0.05 * index, 0.0),),
+                timestamp_s=1.0 + 0.1 * index,
+            )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].motion_state, "DYNAMIC")
+        self.assertGreater(result[0].speed_mps, 0.35)
 
 
 if __name__ == "__main__":
