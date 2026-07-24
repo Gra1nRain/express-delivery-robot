@@ -33,6 +33,7 @@ def config_from_mapping(
     replanning: Mapping[str, Any],
     *,
     max_expansions: int | None = None,
+    minimum_turning_radius_m: float | None = None,
 ) -> LocalReplanConfig:
     return LocalReplanConfig(
         lookahead_distance_m=float(replanning.get("lookahead_distance_m", 5.0)),
@@ -41,6 +42,8 @@ def config_from_mapping(
         sample_spacing_m=float(replanning.get("sample_spacing_m", 0.10)),
         min_turning_radius_m=float(
             replanning.get("min_turning_radius_m", 0.81)
+            if minimum_turning_radius_m is None
+            else minimum_turning_radius_m
         ),
         step_length_m=float(replanning.get("step_length_m", 0.20)),
         curvature_bins=int(replanning.get("curvature_bins", 9)),
@@ -155,12 +158,14 @@ def benchmark_fixture(
     previous_reference_index: int,
     current_pose: PathPoint | None = None,
     max_expansions: int | None = None,
+    minimum_turning_radius_m: float | None = None,
 ) -> dict[str, object]:
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
     params = yaml.safe_load(planning_params_path.read_text(encoding="utf-8"))
     config = config_from_mapping(
         params["replanning"],
         max_expansions=max_expansions,
+        minimum_turning_radius_m=minimum_turning_radius_m,
     )
     static_map = OccupancyGridMap.from_yaml(map_path)
     reference_path = _reference_path(trajectory_path)
@@ -250,6 +255,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--previous-reference-index", required=True, type=int)
     parser.add_argument("--current-pose", type=_pose)
     parser.add_argument("--max-expansions", type=int)
+    parser.add_argument("--minimum-turning-radius-m", type=float)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
 
@@ -261,6 +267,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         previous_reference_index=args.previous_reference_index,
         current_pose=args.current_pose,
         max_expansions=args.max_expansions,
+        minimum_turning_radius_m=args.minimum_turning_radius_m,
     )
     rendered = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output is not None:

@@ -28,11 +28,12 @@ class BenchmarkDay5ReplanningFixtureTest(unittest.TestCase):
                 "reference_search_window_points": 120,
             },
             max_expansions=20_000,
+            minimum_turning_radius_m=0.60,
         )
 
         self.assertEqual(config.max_expansions, 20_000)
+        self.assertEqual(config.min_turning_radius_m, 0.60)
         self.assertEqual(config.sample_spacing_m, 0.10)
-        self.assertEqual(config.min_turning_radius_m, 0.81)
         self.assertEqual(config.step_length_m, 0.20)
         self.assertEqual(config.curvature_bins, 9)
         self.assertEqual(config.heading_bins, 72)
