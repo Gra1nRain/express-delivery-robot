@@ -13,6 +13,7 @@ setup(
     entry_points={
         "console_scripts": [
             "fastlio_anchor_node = competition_localization.fastlio_anchor_node:main",
+            "livox_timestamp_rebaser_node = competition_localization.livox_timestamp_rebaser_node:main",
         ],
     },
     install_requires=["setuptools"],

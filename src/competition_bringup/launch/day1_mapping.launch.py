@@ -9,10 +9,15 @@ by the operator before enabling it.
 import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    GroupAction,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetRemap
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -40,9 +45,33 @@ def _launch_setup(context, *args, **kwargs):
     if _is_true(LaunchConfiguration("start_livox").perform(context)):
         livox_pkg = get_package_share_directory("livox_ros_driver2")
         livox_launch = os.path.join(livox_pkg, "launch_ROS2", "msg_MID360_launch.py")
-        actions.append(
-            IncludeLaunchDescription(PythonLaunchDescriptionSource(livox_launch))
+        livox_include = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(livox_launch)
         )
+        if _is_true(
+            LaunchConfiguration("rebase_livox_timestamps").perform(context)
+        ):
+            actions.extend(
+                [
+                    GroupAction(
+                        [
+                            SetRemap(
+                                src="/livox/lidar", dst="/livox/lidar_raw"
+                            ),
+                            SetRemap(src="/livox/imu", dst="/livox/imu_raw"),
+                            livox_include,
+                        ]
+                    ),
+                    Node(
+                        package="competition_localization",
+                        executable="livox_timestamp_rebaser_node",
+                        name="livox_timestamp_rebaser",
+                        output="screen",
+                    ),
+                ]
+            )
+        else:
+            actions.append(livox_include)
 
     if _is_true(LaunchConfiguration("start_fast_lio").perform(context)):
         fast_lio_pkg = get_package_share_directory("fast_lio")
@@ -142,6 +171,9 @@ def generate_launch_description():
             DeclareLaunchArgument("port_name", default_value="can3"),
             DeclareLaunchArgument("robot_model", default_value="ranger_mini_v3"),
             DeclareLaunchArgument("start_livox", default_value="true"),
+            DeclareLaunchArgument(
+                "rebase_livox_timestamps", default_value="false"
+            ),
             DeclareLaunchArgument("start_fast_lio", default_value="true"),
             DeclareLaunchArgument("start_base", default_value="false"),
             DeclareLaunchArgument("publish_odom_tf", default_value="true"),

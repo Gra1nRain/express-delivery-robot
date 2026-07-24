@@ -100,6 +100,7 @@ def _launch_setup(context, *args, **kwargs):
             PythonLaunchDescriptionSource(mapping_launch),
             launch_arguments={
                 "start_livox": LaunchConfiguration("start_livox"),
+                "rebase_livox_timestamps": "true",
                 "start_fast_lio": LaunchConfiguration("start_fast_lio"),
                 "start_base": LaunchConfiguration("start_base"),
                 "publish_odom_tf": "false",
