@@ -234,8 +234,14 @@ active [3]
 
 ## 6. 项目专用 RViz
 
-`start_navigation_prerequisites.sh` 会在前置节点全部就绪后自动使用
-`day5_motion_control.rviz` 打开 RViz。不要同时运行系统默认 RViz。
+`start_navigation_prerequisites.sh` 会复用已经健康运行的 Day5 传感器链；
+只有在完整兼容链不存在时，才按 2026-07-24 验证过的 sensor-first 顺序
+启动 Livox、FAST-LIO 和 Day5 无运动前置节点。该入口显式保持
+`start_base:=false`、`start_chassis_adapter:=false`，并且不启动新增避障
+或局部重规划。
+
+前置节点就绪后，脚本自动使用 `day5_localization.rviz` 打开 RViz。不要同时
+运行其他 RViz。
 
 如果 RViz 被单独关闭，或者需要手动恢复，再在小车 Ubuntu 桌面的终端中执行：
 
@@ -245,9 +251,9 @@ set +u
 cd /home/agilex/competition_ws
 
 ros2 run rviz2 rviz2 \
-  -d /home/agilex/competition_ws/install/competition_bringup/share/competition_bringup/rviz/day5_motion_control.rviz \
+  -d /home/agilex/competition_ws/install/competition_bringup/share/competition_bringup/rviz/day5_localization.rviz \
   --ros-args \
-  -r __node:=rviz2_day5_motion_control
+  -r __node:=rviz2_day5_localization
 ```
 
 这个配置已经设置：
@@ -255,10 +261,13 @@ ros2 run rviz2 rviz2 \
 - Fixed Frame：`map`
 - 地图：`/map`
 - 地图 QoS：`Transient Local`
-- 局部代价地图：`/avoidance/local_costmap`
-- 局部轨迹：`/planning/local_trajectory`
-- 执行轨迹：`/control/executed_path`
+- 实时点云：`/cloud_registered_body`
+- 全局参考轨迹：`/planning/optimized_trajectory`
 - 初始位姿：`/initialpose`
+
+在发布初始位姿之前，RViz 只能显示 `map` 坐标系的静态地图。发布
+`2D Pose Estimate` 并建立 `map -> camera_init -> body` 后，Body Cloud
+才会叠加在地图上；这不是雷达未启动。
 
 如果必须通过 SSH 在当前小车桌面打开 GUI，先查看桌面显示号：
 
@@ -275,9 +284,9 @@ export XDG_RUNTIME_DIR=/run/user/1000
 export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 
 ros2 run rviz2 rviz2 \
-  -d /home/agilex/competition_ws/install/competition_bringup/share/competition_bringup/rviz/day5_motion_control.rviz \
+  -d /home/agilex/competition_ws/install/competition_bringup/share/competition_bringup/rviz/day5_localization.rviz \
   --ros-args \
-  -r __node:=rviz2_day5_motion_control
+  -r __node:=rviz2_day5_localization
 ```
 
 不要使用默认 RViz 配置。默认 Map 显示通常使用 `Volatile` QoS，如果 RViz 晚于地图服务器启动，会出现 `No map received`。

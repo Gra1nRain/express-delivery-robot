@@ -140,10 +140,17 @@ class AvoidanceTopologyTest(unittest.TestCase):
         )
         self.assertEqual(adapter_config["preprocess"]["scan_rate"], 10)
         self.assertIn(
-            "fast_lio_config:=fast_lio_mid360_day1.yaml",
+            "day5_sequential_bringup.sh",
             startup_text,
         )
-        self.assertIn("livox_publish_frequency_hz:=10.0", startup_text)
+        self.assertIn("start_proximity_stop:=false", startup_text)
+        self.assertIn("start_local_replanner:=false", startup_text)
+        self.assertIn("replanning_enabled:=false", startup_text)
+        self.assertNotIn("fast_lio_mid360_day1.yaml", startup_text)
+        self.assertNotIn(
+            "setsid ros2 run competition_avoidance avoidance_manager_node",
+            startup_text,
+        )
         self.assertNotIn(
             "Starting additive latest-frame LiDAR adapter",
             startup_text,
@@ -224,11 +231,46 @@ class AvoidanceTopologyTest(unittest.TestCase):
             REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("day5_motion_control.rviz", startup_text)
-        self.assertIn("__node:=rviz2_day5_motion_control", startup_text)
-        self.assertIn("wait_for_node /rviz2_day5_motion_control", startup_text)
+        self.assertIn("day5_localization.rviz", startup_text)
+        self.assertIn("__node:=rviz2_day5_localization", startup_text)
+        self.assertIn("wait_for_node /rviz2_day5_localization", startup_text)
+        self.assertIn("XAUTHORITY=", startup_text)
+        self.assertIn("XDG_RUNTIME_DIR=", startup_text)
+        self.assertIn("DBUS_SESSION_BUS_ADDRESS=", startup_text)
         self.assertIn('start_base:=false', startup_text)
         self.assertIn('/cmd_vel publisher_count=0', startup_text)
+
+    def test_prerequisite_frontend_reuses_a_compatible_day5_chain(self) -> None:
+        startup_text = (
+            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("compatible_day5_chain_running()", startup_text)
+        self.assertIn(
+            "Reusing compatible Day5 prerequisite chain",
+            startup_text,
+        )
+        self.assertNotIn(
+            "day1_mapping is already running; refusing duplicate startup",
+            startup_text,
+        )
+
+    def test_localization_rviz_shows_map_and_body_cloud_without_avoidance(self) -> None:
+        rviz_text = (
+            REPO_ROOT
+            / "src"
+            / "competition_bringup"
+            / "rviz"
+            / "day5_localization.rviz"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Name: Map", rviz_text)
+        self.assertIn("Value: /map", rviz_text)
+        self.assertIn("Name: Body Cloud", rviz_text)
+        self.assertIn("Value: /cloud_registered_body", rviz_text)
+        self.assertIn("Fixed Frame: map", rviz_text)
+        self.assertIn("Value: /initialpose", rviz_text)
+        self.assertNotIn("/avoidance/", rviz_text)
 
 
 if __name__ == "__main__":
