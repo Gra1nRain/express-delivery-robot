@@ -50,8 +50,22 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         replanning = planning["replanning"]
+        global_turning_radius = planning["global_planner"][
+            "min_turning_radius_m"
+        ]
+        runtime_turning_radius = control["motion"]["min_turning_radius_m"]
         self.assertTrue(replanning["enabled"])
         self.assertEqual(replanning["plugin"], "reference_aware_hybrid_astar")
+        self.assertEqual(global_turning_radius, 0.81)
+        self.assertEqual(runtime_turning_radius, 0.60)
+        self.assertEqual(
+            safety["safety"]["min_turning_radius_m"],
+            runtime_turning_radius,
+        )
+        self.assertGreater(
+            runtime_turning_radius,
+            control["motion"]["ranger_driver_min_turn_radius_m"],
+        )
         self.assertGreaterEqual(replanning["lookahead_distance_m"], 3.0)
         self.assertGreater(replanning["reference_deviation_weight"], 0.0)
         self.assertLessEqual(replanning["search_padding_m"], 1.5)
@@ -76,6 +90,21 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertIn("start_local_replanner", launch_text)
         self.assertIn("OccupancyGrid", replanner_node)
         self.assertIn("LocalTrajectoryPlanner", replanner_node)
+        local_replanner_launch = launch_text.split(
+            'executable="local_replanner_node"',
+            maxsplit=1,
+        )[1].split(
+            'executable="proximity_stop_node"',
+            maxsplit=1,
+        )[0]
+        self.assertIn(
+            '"min_turning_radius_m": motion["min_turning_radius_m"]',
+            local_replanner_launch,
+        )
+        self.assertNotIn(
+            '"min_turning_radius_m": global_planner[',
+            local_replanner_launch,
+        )
         self.assertIn("local_trajectory_topic", control_node)
         self.assertIn("parameterize_local_path", control_node)
         self.assertIn("replace_trajectory", control_node)
@@ -111,6 +140,40 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             control["motion"]["ranger_driver_min_turn_radius_m"],
             0.47644,
         )
+
+    def test_day5_runtime_turning_radius_is_consistent_across_profiles(self) -> None:
+        control_paths = (
+            REPO_ROOT / "config" / "control" / "control_params.yaml",
+            REPO_ROOT
+            / "config"
+            / "control"
+            / "control_params_day5_chassis_center_yneg020.yaml",
+        )
+        safety_paths = (
+            REPO_ROOT / "config" / "safety" / "safety_params.yaml",
+            *sorted(
+                (REPO_ROOT / "config" / "safety").glob(
+                    "safety_params_day5_*.yaml"
+                )
+            ),
+        )
+
+        for path in control_paths:
+            with self.subTest(path=path.name):
+                motion = yaml.safe_load(
+                    path.read_text(encoding="utf-8")
+                )["motion"]
+                self.assertEqual(motion["min_turning_radius_m"], 0.60)
+                self.assertGreater(
+                    motion["min_turning_radius_m"],
+                    motion["ranger_driver_min_turn_radius_m"],
+                )
+        for path in safety_paths:
+            with self.subTest(path=path.name):
+                safety = yaml.safe_load(
+                    path.read_text(encoding="utf-8")
+                )["safety"]
+                self.assertEqual(safety["min_turning_radius_m"], 0.60)
 
     def test_local_costmap_transform_uses_latest_tf(self) -> None:
         replanner_node = (

@@ -201,9 +201,7 @@ def _launch_setup(context, *args, **kwargs):
                     "inflation_radius_m": replanning["inflation_radius_m"],
                     "search_padding_m": replanning["search_padding_m"],
                     "sample_spacing_m": global_planner["path_sample_spacing_m"],
-                    "min_turning_radius_m": global_planner[
-                        "min_turning_radius_m"
-                    ],
+                    "min_turning_radius_m": motion["min_turning_radius_m"],
                     "step_length_m": global_planner["hybrid_step_length_m"],
                     "curvature_bins": global_planner["hybrid_curvature_bins"],
                     "heading_bins": global_planner["hybrid_heading_bins"],
