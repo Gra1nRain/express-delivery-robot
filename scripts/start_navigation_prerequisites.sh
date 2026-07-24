@@ -27,13 +27,12 @@ LOG_DIR="$COMPETITION_WS/log/navigation_prerequisites"
 RUN_ID="$(date +%Y%m%d_%H%M%S)"
 MAPPING_LOG="$LOG_DIR/${RUN_ID}_mapping.log"
 AVOIDANCE_LOG="$LOG_DIR/${RUN_ID}_avoidance.log"
-LIVOX_ADAPTER_LOG="$LOG_DIR/${RUN_ID}_livox_latest_frame_adapter.log"
 ODOMETRY_ADAPTER_LOG="$LOG_DIR/${RUN_ID}_odometry_adapter.log"
 RVIZ_LOG="$LOG_DIR/${RUN_ID}_rviz.log"
 MAPPING_PID=""
 AVOIDANCE_PID=""
-LIVOX_ADAPTER_PID=""
 ODOMETRY_ADAPTER_PID=""
+ODOM_PUBLISHER_COUNT=""
 RVIZ_PID=""
 mkdir -p "$LOG_DIR"
 
@@ -42,9 +41,54 @@ node_exists() {
   timeout 5s ros2 node list 2>/dev/null | grep -Fxq "$node_name"
 }
 
-topic_exists() {
+topic_publisher_count() {
   local topic_name="$1"
-  timeout 5s ros2 topic list 2>/dev/null | grep -Fxq "$topic_name"
+  local topics
+  local topic_info
+  local publisher_count
+
+  if ! topics="$(timeout 5s ros2 topic list 2>/dev/null)"; then
+    echo "ERROR: failed to query the ROS topic graph." >&2
+    return 1
+  fi
+  if ! grep -Fxq "$topic_name" <<<"$topics"; then
+    printf '0\n'
+    return 0
+  fi
+  if ! topic_info="$(timeout 5s ros2 topic info "$topic_name" 2>/dev/null)"; then
+    echo "ERROR: failed to inspect topic $topic_name." >&2
+    return 1
+  fi
+  publisher_count="$(
+    awk -F': *' '/^Publisher count:/ {print $2; exit}' <<<"$topic_info"
+  )"
+  if [[ ! "$publisher_count" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: invalid publisher count for $topic_name." >&2
+    return 1
+  fi
+  printf '%s\n' "$publisher_count"
+}
+
+require_zero_publishers() {
+  local topic_name="$1"
+  local publisher_count
+  publisher_count="$(topic_publisher_count "$topic_name")"
+  if (( publisher_count != 0 )); then
+    echo "ERROR: $topic_name has $publisher_count publisher(s); refusing dry-run startup." >&2
+    return 1
+  fi
+  echo "SAFE topic=$topic_name publisher_count=0. Publisher count: 0 is safe even when Ranger subscribes."
+}
+
+require_single_publisher() {
+  local topic_name="$1"
+  local publisher_count
+  publisher_count="$(topic_publisher_count "$topic_name")"
+  if (( publisher_count != 1 )); then
+    echo "ERROR: $topic_name must have exactly one publisher; found $publisher_count." >&2
+    return 1
+  fi
+  echo "SAFE topic=$topic_name publisher_count=1"
 }
 
 refuse_if_process_running() {
@@ -73,15 +117,31 @@ wait_for_node() {
 
 wait_for_topic() {
   local topic_name="$1"
+  local publisher_count
   local deadline=$((SECONDS + STARTUP_TIMEOUT_S))
   while (( SECONDS < deadline )); do
-    if topic_exists "$topic_name"; then
-      echo "READY topic=$topic_name"
+    if publisher_count="$(topic_publisher_count "$topic_name")" &&
+      (( publisher_count > 0 )); then
+      echo "READY topic=$topic_name publisher_count=$publisher_count"
       return 0
     fi
     sleep 1
   done
   echo "ERROR: timed out waiting for topic $topic_name" >&2
+  return 1
+}
+
+wait_for_message() {
+  local topic_name="$1"
+  local deadline=$((SECONDS + STARTUP_TIMEOUT_S))
+  while (( SECONDS < deadline )); do
+    if timeout 5s ros2 topic echo "$topic_name" --once >/dev/null 2>&1; then
+      echo "READY message=$topic_name"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "ERROR: timed out waiting for data on $topic_name" >&2
   return 1
 }
 
@@ -104,7 +164,7 @@ stop_process_group() {
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
-  if [[ -z "$MAPPING_PID$AVOIDANCE_PID$LIVOX_ADAPTER_PID$ODOMETRY_ADAPTER_PID$RVIZ_PID" ]]; then
+  if [[ -z "$MAPPING_PID$AVOIDANCE_PID$ODOMETRY_ADAPTER_PID$RVIZ_PID" ]]; then
     exit "$status"
   fi
   echo "Stopping RViz and navigation prerequisite nodes..."
@@ -112,7 +172,6 @@ cleanup() {
   stop_process_group "$AVOIDANCE_PID"
   stop_process_group "$ODOMETRY_ADAPTER_PID"
   stop_process_group "$MAPPING_PID"
-  stop_process_group "$LIVOX_ADAPTER_PID"
   echo "Stopped. Logs remain in $LOG_DIR"
   exit "$status"
 }
@@ -149,23 +208,15 @@ refuse_if_process_running \
   "(^|/)rviz2( |$)" \
   "RViz"
 
-echo "Starting additive latest-frame LiDAR adapter..."
-setsid ros2 run competition_avoidance livox_latest_frame_adapter_node \
-  --ros-args \
-  -p input_topic:=/livox/lidar \
-  -p output_topic:=/avoidance/livox_latest \
-  -p publish_frequency_hz:=10.0 \
-  -p maximum_input_age_s:=0.40 >"$LIVOX_ADAPTER_LOG" 2>&1 &
-LIVOX_ADAPTER_PID=$!
+require_zero_publishers /cmd_vel
 
-wait_for_node /livox_latest_frame_adapter
-
-echo "Starting Livox, FAST-LIO and pointcloud_to_laserscan..."
+echo "Starting direct 10 Hz Livox, FAST-LIO and pointcloud_to_laserscan..."
 setsid ros2 launch competition_bringup day1_mapping.launch.py \
   start_livox:=true \
   force_livox_host_timestamps:=true \
-  livox_publish_frequency_hz:=20.0 \
-  fast_lio_config:=fast_lio_mid360_avoidance_latest.yaml \
+  livox_publish_frequency_hz:=10.0 \
+  livox_raw_packet_queue_limit:=256 \
+  fast_lio_config:=fast_lio_mid360_day1.yaml \
   start_fast_lio:=true \
   start_base:=false \
   start_scan:=true \
@@ -175,36 +226,49 @@ setsid ros2 launch competition_bringup day1_mapping.launch.py \
 MAPPING_PID=$!
 
 wait_for_node /livox_lidar_publisher
-wait_for_topic /avoidance/livox_latest
 wait_for_node /laser_mapping
 wait_for_topic /cloud_registered_body
+wait_for_message /cloud_registered_body
 wait_for_topic /Odometry
+wait_for_message /Odometry
 
-echo "Starting FAST-LIO odometry interface adapter..."
-setsid ros2 run competition_avoidance odometry_adapter_node \
-  --ros-args \
-  -p input_topic:=/Odometry \
-  -p output_topic:=/odom >"$ODOMETRY_ADAPTER_LOG" 2>&1 &
-ODOMETRY_ADAPTER_PID=$!
-
-wait_for_node /odometry_adapter
-wait_for_topic /odom
+ODOM_PUBLISHER_COUNT="$(topic_publisher_count /odom)"
+if (( ODOM_PUBLISHER_COUNT == 0 )); then
+  echo "Starting FAST-LIO odometry interface adapter..."
+  setsid ros2 run competition_avoidance odometry_adapter_node \
+    --ros-args \
+    -p input_topic:=/Odometry \
+    -p output_topic:=/odom >"$ODOMETRY_ADAPTER_LOG" 2>&1 &
+  ODOMETRY_ADAPTER_PID=$!
+  wait_for_node /odometry_adapter
+  wait_for_topic /odom
+elif (( ODOM_PUBLISHER_COUNT == 1 )); then
+  echo "Using existing /odom publisher; odometry adapter will not be started."
+else
+  echo "ERROR: more than one /odom publisher already exists; refusing duplicate topology." >&2
+  exit 1
+fi
+wait_for_message /odom
 
 echo "Starting additive avoidance in dry-run mode..."
 setsid ros2 run competition_avoidance avoidance_manager_node \
   --ros-args \
   --params-file "$AVOIDANCE_PARAMS" \
+  -p dry_run:=true \
+  -p enable_chassis_output:=false \
+  -p operation_mode:=dry_run \
   -p odometry_topic:=/Odometry \
   -p map_frame:=camera_init >"$AVOIDANCE_LOG" 2>&1 &
 AVOIDANCE_PID=$!
 
 wait_for_node /avoidance_manager
 wait_for_topic /avoidance/stop_request
+wait_for_message /avoidance/stop_request
+wait_for_topic /avoidance/local_costmap
+require_single_publisher /avoidance/stop_request
+require_single_publisher /avoidance/local_costmap
 
-if topic_exists /cmd_vel; then
-  echo "ERROR: unexpected /cmd_vel topic detected; stopping prerequisites." >&2
-  exit 1
-fi
+require_zero_publishers /cmd_vel
 
 echo "Starting project RViz configuration on display $RVIZ_DISPLAY..."
 setsid env DISPLAY="$RVIZ_DISPLAY" ros2 run rviz2 rviz2 \
@@ -214,21 +278,26 @@ setsid env DISPLAY="$RVIZ_DISPLAY" ros2 run rviz2 rviz2 \
 RVIZ_PID=$!
 
 wait_for_node /rviz2_day5_motion_control
+require_zero_publishers /cmd_vel
 
 echo
 echo "NAVIGATION_PREREQUISITES_READY"
-echo "mapping_pid=$MAPPING_PID livox_adapter_pid=$LIVOX_ADAPTER_PID odometry_adapter_pid=$ODOMETRY_ADAPTER_PID avoidance_pid=$AVOIDANCE_PID rviz_pid=$RVIZ_PID"
+echo "mapping_pid=$MAPPING_PID odometry_adapter_pid=${ODOMETRY_ADAPTER_PID:-not_started} avoidance_pid=$AVOIDANCE_PID rviz_pid=$RVIZ_PID"
 echo "mapping_log=$MAPPING_LOG"
-echo "livox_adapter_log=$LIVOX_ADAPTER_LOG"
 echo "odometry_adapter_log=$ODOMETRY_ADAPTER_LOG"
 echo "avoidance_log=$AVOIDANCE_LOG"
 echo "rviz_log=$RVIZ_LOG"
-echo "Safety gates: start_base=false, no chassis adapter, /cmd_vel absent."
+echo "Safety gates: start_base=false, start_chassis_adapter=false, command_output_topic=/cmd_vel_safe."
+echo "Verified /cmd_vel publisher_count=0; an existing Ranger subscription is allowed."
 echo "Keep this terminal open. Press Ctrl+C to stop RViz and all nodes started here."
 echo
 
 set +e
-wait -n "$MAPPING_PID" "$LIVOX_ADAPTER_PID" "$ODOMETRY_ADAPTER_PID" "$AVOIDANCE_PID" "$RVIZ_PID"
+WAIT_PIDS=("$MAPPING_PID" "$AVOIDANCE_PID" "$RVIZ_PID")
+if [[ -n "$ODOMETRY_ADAPTER_PID" ]]; then
+  WAIT_PIDS+=("$ODOMETRY_ADAPTER_PID")
+fi
+wait -n "${WAIT_PIDS[@]}"
 status=$?
 set -e
 echo "ERROR: a prerequisite process exited unexpectedly." >&2

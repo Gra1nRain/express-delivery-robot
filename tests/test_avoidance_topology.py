@@ -100,10 +100,6 @@ class AvoidanceTopologyTest(unittest.TestCase):
             / "competition_avoidance"
             / "livox_latest_frame_adapter_node.py"
         ).read_text(encoding="utf-8")
-        startup_text = (
-            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
-        ).read_text(encoding="utf-8")
-
         self.assertIn(
             "livox_latest_frame_adapter_node = "
             "competition_avoidance.livox_latest_frame_adapter_node:main",
@@ -118,11 +114,6 @@ class AvoidanceTopologyTest(unittest.TestCase):
             adapter_text,
         )
         self.assertNotIn('"/cmd_vel"', adapter_text)
-        self.assertIn(
-            "ros2 run competition_avoidance livox_latest_frame_adapter_node",
-            startup_text,
-        )
-        self.assertIn("wait_for_topic /avoidance/livox_latest", startup_text)
 
     def test_latest_frame_fast_lio_profile_does_not_replace_raw_profile(self) -> None:
         raw_config = yaml.safe_load(
@@ -149,10 +140,44 @@ class AvoidanceTopologyTest(unittest.TestCase):
         )
         self.assertEqual(adapter_config["preprocess"]["scan_rate"], 10)
         self.assertIn(
-            "fast_lio_config:=fast_lio_mid360_avoidance_latest.yaml",
+            "fast_lio_config:=fast_lio_mid360_day1.yaml",
             startup_text,
         )
-        self.assertIn("livox_publish_frequency_hz:=20.0", startup_text)
+        self.assertIn("livox_publish_frequency_hz:=10.0", startup_text)
+        self.assertNotIn(
+            "Starting additive latest-frame LiDAR adapter",
+            startup_text,
+        )
+        self.assertNotIn("LIVOX_ADAPTER_PID=", startup_text)
+
+    def test_prerequisite_cmd_vel_gate_counts_publishers(self) -> None:
+        startup_text = (
+            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("topic_publisher_count()", startup_text)
+        self.assertIn("require_zero_publishers /cmd_vel", startup_text)
+        self.assertNotIn("if topic_exists /cmd_vel", startup_text)
+        self.assertIn(
+            "Publisher count: 0 is safe even when Ranger subscribes",
+            startup_text,
+        )
+
+    def test_prerequisite_reuses_one_existing_odom_publisher(self) -> None:
+        startup_text = (
+            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'ODOM_PUBLISHER_COUNT="$(topic_publisher_count /odom)"',
+            startup_text,
+        )
+        self.assertIn(
+            "if (( ODOM_PUBLISHER_COUNT == 0 )); then",
+            startup_text,
+        )
+        self.assertIn("Using existing /odom publisher", startup_text)
+        self.assertIn("more than one /odom publisher", startup_text)
 
     def test_livox_release_rebuild_is_scoped_and_guarded(self) -> None:
         rebuild_text = (
@@ -184,7 +209,7 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertIn("__node:=rviz2_day5_motion_control", startup_text)
         self.assertIn("wait_for_node /rviz2_day5_motion_control", startup_text)
         self.assertIn('start_base:=false', startup_text)
-        self.assertIn('/cmd_vel absent', startup_text)
+        self.assertIn('/cmd_vel publisher_count=0', startup_text)
 
 
 if __name__ == "__main__":

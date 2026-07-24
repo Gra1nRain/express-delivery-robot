@@ -332,14 +332,24 @@ angular:
 检查底盘出口：
 
 ```bash
-ros2 topic info /cmd_vel
+ros2 topic info -v /cmd_vel
 ```
 
-无运动联调时预期：
+无运动联调时允许两种结果：
 
 ```text
 Unknown topic '/cmd_vel'
 ```
+
+或者 Ranger 底盘驱动已经运行并订阅该话题，此时必须满足：
+
+```text
+Publisher count: 0
+Subscription count: 1
+```
+
+安全门判断的是发布者数量，不是话题是否存在。只要
+`Publisher count` 大于 `0`，立即停止启动流程并检查命令来源。
 
 检查规范发布者：
 
