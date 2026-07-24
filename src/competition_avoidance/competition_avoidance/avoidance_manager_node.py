@@ -28,6 +28,7 @@ from competition_avoidance.perception import (
     PerceptionConfig,
     cluster_points,
 )
+from competition_avoidance.rate_gate import LatestSampleRateGate
 from competition_avoidance.risk import EgoState, RiskConfig
 from competition_avoidance.tracker import TrackerConfig
 from competition_safety.proximity_stop import (
@@ -77,6 +78,14 @@ class AvoidanceManagerNode(Node):
         )
         self._transform_timeout_s = float(
             self.declare_parameter("transform_timeout_s", 0.05).value
+        )
+        self._processing_rate_gate = LatestSampleRateGate(
+            float(
+                self.declare_parameter(
+                    "maximum_processing_frequency_hz",
+                    10.0,
+                ).value
+            )
         )
         stop_frequency_hz = float(
             self.declare_parameter("stop_publish_frequency_hz", 20.0).value
@@ -335,6 +344,8 @@ class AvoidanceManagerNode(Node):
         started_at = time.perf_counter()
         now_s = self._now_s()
         self._last_cloud_received_s = now_s
+        if not self._processing_rate_gate.allow(now_s):
+            return
         frame_id = message.header.frame_id
         if frame_id != self._expected_cloud_frame:
             self._fail_closed(

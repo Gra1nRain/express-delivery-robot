@@ -12,6 +12,7 @@ avoidance_manager:
     perception_timeout_s: 0.30
     odometry_timeout_s: 0.30
     transform_timeout_s: 0.05
+    maximum_processing_frequency_hz: 10.0
     stop_publish_frequency_hz: 20.0
     corridor_ttl_s: 0.50
 
