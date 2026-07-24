@@ -1,4 +1,5 @@
 import pathlib
+import struct
 import sys
 import unittest
 
@@ -10,7 +11,10 @@ PACKAGE_ROOT = (
 )
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from competition_avoidance.livox_latest_frame_gate import LatestFrameGate
+from competition_avoidance.livox_latest_frame_gate import (
+    LatestFrameGate,
+    header_stamp_seconds_from_cdr,
+)
 
 
 class LatestFrameGateTest(unittest.TestCase):
@@ -32,6 +36,35 @@ class LatestFrameGateTest(unittest.TestCase):
     def test_configuration_must_be_positive(self) -> None:
         with self.assertRaises(ValueError):
             LatestFrameGate(maximum_age_s=0.0)
+
+    def test_extracts_little_endian_header_stamp_from_cdr(self) -> None:
+        serialized = b"\x00\x01\x00\x00" + struct.pack(
+            "<iI", 123, 456_000_000
+        )
+
+        self.assertAlmostEqual(
+            header_stamp_seconds_from_cdr(serialized),
+            123.456,
+        )
+
+    def test_extracts_big_endian_header_stamp_from_cdr(self) -> None:
+        serialized = b"\x00\x00\x00\x00" + struct.pack(
+            ">iI", 123, 456_000_000
+        )
+
+        self.assertAlmostEqual(
+            header_stamp_seconds_from_cdr(serialized),
+            123.456,
+        )
+
+    def test_rejects_malformed_serialized_header(self) -> None:
+        with self.assertRaises(ValueError):
+            header_stamp_seconds_from_cdr(b"\x00\x01")
+        with self.assertRaises(ValueError):
+            header_stamp_seconds_from_cdr(
+                b"\x00\x01\x00\x00"
+                + struct.pack("<iI", 123, 1_000_000_000)
+            )
 
 
 if __name__ == "__main__":

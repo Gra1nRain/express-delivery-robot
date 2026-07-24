@@ -112,6 +112,11 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertIn("<exec_depend>livox_ros_driver2</exec_depend>", package_text)
         self.assertIn('"/livox/lidar"', adapter_text)
         self.assertIn('"/avoidance/livox_latest"', adapter_text)
+        self.assertIn("raw=True", adapter_text)
+        self.assertIn(
+            "self._publisher.publish(serialized_message)",
+            adapter_text,
+        )
         self.assertNotIn('"/cmd_vel"', adapter_text)
         self.assertIn(
             "ros2 run competition_avoidance livox_latest_frame_adapter_node",

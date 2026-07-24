@@ -17,7 +17,10 @@ from rclpy.qos import (
 )
 from std_msgs.msg import String
 
-from .livox_latest_frame_gate import LatestFrameGate
+from .livox_latest_frame_gate import (
+    LatestFrameGate,
+    header_stamp_seconds_from_cdr,
+)
 
 
 class LivoxLatestFrameAdapterNode(Node):
@@ -66,11 +69,11 @@ class LivoxLatestFrameAdapterNode(Node):
             String, "/avoidance/livox_adapter_status", 1
         )
         self.create_subscription(
-            CustomMsg, input_topic, self._receive, input_qos
+            CustomMsg, input_topic, self._receive, input_qos, raw=True
         )
 
         self._gate = LatestFrameGate(maximum_input_age_s)
-        self._latest_message: CustomMsg | None = None
+        self._latest_serialized_message: bytes | None = None
         self._latest_sequence = 0
         self._received_count = 0
         self._published_count = 0
@@ -85,16 +88,13 @@ class LivoxLatestFrameAdapterNode(Node):
             f"age<={maximum_input_age_s:.2f}s"
         )
 
-    def _receive(self, message: CustomMsg) -> None:
-        self._latest_message = message
+    def _receive(self, serialized_message: bytes) -> None:
+        self._latest_serialized_message = serialized_message
         self._latest_sequence += 1
         self._received_count += 1
 
-    def _message_age_s(self, message: CustomMsg) -> float:
-        stamp_s = (
-            float(message.header.stamp.sec)
-            + float(message.header.stamp.nanosec) * 1.0e-9
-        )
+    def _message_age_s(self, serialized_message: bytes) -> float:
+        stamp_s = header_stamp_seconds_from_cdr(serialized_message)
         now_s = self.get_clock().now().nanoseconds * 1.0e-9
         age_s = now_s - stamp_s
         if -0.05 <= age_s < 0.0:
@@ -102,17 +102,24 @@ class LivoxLatestFrameAdapterNode(Node):
         return age_s
 
     def _publish_latest(self) -> None:
-        message = self._latest_message
-        if message is None:
+        serialized_message = self._latest_serialized_message
+        if serialized_message is None:
             return
         sequence = self._latest_sequence
-        age_s = self._message_age_s(message)
+        try:
+            age_s = self._message_age_s(serialized_message)
+        except ValueError as error:
+            self._stale_count += 1
+            self.get_logger().error(
+                f"Rejecting malformed serialized Livox frame: {error}"
+            )
+            return
         self._latest_age_s = age_s
         if not self._gate.should_publish(sequence, age_s):
             if age_s > self._gate.maximum_age_s or age_s < 0.0:
                 self._stale_count += 1
             return
-        self._publisher.publish(message)
+        self._publisher.publish(serialized_message)
         self._gate.mark_published(sequence)
         self._published_count += 1
 

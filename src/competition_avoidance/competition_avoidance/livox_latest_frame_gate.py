@@ -3,6 +3,21 @@
 from __future__ import annotations
 
 import math
+import struct
+
+
+def header_stamp_seconds_from_cdr(serialized_message: bytes) -> float:
+    """Read the leading std_msgs/Header stamp without deserializing a cloud."""
+    if len(serialized_message) < 12:
+        raise ValueError("serialized message is too short for a Header stamp")
+    representation_id = int.from_bytes(serialized_message[:2], "big")
+    byte_order = "<" if representation_id & 1 else ">"
+    seconds, nanoseconds = struct.unpack_from(
+        f"{byte_order}iI", serialized_message, 4
+    )
+    if nanoseconds >= 1_000_000_000:
+        raise ValueError("serialized Header contains invalid nanoseconds")
+    return float(seconds) + float(nanoseconds) * 1.0e-9
 
 
 class LatestFrameGate:
