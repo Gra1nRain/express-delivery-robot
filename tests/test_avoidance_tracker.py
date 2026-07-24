@@ -24,6 +24,24 @@ def _person(x: float, y: float) -> ObstacleDetection:
     )
 
 
+def _classified_obstacle(
+    x: float,
+    classification: str,
+    size_m: float,
+) -> ObstacleDetection:
+    return ObstacleDetection(
+        x=x,
+        y=0.0,
+        z=0.5,
+        length_m=size_m,
+        width_m=size_m,
+        height_m=0.6,
+        point_count=40,
+        classification=classification,
+        confidence=0.7,
+    )
+
+
 def _vehicle_profile() -> TrackerConfig:
     return TrackerConfig(
         association_gate_m=0.35,
@@ -89,6 +107,44 @@ class AvoidanceTrackerTest(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].motion_state, "DYNAMIC")
         self.assertGreater(result[0].speed_mps, 0.35)
+
+    def test_cone_candidate_remains_static_despite_centroid_motion(self) -> None:
+        tracker = ObstacleTracker(_vehicle_profile())
+        result = ()
+        for index in range(5):
+            result = tracker.update(
+                (
+                    _classified_obstacle(
+                        0.15 * index,
+                        "CONE_CANDIDATE",
+                        0.40,
+                    ),
+                ),
+                timestamp_s=1.0 + 0.1 * index,
+            )
+
+        self.assertEqual(len(result), 1)
+        self.assertGreater(result[0].speed_mps, 0.35)
+        self.assertEqual(result[0].motion_state, "STATIC")
+
+    def test_large_unknown_cluster_remains_static(self) -> None:
+        tracker = ObstacleTracker(_vehicle_profile())
+        result = ()
+        for index in range(5):
+            result = tracker.update(
+                (
+                    _classified_obstacle(
+                        0.15 * index,
+                        "UNKNOWN",
+                        1.40,
+                    ),
+                ),
+                timestamp_s=1.0 + 0.1 * index,
+            )
+
+        self.assertEqual(len(result), 1)
+        self.assertGreater(result[0].radius_m, 0.80)
+        self.assertEqual(result[0].motion_state, "STATIC")
 
 
 if __name__ == "__main__":

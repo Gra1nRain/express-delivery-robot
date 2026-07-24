@@ -215,6 +215,12 @@ class AvoidanceManagerNode(Node):
             static_confirmation_count=int(
                 self.declare_parameter("static_confirmation_count", 3).value
             ),
+            maximum_unknown_dynamic_radius_m=float(
+                self.declare_parameter(
+                    "maximum_unknown_dynamic_radius_m",
+                    0.80,
+                ).value
+            ),
         )
         risk_config = RiskConfig(
             prediction_horizon_s=float(

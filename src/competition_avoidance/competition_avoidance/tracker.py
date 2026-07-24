@@ -17,6 +17,7 @@ class TrackerConfig:
     static_speed_mps: float = 0.08
     moving_confirmation_count: int = 2
     static_confirmation_count: int = 3
+    maximum_unknown_dynamic_radius_m: float = 0.80
     alpha: float = 0.85
     beta: float = 0.45
 
@@ -29,6 +30,8 @@ class TrackerConfig:
             raise ValueError("static_speed_mps must be non-negative")
         if self.moving_speed_mps <= self.static_speed_mps:
             raise ValueError("moving threshold must exceed static threshold")
+        if self.maximum_unknown_dynamic_radius_m <= 0.0:
+            raise ValueError("maximum unknown dynamic radius must be positive")
         if not (0.0 < self.alpha <= 1.0 and 0.0 < self.beta <= 1.0):
             raise ValueError("alpha and beta must be in (0, 1]")
 
@@ -185,6 +188,20 @@ class ObstacleTracker:
         self._update_motion_state(track)
 
     def _update_motion_state(self, track: _Track) -> None:
+        if (
+            track.classification == "CONE_CANDIDATE"
+            or (
+                track.classification == "UNKNOWN"
+                and track.radius_m
+                > self._config.maximum_unknown_dynamic_radius_m
+            )
+        ):
+            track.moving_streak = 0
+            track.static_streak += 1
+            if track.static_streak >= self._config.static_confirmation_count:
+                track.motion_state = "STATIC"
+            return
+
         speed = math.hypot(track.vx_mps, track.vy_mps)
         if speed >= self._config.moving_speed_mps:
             track.moving_streak += 1

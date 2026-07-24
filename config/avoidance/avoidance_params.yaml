@@ -58,6 +58,7 @@ avoidance_manager:
     static_speed_mps: 0.18
     moving_confirmation_count: 3
     static_confirmation_count: 3
+    maximum_unknown_dynamic_radius_m: 0.80
 
     prediction_horizon_s: 3.0
     dynamic_emergency_distance_m: 0.85
