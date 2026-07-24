@@ -81,6 +81,37 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertIn("replace_trajectory", control_node)
         self.assertIn("LOCAL_PLAN_STALE", control_node)
 
+    def test_ranger_adapter_keeps_safety_before_final_cmd_vel(self) -> None:
+        control = yaml.safe_load(
+            (REPO_ROOT / "config" / "control" / "control_params.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        launch_text = (
+            REPO_ROOT
+            / "src"
+            / "competition_bringup"
+            / "launch"
+            / "day5_motion_control.launch.py"
+        ).read_text(encoding="utf-8")
+        control_setup = (
+            REPO_ROOT / "src" / "competition_control" / "setup.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("ranger_twist_adapter_node", control_setup)
+        self.assertIn("ranger_twist_adapter_node", launch_text)
+        self.assertIn("start_chassis_adapter", launch_text)
+        self.assertIn('"command_output_topic"', launch_text)
+        self.assertIn('default_value="/cmd_vel_safe"', launch_text)
+        self.assertIn('"chassis_adapter_input_topic"', launch_text)
+        self.assertIn('default_value="/cmd_vel_safe"', launch_text)
+        self.assertIn('"chassis_adapter_output_topic"', launch_text)
+        self.assertIn('default_value="/cmd_vel"', launch_text)
+        self.assertEqual(
+            control["motion"]["ranger_driver_min_turn_radius_m"],
+            0.47644,
+        )
+
     def test_local_costmap_transform_uses_latest_tf(self) -> None:
         replanner_node = (
             REPO_ROOT

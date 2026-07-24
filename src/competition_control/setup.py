@@ -20,6 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             "mppi_control_node = competition_control.mppi_control_node:main",
+            "ranger_twist_adapter_node = competition_control.ranger_twist_adapter_node:main",
         ],
     },
 )

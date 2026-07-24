@@ -328,6 +328,24 @@ def _launch_setup(context, *args, **kwargs):
                 }
             ],
         ),
+        Node(
+            package="competition_control",
+            executable="ranger_twist_adapter_node",
+            name="ranger_twist_adapter",
+            output="screen",
+            condition=IfCondition(LaunchConfiguration("start_chassis_adapter")),
+            parameters=[
+                {
+                    "input_topic": LaunchConfiguration("chassis_adapter_input_topic"),
+                    "output_topic": LaunchConfiguration("chassis_adapter_output_topic"),
+                    "wheelbase_m": motion["wheelbase_m"],
+                    "track_width_m": motion["track_width_m"],
+                    "driver_min_turn_radius_m": motion[
+                        "ranger_driver_min_turn_radius_m"
+                    ],
+                }
+            ],
+        ),
         ]
     )
     return actions
@@ -448,8 +466,25 @@ def generate_launch_description():
                 default_value="/cmd_vel_safe",
                 description=(
                     "Second motion gate: keep /cmd_vel_safe for no-motion checks; "
-                    "use /cmd_vel only during an approved supervised field run."
+                    "enable start_chassis_adapter during an approved supervised "
+                    "field run."
                 ),
+            ),
+            DeclareLaunchArgument(
+                "start_chassis_adapter",
+                default_value="false",
+                description=(
+                    "Final motion gate: adapt /cmd_vel_safe to Ranger /cmd_vel "
+                    "during an approved supervised field run."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "chassis_adapter_input_topic",
+                default_value="/cmd_vel_safe",
+            ),
+            DeclareLaunchArgument(
+                "chassis_adapter_output_topic",
+                default_value="/cmd_vel",
             ),
             OpaqueFunction(function=_launch_setup),
         ]
