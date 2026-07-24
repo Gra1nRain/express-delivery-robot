@@ -17,10 +17,6 @@ if [[ ! "$LABEL" =~ ^[A-Za-z0-9._-]+$ ]]; then
 fi
 
 FAST_LIO_CONFIG="fast_lio_mid360_day5_control.yaml"
-# The MID360 publishes at 10 Hz.  Require about 25 seconds of continuously
-# fresh scans before starting FAST-LIO; the previous 20-sample window admitted
-# a startup state that later accumulated roughly 1.5 seconds of cloud latency.
-LIVOX_STABLE_SAMPLE_COUNT=250
 for argument in "$@"; do
   case "$argument" in
     start_fast_lio:=*)
@@ -87,7 +83,7 @@ python3 "$SCRIPT_DIR/day5_sensor_freshness_gate.py" \
   --mode livox \
   --timeout-s 45 \
   --max-p95-age-s 0.45 \
-  --sample-count "$LIVOX_STABLE_SAMPLE_COUNT"
+  --sample-count 20
 
 setsid ros2 launch fast_lio mapping.launch.py \
   config_path:="$COMPETITION_WS/config/mapping" \

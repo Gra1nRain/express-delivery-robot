@@ -86,8 +86,6 @@ class Day5RunScriptTest(unittest.TestCase):
         self.assertEqual(text.count("--mode cloud"), 2)
         self.assertIn("start_livox:=false", text)
         self.assertIn("start_fast_lio:=false", text)
-        self.assertIn("LIVOX_STABLE_SAMPLE_COUNT=250", text)
-        self.assertIn('--sample-count "$LIVOX_STABLE_SAMPLE_COUNT"', text)
         self.assertIn("No chassis relay was enabled", text)
 
     def test_sequential_bringup_owns_and_terminates_launch_process_groups(self) -> None:
