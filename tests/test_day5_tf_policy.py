@@ -35,7 +35,7 @@ class Day5TfPolicyTest(unittest.TestCase):
         self.assertIn('"start_base": LaunchConfiguration("start_base")', launch_text)
         self.assertIn('"anchor_odom_frame": "camera_init"', launch_text)
 
-    def test_livox_time_rebasing_is_day5_specific(self) -> None:
+    def test_livox_host_time_policy_is_day5_specific(self) -> None:
         day1_text = (
             REPO_ROOT
             / "src"
@@ -52,11 +52,19 @@ class Day5TfPolicyTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn(
-            '"rebase_livox_timestamps", default_value="false"', day1_text
+            '"force_livox_host_timestamps", default_value="false"', day1_text
         )
-        self.assertIn('dst="/livox/lidar_raw"', day1_text)
-        self.assertIn('dst="/livox/imu_raw"', day1_text)
-        self.assertIn('"rebase_livox_timestamps": "true"', day5_text)
+        self.assertIn('"LIVOX_ROS_FORCE_HOST_TIMESTAMP", "1"', day1_text)
+        self.assertIn('"force_livox_host_timestamps": "true"', day5_text)
+
+        driver_patch = (
+            REPO_ROOT / "patches" / "livox_ros_driver2_force_host_timestamp.patch"
+        ).read_text(encoding="utf-8")
+        self.assertIn('std::getenv("LIVOX_ROS_FORCE_HOST_TIMESTAMP")', driver_patch)
+        self.assertIn(
+            "!ForceHostTimestamp() && data->time_type != kTimestampTypeNoSync",
+            driver_patch,
+        )
 
 
 if __name__ == "__main__":

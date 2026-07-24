@@ -1,0 +1,44 @@
+diff --git a/src/comm/pub_handler.cpp b/src/comm/pub_handler.cpp
+index 3987924..8bf8d7a 100644
+--- a/src/comm/pub_handler.cpp
++++ b/src/comm/pub_handler.cpp
+@@ -30,6 +30,18 @@
+ 
+ namespace livox_ros {
+ 
++namespace {
++
++bool ForceHostTimestamp() {
++  static const bool force_host_timestamp = [] {
++    const char* value = std::getenv("LIVOX_ROS_FORCE_HOST_TIMESTAMP");
++    return value != nullptr && std::strcmp(value, "1") == 0;
++  }();
++  return force_host_timestamp;
++}
++
++}  // namespace
++
+ std::atomic<bool> PubHandler::is_timestamp_sync_;
+ 
+ PubHandler &pub_handler() {
+@@ -102,7 +113,7 @@ void PubHandler::OnLivoxLidarPointCloudCallback(uint32_t handle, const uint8_t d
+     return;
+   }
+ 
+-  if (data->time_type != kTimestampTypeNoSync) {
++  if (!ForceHostTimestamp() && data->time_type != kTimestampTypeNoSync) {
+     is_timestamp_sync_.store(true);
+   } else {
+     is_timestamp_sync_.store(false);
+@@ -266,8 +277,9 @@ uint64_t PubHandler::GetEthPacketTimestamp(uint8_t timestamp_type, uint8_t* time
+   LdsStamp time;
+   memcpy(time.stamp_bytes, time_stamp, size);
+ 
+-  if (timestamp_type == kTimestampTypeGptpOrPtp ||
++  if (!ForceHostTimestamp() &&
++      (timestamp_type == kTimestampTypeGptpOrPtp ||
+-      timestamp_type == kTimestampTypeGps) {
++       timestamp_type == kTimestampTypeGps)) {
+     return time.stamp;
+   }
+ 

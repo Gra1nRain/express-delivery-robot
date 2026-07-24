@@ -14,10 +14,11 @@ from launch.actions import (
     GroupAction,
     IncludeLaunchDescription,
     OpaqueFunction,
+    SetEnvironmentVariable,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node, SetRemap
+from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -49,26 +50,17 @@ def _launch_setup(context, *args, **kwargs):
             PythonLaunchDescriptionSource(livox_launch)
         )
         if _is_true(
-            LaunchConfiguration("rebase_livox_timestamps").perform(context)
+            LaunchConfiguration("force_livox_host_timestamps").perform(context)
         ):
-            actions.extend(
-                [
-                    GroupAction(
-                        [
-                            SetRemap(
-                                src="/livox/lidar", dst="/livox/lidar_raw"
-                            ),
-                            SetRemap(src="/livox/imu", dst="/livox/imu_raw"),
-                            livox_include,
-                        ]
-                    ),
-                    Node(
-                        package="competition_localization",
-                        executable="livox_timestamp_rebaser_node",
-                        name="livox_timestamp_rebaser",
-                        output="screen",
-                    ),
-                ]
+            actions.append(
+                GroupAction(
+                    [
+                        SetEnvironmentVariable(
+                            "LIVOX_ROS_FORCE_HOST_TIMESTAMP", "1"
+                        ),
+                        livox_include,
+                    ]
+                )
             )
         else:
             actions.append(livox_include)
@@ -172,7 +164,7 @@ def generate_launch_description():
             DeclareLaunchArgument("robot_model", default_value="ranger_mini_v3"),
             DeclareLaunchArgument("start_livox", default_value="true"),
             DeclareLaunchArgument(
-                "rebase_livox_timestamps", default_value="false"
+                "force_livox_host_timestamps", default_value="false"
             ),
             DeclareLaunchArgument("start_fast_lio", default_value="true"),
             DeclareLaunchArgument("start_base", default_value="false"),
