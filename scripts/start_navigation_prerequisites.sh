@@ -27,10 +27,12 @@ LOG_DIR="$COMPETITION_WS/log/navigation_prerequisites"
 RUN_ID="$(date +%Y%m%d_%H%M%S)"
 MAPPING_LOG="$LOG_DIR/${RUN_ID}_mapping.log"
 AVOIDANCE_LOG="$LOG_DIR/${RUN_ID}_avoidance.log"
+LIVOX_ADAPTER_LOG="$LOG_DIR/${RUN_ID}_livox_latest_frame_adapter.log"
 ODOMETRY_ADAPTER_LOG="$LOG_DIR/${RUN_ID}_odometry_adapter.log"
 RVIZ_LOG="$LOG_DIR/${RUN_ID}_rviz.log"
 MAPPING_PID=""
 AVOIDANCE_PID=""
+LIVOX_ADAPTER_PID=""
 ODOMETRY_ADAPTER_PID=""
 RVIZ_PID=""
 mkdir -p "$LOG_DIR"
@@ -102,7 +104,7 @@ stop_process_group() {
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
-  if [[ -z "$MAPPING_PID$AVOIDANCE_PID$ODOMETRY_ADAPTER_PID$RVIZ_PID" ]]; then
+  if [[ -z "$MAPPING_PID$AVOIDANCE_PID$LIVOX_ADAPTER_PID$ODOMETRY_ADAPTER_PID$RVIZ_PID" ]]; then
     exit "$status"
   fi
   echo "Stopping RViz and navigation prerequisite nodes..."
@@ -110,6 +112,7 @@ cleanup() {
   stop_process_group "$AVOIDANCE_PID"
   stop_process_group "$ODOMETRY_ADAPTER_PID"
   stop_process_group "$MAPPING_PID"
+  stop_process_group "$LIVOX_ADAPTER_PID"
   echo "Stopped. Logs remain in $LOG_DIR"
   exit "$status"
 }
@@ -131,6 +134,12 @@ refuse_if_process_running \
   "/competition_avoidance/lib/competition_avoidance/avoidance_manager_node" \
   "avoidance manager"
 refuse_if_process_running \
+  "ros2 run competition_avoidance livox_latest_frame_adapter_node" \
+  "Livox latest-frame adapter"
+refuse_if_process_running \
+  "/competition_avoidance/lib/competition_avoidance/livox_latest_frame_adapter_node" \
+  "Livox latest-frame adapter"
+refuse_if_process_running \
   "ros2 run competition_avoidance odometry_adapter_node" \
   "odometry adapter"
 refuse_if_process_running \
@@ -140,10 +149,23 @@ refuse_if_process_running \
   "(^|/)rviz2( |$)" \
   "RViz"
 
+echo "Starting additive latest-frame LiDAR adapter..."
+setsid ros2 run competition_avoidance livox_latest_frame_adapter_node \
+  --ros-args \
+  -p input_topic:=/livox/lidar \
+  -p output_topic:=/avoidance/livox_latest \
+  -p publish_frequency_hz:=10.0 \
+  -p maximum_input_age_s:=0.40 >"$LIVOX_ADAPTER_LOG" 2>&1 &
+LIVOX_ADAPTER_PID=$!
+
+wait_for_node /livox_latest_frame_adapter
+
 echo "Starting Livox, FAST-LIO and pointcloud_to_laserscan..."
 setsid ros2 launch competition_bringup day1_mapping.launch.py \
   start_livox:=true \
   force_livox_host_timestamps:=true \
+  livox_publish_frequency_hz:=20.0 \
+  fast_lio_config:=fast_lio_mid360_avoidance_latest.yaml \
   start_fast_lio:=true \
   start_base:=false \
   start_scan:=true \
@@ -153,6 +175,7 @@ setsid ros2 launch competition_bringup day1_mapping.launch.py \
 MAPPING_PID=$!
 
 wait_for_node /livox_lidar_publisher
+wait_for_topic /avoidance/livox_latest
 wait_for_node /laser_mapping
 wait_for_topic /cloud_registered_body
 wait_for_topic /Odometry
@@ -194,8 +217,9 @@ wait_for_node /rviz2_day5_motion_control
 
 echo
 echo "NAVIGATION_PREREQUISITES_READY"
-echo "mapping_pid=$MAPPING_PID odometry_adapter_pid=$ODOMETRY_ADAPTER_PID avoidance_pid=$AVOIDANCE_PID rviz_pid=$RVIZ_PID"
+echo "mapping_pid=$MAPPING_PID livox_adapter_pid=$LIVOX_ADAPTER_PID odometry_adapter_pid=$ODOMETRY_ADAPTER_PID avoidance_pid=$AVOIDANCE_PID rviz_pid=$RVIZ_PID"
 echo "mapping_log=$MAPPING_LOG"
+echo "livox_adapter_log=$LIVOX_ADAPTER_LOG"
 echo "odometry_adapter_log=$ODOMETRY_ADAPTER_LOG"
 echo "avoidance_log=$AVOIDANCE_LOG"
 echo "rviz_log=$RVIZ_LOG"
@@ -204,7 +228,7 @@ echo "Keep this terminal open. Press Ctrl+C to stop RViz and all nodes started h
 echo
 
 set +e
-wait -n "$MAPPING_PID" "$ODOMETRY_ADAPTER_PID" "$AVOIDANCE_PID" "$RVIZ_PID"
+wait -n "$MAPPING_PID" "$LIVOX_ADAPTER_PID" "$ODOMETRY_ADAPTER_PID" "$AVOIDANCE_PID" "$RVIZ_PID"
 status=$?
 set -e
 echo "ERROR: a prerequisite process exited unexpectedly." >&2

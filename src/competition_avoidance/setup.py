@@ -22,6 +22,7 @@ setup(
     entry_points={
         "console_scripts": [
             "avoidance_manager_node = competition_avoidance.avoidance_manager_node:main",
+            "livox_latest_frame_adapter_node = competition_avoidance.livox_latest_frame_adapter_node:main",
             "odometry_adapter_node = competition_avoidance.odometry_adapter_node:main",
         ],
     },

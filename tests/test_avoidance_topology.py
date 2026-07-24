@@ -86,6 +86,69 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertIn("wait_for_topic /odom", startup_text)
         self.assertNotIn("topic_tools relay", startup_text)
 
+    def test_livox_latest_frame_adapter_is_additive_and_motion_free(self) -> None:
+        setup_text = (
+            REPO_ROOT / "src" / "competition_avoidance" / "setup.py"
+        ).read_text(encoding="utf-8")
+        package_text = (
+            REPO_ROOT / "src" / "competition_avoidance" / "package.xml"
+        ).read_text(encoding="utf-8")
+        adapter_text = (
+            REPO_ROOT
+            / "src"
+            / "competition_avoidance"
+            / "competition_avoidance"
+            / "livox_latest_frame_adapter_node.py"
+        ).read_text(encoding="utf-8")
+        startup_text = (
+            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "livox_latest_frame_adapter_node = "
+            "competition_avoidance.livox_latest_frame_adapter_node:main",
+            setup_text,
+        )
+        self.assertIn("<exec_depend>livox_ros_driver2</exec_depend>", package_text)
+        self.assertIn('"/livox/lidar"', adapter_text)
+        self.assertIn('"/avoidance/livox_latest"', adapter_text)
+        self.assertNotIn('"/cmd_vel"', adapter_text)
+        self.assertIn(
+            "ros2 run competition_avoidance livox_latest_frame_adapter_node",
+            startup_text,
+        )
+        self.assertIn("wait_for_topic /avoidance/livox_latest", startup_text)
+
+    def test_latest_frame_fast_lio_profile_does_not_replace_raw_profile(self) -> None:
+        raw_config = yaml.safe_load(
+            (
+                REPO_ROOT / "config" / "mapping" / "fast_lio_mid360_day1.yaml"
+            ).read_text(encoding="utf-8")
+        )["/**"]["ros__parameters"]
+        adapter_config = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "mapping"
+                / "fast_lio_mid360_avoidance_latest.yaml"
+            ).read_text(encoding="utf-8")
+        )["/**"]["ros__parameters"]
+        startup_text = (
+            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(raw_config["common"]["lid_topic"], "/livox/lidar")
+        self.assertEqual(
+            adapter_config["common"]["lid_topic"],
+            "/avoidance/livox_latest",
+        )
+        self.assertEqual(adapter_config["preprocess"]["scan_rate"], 10)
+        self.assertIn(
+            "fast_lio_config:=fast_lio_mid360_avoidance_latest.yaml",
+            startup_text,
+        )
+        self.assertIn("livox_publish_frequency_hz:=20.0", startup_text)
+
     def test_livox_release_rebuild_is_scoped_and_guarded(self) -> None:
         rebuild_text = (
             REPO_ROOT / "scripts" / "rebuild_livox_release.sh"
