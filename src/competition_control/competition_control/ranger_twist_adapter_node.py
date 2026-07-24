@@ -50,11 +50,10 @@ class RangerTwistAdapterNode(Node):
         self._publisher = self.create_publisher(Twist, output_topic, 10)
         self.create_subscription(Twist, input_topic, self._command_callback, 10)
         self.get_logger().info(
-            "Ranger twist adapter ready: %s -> %s, wheelbase=%.3fm, track=%.3fm",
-            input_topic,
-            output_topic,
-            geometry.wheelbase_m,
-            geometry.track_width_m,
+            "Ranger twist adapter ready: "
+            f"{input_topic} -> {output_topic}, "
+            f"wheelbase={geometry.wheelbase_m:.3f}m, "
+            f"track={geometry.track_width_m:.3f}m"
         )
 
     def _command_callback(self, message: Twist) -> None:
