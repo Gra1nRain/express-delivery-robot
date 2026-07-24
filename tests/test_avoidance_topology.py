@@ -80,6 +80,25 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertIn("wait_for_topic /odom", startup_text)
         self.assertNotIn("topic_tools relay", startup_text)
 
+    def test_livox_release_rebuild_is_scoped_and_guarded(self) -> None:
+        rebuild_text = (
+            REPO_ROOT / "scripts" / "rebuild_livox_release.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("--packages-select livox_ros_driver2", rebuild_text)
+        self.assertIn("-DCMAKE_BUILD_TYPE=Release", rebuild_text)
+        self.assertIn("pgrep -f", rebuild_text)
+        self.assertNotIn("rm -", rebuild_text)
+
+    def test_livox_acceptance_keeps_strict_latency_limits(self) -> None:
+        acceptance_text = (
+            REPO_ROOT / "scripts" / "livox_latency_acceptance.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("default=120.0", acceptance_text)
+        self.assertIn("default=0.30", acceptance_text)
+        self.assertIn("default=0.50", acceptance_text)
+
 
 if __name__ == "__main__":
     unittest.main()

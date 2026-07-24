@@ -16,7 +16,7 @@
 
 启动期间保持硬件急停可用。没有完成初始位姿、TF、避障和安全状态检查前，不得自行把上述两个开关改成 `true`。
 
-当前已知问题：Livox 点云约有 `0.7 s` 延迟，FAST-LIO 输出约有 `1.4–1.6 s` 延迟。避障可能显示 `SAFE_HOLD / stale_cloud_timestamp`。不得通过增大超时参数绕过该状态。
+Livox ROS2 驱动必须使用 Release 优化构建。未优化构建会导致原始包持续积压，进而让 FAST-LIO 和避障使用过期点云。不得通过增大超时参数绕过 `SAFE_HOLD / stale_cloud_timestamp`。
 
 ## 1. 小车开机后检查
 
@@ -43,6 +43,14 @@ pwd
 ```
 
 预期主机名为 `ubuntu`，工作区为 `/home/agilex/competition_ws`。
+
+首次部署或重编译 Livox 后，先确认驱动使用 Release 优化：
+
+```bash
+/home/agilex/competition_ws/scripts/rebuild_livox_release.sh
+```
+
+该命令只重编译 `livox_ros_driver2`，不修改其源文件。必须先停止已有 Livox 驱动。
 
 ## 2. 每个车载终端都要加载环境
 
@@ -110,6 +118,20 @@ timeout 5s ros2 topic hz /cloud_registered_body --window 20
 /cloud_registered_body
 /Odometry
 ```
+
+导航前执行两分钟实时性门禁：
+
+```bash
+python3 /home/agilex/competition_ws/scripts/livox_latency_acceptance.py
+```
+
+只有结果为 `pass` 才能继续。默认要求两路话题均满足：
+
+- `p95 < 0.30 s`
+- 最大延迟 `< 0.50 s`
+- 120 秒内至少接收 100 个样本
+
+脚本中的 `callback_rate_hz` 是 Python 监测回调速率，不等同于驱动真实发布频率。FAST-LIO 实际处理频率应另外通过运行日志或独立频率检查确认接近原始 `10 Hz`。
 
 ## 4. 终端 2：启动新增避障节点
 
