@@ -189,7 +189,7 @@ def generate_launch_description():
                 "force_livox_host_timestamps", default_value="false"
             ),
             DeclareLaunchArgument(
-                "livox_publish_frequency_hz", default_value="20.0"
+                "livox_publish_frequency_hz", default_value="10.0"
             ),
             DeclareLaunchArgument(
                 "livox_raw_packet_queue_limit", default_value="256"

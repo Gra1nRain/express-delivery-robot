@@ -79,7 +79,7 @@ class Day5TfPolicyTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn(
-            '"livox_publish_frequency_hz", default_value="20.0"', day1_text
+            '"livox_publish_frequency_hz", default_value="10.0"', day1_text
         )
         self.assertIn(
             '"livox_raw_packet_queue_limit", default_value="256"', day1_text

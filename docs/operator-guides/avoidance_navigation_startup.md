@@ -82,7 +82,7 @@ cd /home/agilex/competition_ws
 ros2 launch competition_bringup day1_mapping.launch.py \
   start_livox:=true \
   force_livox_host_timestamps:=true \
-  livox_publish_frequency_hz:=20.0 \
+  livox_publish_frequency_hz:=10.0 \
   livox_raw_packet_queue_limit:=256 \
   start_fast_lio:=true \
   start_base:=false \
