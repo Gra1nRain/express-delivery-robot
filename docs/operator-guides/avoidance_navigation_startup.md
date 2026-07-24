@@ -228,9 +228,12 @@ ros2 lifecycle get /day5_map_server
 active [3]
 ```
 
-## 6. 终端 4：打开项目专用 RViz
+## 6. 项目专用 RViz
 
-建议在小车 Ubuntu 桌面的终端中执行，不要直接点击系统中的默认 RViz 图标：
+`start_navigation_prerequisites.sh` 会在前置节点全部就绪后自动使用
+`day5_motion_control.rviz` 打开 RViz。不要同时运行系统默认 RViz。
+
+如果 RViz 被单独关闭，或者需要手动恢复，再在小车 Ubuntu 桌面的终端中执行：
 
 ```bash
 source /home/agilex/competition_ws/scripts/car_source_env.sh

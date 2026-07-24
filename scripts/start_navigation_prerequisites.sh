@@ -4,6 +4,7 @@ set -euo pipefail
 COMPETITION_WS="${COMPETITION_WS:-/home/agilex/competition_ws}"
 ENV_SCRIPT="$COMPETITION_WS/scripts/car_source_env.sh"
 AVOIDANCE_PARAMS="$COMPETITION_WS/config/avoidance/avoidance_params.yaml"
+RVIZ_CONFIG="$COMPETITION_WS/install/competition_bringup/share/competition_bringup/rviz/day5_motion_control.rviz"
 STARTUP_TIMEOUT_S=45
 
 if [[ ! -f "$ENV_SCRIPT" ]]; then
@@ -14,17 +15,24 @@ if [[ ! -f "$AVOIDANCE_PARAMS" ]]; then
   echo "ERROR: missing avoidance parameters: $AVOIDANCE_PARAMS" >&2
   exit 1
 fi
+if [[ ! -f "$RVIZ_CONFIG" ]]; then
+  echo "ERROR: missing RViz configuration: $RVIZ_CONFIG" >&2
+  exit 1
+fi
 
 source "$ENV_SCRIPT"
+RVIZ_DISPLAY="${RVIZ_DISPLAY:-${DISPLAY:-:1}}"
 
 LOG_DIR="$COMPETITION_WS/log/navigation_prerequisites"
 RUN_ID="$(date +%Y%m%d_%H%M%S)"
 MAPPING_LOG="$LOG_DIR/${RUN_ID}_mapping.log"
 AVOIDANCE_LOG="$LOG_DIR/${RUN_ID}_avoidance.log"
 ODOMETRY_ADAPTER_LOG="$LOG_DIR/${RUN_ID}_odometry_adapter.log"
+RVIZ_LOG="$LOG_DIR/${RUN_ID}_rviz.log"
 MAPPING_PID=""
 AVOIDANCE_PID=""
 ODOMETRY_ADAPTER_PID=""
+RVIZ_PID=""
 mkdir -p "$LOG_DIR"
 
 node_exists() {
@@ -94,7 +102,11 @@ stop_process_group() {
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
-  echo "Stopping navigation prerequisite nodes..."
+  if [[ -z "$MAPPING_PID$AVOIDANCE_PID$ODOMETRY_ADAPTER_PID$RVIZ_PID" ]]; then
+    exit "$status"
+  fi
+  echo "Stopping RViz and navigation prerequisite nodes..."
+  stop_process_group "$RVIZ_PID"
   stop_process_group "$AVOIDANCE_PID"
   stop_process_group "$ODOMETRY_ADAPTER_PID"
   stop_process_group "$MAPPING_PID"
@@ -124,6 +136,9 @@ refuse_if_process_running \
 refuse_if_process_running \
   "/competition_avoidance/lib/competition_avoidance/odometry_adapter_node" \
   "odometry adapter"
+refuse_if_process_running \
+  "(^|/)rviz2( |$)" \
+  "RViz"
 
 echo "Starting Livox, FAST-LIO and pointcloud_to_laserscan..."
 setsid ros2 launch competition_bringup day1_mapping.launch.py \
@@ -168,18 +183,28 @@ if topic_exists /cmd_vel; then
   exit 1
 fi
 
+echo "Starting project RViz configuration on display $RVIZ_DISPLAY..."
+setsid env DISPLAY="$RVIZ_DISPLAY" ros2 run rviz2 rviz2 \
+  -d "$RVIZ_CONFIG" \
+  --ros-args \
+  -r __node:=rviz2_day5_motion_control >"$RVIZ_LOG" 2>&1 &
+RVIZ_PID=$!
+
+wait_for_node /rviz2_day5_motion_control
+
 echo
 echo "NAVIGATION_PREREQUISITES_READY"
-echo "mapping_pid=$MAPPING_PID odometry_adapter_pid=$ODOMETRY_ADAPTER_PID avoidance_pid=$AVOIDANCE_PID"
+echo "mapping_pid=$MAPPING_PID odometry_adapter_pid=$ODOMETRY_ADAPTER_PID avoidance_pid=$AVOIDANCE_PID rviz_pid=$RVIZ_PID"
 echo "mapping_log=$MAPPING_LOG"
 echo "odometry_adapter_log=$ODOMETRY_ADAPTER_LOG"
 echo "avoidance_log=$AVOIDANCE_LOG"
+echo "rviz_log=$RVIZ_LOG"
 echo "Safety gates: start_base=false, no chassis adapter, /cmd_vel absent."
-echo "Keep this terminal open. Press Ctrl+C to stop all nodes started here."
+echo "Keep this terminal open. Press Ctrl+C to stop RViz and all nodes started here."
 echo
 
 set +e
-wait -n "$MAPPING_PID" "$ODOMETRY_ADAPTER_PID" "$AVOIDANCE_PID"
+wait -n "$MAPPING_PID" "$ODOMETRY_ADAPTER_PID" "$AVOIDANCE_PID" "$RVIZ_PID"
 status=$?
 set -e
 echo "ERROR: a prerequisite process exited unexpectedly." >&2

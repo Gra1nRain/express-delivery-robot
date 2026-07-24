@@ -99,6 +99,17 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertIn("default=0.30", acceptance_text)
         self.assertIn("default=0.50", acceptance_text)
 
+    def test_prerequisite_frontend_starts_project_rviz_configuration(self) -> None:
+        startup_text = (
+            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("day5_motion_control.rviz", startup_text)
+        self.assertIn("__node:=rviz2_day5_motion_control", startup_text)
+        self.assertIn("wait_for_node /rviz2_day5_motion_control", startup_text)
+        self.assertIn('start_base:=false', startup_text)
+        self.assertIn('/cmd_vel absent', startup_text)
+
 
 if __name__ == "__main__":
     unittest.main()
