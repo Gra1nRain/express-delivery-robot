@@ -3,6 +3,8 @@ import pathlib
 import sys
 import unittest
 
+import yaml
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_planning"))
@@ -83,6 +85,59 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertEqual(result.rejoin_index, 50)
         self.assertEqual(result.path, self.reference[:51])
         self.assertLess(result.planning_grid_cell_count, 100 * 80)
+
+    def test_clear_day5_turn_reference_is_kept_after_small_tracking_offset(self) -> None:
+        trajectory_data = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "docs"
+                / "evidence"
+                / "day5"
+                / "debug_control_validation_to_drop_pass_trajectory.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        reference = tuple(
+            PathPoint(
+                float(point["x"]),
+                float(point["y"]),
+                float(point["yaw"]),
+            )
+            for point in trajectory_data["points"]
+        )
+        planner = LocalTrajectoryPlanner(
+            OccupancyGridMap.from_yaml(REPO_ROOT / "maps" / "debug" / "map.yaml"),
+            LocalReplanConfig(
+                lookahead_distance_m=3.0,
+                inflation_radius_m=0.45,
+                search_padding_m=3.0,
+                sample_spacing_m=0.10,
+                min_turning_radius_m=0.81,
+                step_length_m=0.20,
+                curvature_bins=9,
+                heading_bins=72,
+                goal_position_tolerance_m=0.25,
+                goal_heading_tolerance_rad=math.radians(15.0),
+                reference_deviation_weight=2.0,
+                max_expansions=250_000,
+                reference_search_window_points=120,
+            ),
+        )
+
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=PathPoint(
+                6.6946821194394195,
+                0.3988649623402306,
+                0.02126558917458654,
+            ),
+            dynamic_obstacle_points=(),
+            previous_reference_index=70,
+        )
+
+        self.assertEqual(result.status, "REFERENCE_CLEAR")
+        self.assertEqual(result.reference_start_index, 71)
+        self.assertEqual(result.rejoin_index, 102)
+        self.assertEqual(result.path, reference[71:103])
 
     def test_table_is_avoided_before_rejoining_global_reference(self) -> None:
         planner = LocalTrajectoryPlanner(_empty_map(), self.config)

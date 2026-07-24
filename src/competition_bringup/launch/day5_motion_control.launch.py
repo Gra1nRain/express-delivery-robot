@@ -102,6 +102,7 @@ def _launch_setup(context, *args, **kwargs):
                 "start_livox": LaunchConfiguration("start_livox"),
                 "start_fast_lio": LaunchConfiguration("start_fast_lio"),
                 "start_base": LaunchConfiguration("start_base"),
+                "publish_odom_tf": "false",
                 "start_scan": "false",
                 "start_slam": "false",
                 "start_anchor": "true",

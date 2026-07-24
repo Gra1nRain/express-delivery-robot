@@ -26,8 +26,6 @@ class LocalReplanConfig:
     reference_deviation_weight: float = 2.0
     max_expansions: int = 250_000
     reference_search_window_points: int = 120
-    reuse_position_tolerance_m: float = 0.05
-    reuse_heading_tolerance_rad: float = math.radians(5.0)
 
     def __post_init__(self) -> None:
         if self.lookahead_distance_m <= 0.0:
@@ -109,16 +107,7 @@ class LocalTrajectoryPlanner:
         )
         local_reference = tuple(reference_path[start_index : rejoin_index + 1])
         planner = self._planner(live_map, local_reference)
-        pose_matches_reference = (
-            math.hypot(
-                current_pose.x - local_reference[0].x,
-                current_pose.y - local_reference[0].y,
-            )
-            <= self._config.reuse_position_tolerance_m
-            and abs(_wrap_angle(current_pose.yaw - local_reference[0].yaw))
-            <= self._config.reuse_heading_tolerance_rad
-        )
-        if pose_matches_reference and planner.path_is_navigable(local_reference):
+        if planner.path_is_navigable(local_reference):
             return LocalPlan(
                 path=local_reference,
                 reference_start_index=start_index,

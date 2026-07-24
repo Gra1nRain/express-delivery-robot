@@ -30,6 +30,7 @@ def _launch_setup(context, *args, **kwargs):
     slam_config = LaunchConfiguration("slam_config").perform(context)
     port_name = LaunchConfiguration("port_name").perform(context)
     robot_model = LaunchConfiguration("robot_model").perform(context)
+    publish_odom_tf = LaunchConfiguration("publish_odom_tf").perform(context)
     use_rviz = LaunchConfiguration("rviz").perform(context)
     start_anchor = LaunchConfiguration("start_anchor").perform(context)
     anchor_map_frame = LaunchConfiguration("anchor_map_frame").perform(context)
@@ -67,7 +68,7 @@ def _launch_setup(context, *args, **kwargs):
                     "port_name": port_name,
                     "robot_model": robot_model,
                     "update_rate": "50",
-                    "publish_odom_tf": "true",
+                    "publish_odom_tf": publish_odom_tf,
                     "odom_frame": "odom",
                     "base_frame": "base_link",
                     "odom_topic_name": "odom",
@@ -143,6 +144,7 @@ def generate_launch_description():
             DeclareLaunchArgument("start_livox", default_value="true"),
             DeclareLaunchArgument("start_fast_lio", default_value="true"),
             DeclareLaunchArgument("start_base", default_value="false"),
+            DeclareLaunchArgument("publish_odom_tf", default_value="true"),
             DeclareLaunchArgument("start_scan", default_value="true"),
             DeclareLaunchArgument("start_slam", default_value="false"),
             DeclareLaunchArgument("start_anchor", default_value="false"),
