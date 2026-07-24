@@ -148,6 +148,13 @@ class ReplanningReport:
     passed: bool
     failed_checks: tuple[str, ...]
     analyzed_replanned_events: int
+    status_message_count: int
+    max_status_gap_s: float | None
+    p95_status_gap_s: float | None
+    max_status_gap_start_elapsed_s: float | None
+    max_status_gap_end_elapsed_s: float | None
+    max_reported_planning_time_ms: float | None
+    max_status_gap_limit_s: float
     tf_unavailable_events: int
     high_deviation_events: int
     high_deviation_clear_reference_events: int
@@ -322,8 +329,25 @@ def build_report(
     *,
     max_local_deviation_m: float,
     tf_edges: Iterable[tuple[str, str]],
+    max_status_gap_s: float = 2.5,
+    status_timestamps_ns: Sequence[int] = (),
+    bag_start_ns: int | None = None,
+    planning_times_ms: Sequence[float] = (),
 ) -> ReplanningReport:
     event_tuple = tuple(events)
+    status_timestamps = tuple(status_timestamps_ns)
+    status_gaps = tuple(
+        (
+            (current_ns - previous_ns) / 1e9,
+            previous_ns,
+            current_ns,
+        )
+        for previous_ns, current_ns in zip(
+            status_timestamps,
+            status_timestamps[1:],
+        )
+    )
+    peak_gap = max(status_gaps, default=None)
     measurable = tuple(
         event
         for event in event_tuple
@@ -348,10 +372,32 @@ def build_report(
             f"{peak.max_local_to_global_deviation_m:.3f} > "
             f"{max_local_deviation_m:.3f}"
         )
+    if peak_gap is not None and peak_gap[0] > max_status_gap_s:
+        failed_checks.append(
+            f"max_local_status_gap_s {peak_gap[0]:.3f} > "
+            f"{max_status_gap_s:.3f}"
+        )
+    gap_start_elapsed_s = None
+    gap_end_elapsed_s = None
+    if peak_gap is not None and bag_start_ns is not None:
+        gap_start_elapsed_s = (peak_gap[1] - bag_start_ns) / 1e9
+        gap_end_elapsed_s = (peak_gap[2] - bag_start_ns) / 1e9
     return ReplanningReport(
         passed=not failed_checks,
         failed_checks=tuple(failed_checks),
         analyzed_replanned_events=len(event_tuple),
+        status_message_count=len(status_timestamps),
+        max_status_gap_s=None if peak_gap is None else peak_gap[0],
+        p95_status_gap_s=_percentile(
+            tuple(gap_s for gap_s, _, _ in status_gaps),
+            0.95,
+        ),
+        max_status_gap_start_elapsed_s=gap_start_elapsed_s,
+        max_status_gap_end_elapsed_s=gap_end_elapsed_s,
+        max_reported_planning_time_ms=(
+            max(planning_times_ms) if planning_times_ms else None
+        ),
+        max_status_gap_limit_s=max_status_gap_s,
         tf_unavailable_events=sum(not event.tf_available for event in event_tuple),
         high_deviation_events=len(high_deviation),
         high_deviation_clear_reference_events=sum(
@@ -373,6 +419,8 @@ def read_bag(
     bag_path: Path,
     *,
     inflation_radius_m: float,
+    max_local_deviation_m: float = 0.5,
+    max_status_gap_s: float = 2.5,
 ) -> ReplanningReport:
     try:
         import rosbag2_py
@@ -417,6 +465,8 @@ def read_bag(
     transforms: dict[tuple[str, str], Transform2D] = {}
     all_tf_edges: set[tuple[str, str]] = set()
     metrics: list[ReplanEventMetrics] = []
+    status_timestamps_ns: list[int] = []
+    planning_times_ms: list[float] = []
 
     while reader.has_next():
         topic, serialized, timestamp_ns = reader.read_next()
@@ -452,6 +502,10 @@ def read_bag(
                 payload = json.loads(message.data)
             except (TypeError, json.JSONDecodeError):
                 continue
+            status_timestamps_ns.append(timestamp_ns)
+            planning_time_ms = payload.get("planning_time_ms")
+            if isinstance(planning_time_ms, (int, float)):
+                planning_times_ms.append(float(planning_time_ms))
             event = ReplanInput(
                 timestamp_ns=timestamp_ns,
                 elapsed_s=(timestamp_ns - bag_start_ns) / 1e9,
@@ -471,7 +525,11 @@ def read_bag(
 
     return build_report(
         metrics,
-        max_local_deviation_m=0.5,
+        max_local_deviation_m=max_local_deviation_m,
+        max_status_gap_s=max_status_gap_s,
+        status_timestamps_ns=status_timestamps_ns,
+        bag_start_ns=bag_start_ns,
+        planning_times_ms=planning_times_ms,
         tf_edges=all_tf_edges,
     )
 
@@ -538,19 +596,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--bag", required=True, type=Path)
     parser.add_argument("--inflation-radius-m", type=float, default=0.45)
     parser.add_argument("--max-local-deviation-m", type=float, default=0.5)
+    parser.add_argument("--max-status-gap-s", type=float, default=2.5)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
 
     report = read_bag(
         args.bag,
         inflation_radius_m=args.inflation_radius_m,
+        max_local_deviation_m=args.max_local_deviation_m,
+        max_status_gap_s=args.max_status_gap_s,
     )
-    if args.max_local_deviation_m != report.max_local_deviation_limit_m:
-        report = build_report(
-            report.events,
-            max_local_deviation_m=args.max_local_deviation_m,
-            tf_edges=report.tf_edges,
-        )
     payload = report.to_dict()
     rendered = json.dumps(payload, ensure_ascii=False, indent=2)
     if args.output is not None:
@@ -561,6 +616,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         f"status={'PASS' if report.passed else 'FAIL'} "
         f"events={report.analyzed_replanned_events} "
+        f"status_messages={report.status_message_count} "
+        f"max_status_gap_s={report.max_status_gap_s} "
+        f"max_planning_ms={report.max_reported_planning_time_ms} "
         f"high_deviation={report.high_deviation_events} "
         f"high_clear={report.high_deviation_clear_reference_events} "
         f"high_blocked={report.high_deviation_blocked_reference_events} "

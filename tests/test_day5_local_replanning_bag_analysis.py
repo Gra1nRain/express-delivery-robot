@@ -96,6 +96,48 @@ class Day5LocalReplanningBagAnalysisTest(unittest.TestCase):
         self.assertEqual(report.high_deviation_clear_reference_events, 1)
         self.assertIn("max_local_to_global_deviation_m", report.failed_checks[0])
 
+    def test_report_fails_on_long_local_status_gap(self) -> None:
+        module = _load_module()
+        event = module.ReplanEventMetrics(
+            timestamp_ns=2_000_000_000,
+            elapsed_s=2.0,
+            status="REPLANNED",
+            reference_start_index=4,
+            rejoin_index=8,
+            dynamic_obstacle_count=0,
+            local_path_point_count=3,
+            max_local_to_global_deviation_m=0.1,
+            p95_local_to_global_deviation_m=0.08,
+            reference_point_count=5,
+            dynamic_blocked_reference_points=0,
+            static_blocked_reference_points=0,
+            combined_blocked_reference_points=0,
+        )
+
+        report = module.build_report(
+            [event],
+            max_local_deviation_m=0.5,
+            max_status_gap_s=2.5,
+            status_timestamps_ns=(
+                1_000_000_000,
+                2_000_000_000,
+                32_000_000_000,
+            ),
+            bag_start_ns=1_000_000_000,
+            planning_times_ms=(80.0, 29_500.0),
+            tf_edges=(),
+        )
+
+        self.assertFalse(report.passed)
+        self.assertEqual(report.status_message_count, 3)
+        self.assertEqual(report.max_status_gap_s, 30.0)
+        self.assertEqual(report.max_status_gap_start_elapsed_s, 1.0)
+        self.assertEqual(report.max_status_gap_end_elapsed_s, 31.0)
+        self.assertEqual(report.max_reported_planning_time_ms, 29_500.0)
+        self.assertTrue(
+            any("max_local_status_gap_s" in item for item in report.failed_checks)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
