@@ -23,8 +23,8 @@ for argument in "$@"; do
       echo "start_fast_lio is managed by this script and must not be overridden" >&2
       exit 2
       ;;
-    start_livox:=false|start_livox:=False|start_livox:=0)
-      echo "sequential bringup requires start_livox:=true" >&2
+    start_livox:=*)
+      echo "start_livox is managed by this script and must not be overridden" >&2
       exit 2
       ;;
     fast_lio_config:=*)
@@ -35,8 +35,10 @@ done
 
 LOG_DIR="$COMPETITION_WS/log"
 mkdir -p "$LOG_DIR"
+SENSOR_LOG="$LOG_DIR/${LABEL}_livox.log"
 BRINGUP_LOG="$LOG_DIR/${LABEL}_bringup.log"
 FAST_LIO_LOG="$LOG_DIR/${LABEL}_fast_lio.log"
+SENSOR_PID=""
 BRINGUP_PID=""
 FAST_LIO_PID=""
 
@@ -59,16 +61,23 @@ stop_process_group() {
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
-  stop_process_group "$FAST_LIO_PID"
   stop_process_group "$BRINGUP_PID"
+  stop_process_group "$FAST_LIO_PID"
+  stop_process_group "$SENSOR_PID"
   exit "$status"
 }
 trap cleanup EXIT INT TERM
 
-setsid ros2 launch competition_bringup day5_motion_control.launch.py \
+setsid ros2 launch competition_bringup day1_mapping.launch.py \
+  start_livox:=true \
+  force_livox_host_timestamps:=true \
   start_fast_lio:=false \
-  "$@" >"$BRINGUP_LOG" 2>&1 &
-BRINGUP_PID=$!
+  start_base:=false \
+  start_scan:=false \
+  start_slam:=false \
+  start_anchor:=false \
+  rviz:=false >"$SENSOR_LOG" 2>&1 &
+SENSOR_PID=$!
 
 python3 "$SCRIPT_DIR/day5_sensor_freshness_gate.py" \
   --mode livox \
@@ -88,11 +97,24 @@ python3 "$SCRIPT_DIR/day5_sensor_freshness_gate.py" \
   --max-p95-age-s 0.35 \
   --sample-count 20
 
-echo "DAY5_SENSORS_READY label=$LABEL bringup_pid=$BRINGUP_PID fast_lio_pid=$FAST_LIO_PID"
+setsid ros2 launch competition_bringup day5_motion_control.launch.py \
+  start_livox:=false \
+  start_fast_lio:=false \
+  "$@" >"$BRINGUP_LOG" 2>&1 &
+BRINGUP_PID=$!
+
+sleep 5
+python3 "$SCRIPT_DIR/day5_sensor_freshness_gate.py" \
+  --mode cloud \
+  --timeout-s 45 \
+  --max-p95-age-s 0.35 \
+  --sample-count 20
+
+echo "DAY5_SENSORS_READY label=$LABEL sensor_pid=$SENSOR_PID bringup_pid=$BRINGUP_PID fast_lio_pid=$FAST_LIO_PID"
 echo "No chassis relay was enabled by this script."
 
 set +e
-wait -n "$BRINGUP_PID" "$FAST_LIO_PID"
+wait -n "$SENSOR_PID" "$BRINGUP_PID" "$FAST_LIO_PID"
 status=$?
 set -e
 exit "$status"

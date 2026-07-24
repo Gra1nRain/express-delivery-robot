@@ -67,12 +67,24 @@ class Day5RunScriptTest(unittest.TestCase):
             REPO_ROOT / "scripts" / "day5_sequential_bringup.sh"
         ).read_text(encoding="utf-8")
 
+        sensor_start = text.index(
+            "setsid ros2 launch competition_bringup day1_mapping.launch.py"
+        )
         livox_gate = text.index("--mode livox")
         fast_lio_start = text.index("ros2 launch fast_lio mapping.launch.py")
-        cloud_gate = text.index("--mode cloud")
+        first_cloud_gate = text.index("--mode cloud")
+        navigation_start = text.index(
+            "setsid ros2 launch competition_bringup day5_motion_control.launch.py"
+        )
+        second_cloud_gate = text.index("--mode cloud", first_cloud_gate + 1)
 
+        self.assertLess(sensor_start, livox_gate)
         self.assertLess(livox_gate, fast_lio_start)
-        self.assertLess(fast_lio_start, cloud_gate)
+        self.assertLess(fast_lio_start, first_cloud_gate)
+        self.assertLess(first_cloud_gate, navigation_start)
+        self.assertLess(navigation_start, second_cloud_gate)
+        self.assertEqual(text.count("--mode cloud"), 2)
+        self.assertIn("start_livox:=false", text)
         self.assertIn("start_fast_lio:=false", text)
         self.assertIn("No chassis relay was enabled", text)
 
@@ -81,7 +93,7 @@ class Day5RunScriptTest(unittest.TestCase):
             REPO_ROOT / "scripts" / "day5_sequential_bringup.sh"
         ).read_text(encoding="utf-8")
 
-        self.assertEqual(text.count("setsid ros2 launch"), 2)
+        self.assertEqual(text.count("setsid ros2 launch"), 3)
         self.assertIn('kill -TERM -- "-$process_group_pid"', text)
         self.assertIn('kill -KILL -- "-$process_group_pid"', text)
 

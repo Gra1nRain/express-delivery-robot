@@ -122,8 +122,9 @@
 ## 建议
 
 - 使用 `scripts/day5_sequential_bringup.sh` 固化 2026-07-24 实车成功的启动顺序：
-  先用 latest-only 探针确认 Livox 扫描末点新鲜，再启动 FAST-LIO，最后确认
-  `/cloud_registered_body` P95 年龄。该脚本不会启用底盘 relay。
+  先只启动 Livox 并用 latest-only 探针确认扫描末点新鲜，再启动 FAST-LIO
+  并确认 `/cloud_registered_body` P95 年龄；传感器链稳定后才加载完整导航栈，
+  并再次门控点云。该脚本不会启用底盘 relay。
 - 使用 `scripts/day5_record_motion.sh <run_label>` 录包。权威 topic 清单位于
   `config/day5/bag_topics.txt`；`config/day5/bag_qos_overrides.yaml` 为
   `/tf_static` 设置 transient-local QoS，避免静态 TF 在录包晚于节点启动时丢失。

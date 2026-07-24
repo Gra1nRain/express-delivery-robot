@@ -5,7 +5,8 @@
 - `car_source_env.sh`：小车端 ROS/工作空间环境加载辅助脚本。
 - `day1_*.sh`：Day1 建图、底盘审计、预检和证据采集脚本。
 - `day3_follow_global_plan.py`：Day3 全局路径低速跟踪调试脚本，仅用于现场监督测试。
-- `day5_sequential_bringup.sh`：按 Livox 新鲜度门控、FAST-LIO 启动、点云新鲜度门控的顺序拉起 Day5 栈；不会启用底盘 relay。
+- `day5_sequential_bringup.sh`：先单独启动并门控 Livox、再启动并门控 FAST-LIO，
+  最后加载完整 Day5 导航栈并复检点云；不会启用底盘 relay。
 - `day5_sensor_freshness_gate.py`：使用 `KEEP_LAST depth=1` 检查 Livox 扫描末点或 FAST-LIO 点云 P95 年龄。
 - `day5_record_motion.sh`：按 Day5 权威 topic 清单录包，并用 transient-local QoS 捕获 `/tf_static`。
 - `day5_full_route_relay.py`：现场监督 relay；看门狗默认按轨迹 `duration_s * 2.5 + 60s` 计算，可显式覆盖。
