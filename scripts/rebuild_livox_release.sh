@@ -2,8 +2,11 @@
 set -euo pipefail
 
 AGILEX_WS="${AGILEX_WS:-/home/agilex/agilex_ws}"
+COMPETITION_WS="${COMPETITION_WS:-/home/agilex/competition_ws}"
 DRIVER_PROCESS="/livox_ros_driver2/lib/livox_ros_driver2/livox_ros_driver2_node"
 FLAGS_FILE="$AGILEX_WS/build/livox_ros_driver2/CMakeFiles/livox_ros_driver2_node.dir/flags.make"
+QUEUE_PATCH="$COMPETITION_WS/patches/livox_ros_driver2_bounded_packet_queue.patch"
+DRIVER_SOURCE="$AGILEX_WS/src/livox_ros_driver2"
 
 if [[ ! -d "$AGILEX_WS/src/livox_ros_driver2" ]]; then
   echo "ERROR: Livox source is missing from $AGILEX_WS/src" >&2
@@ -15,7 +18,24 @@ if pgrep -f "$DRIVER_PROCESS" >/dev/null; then
   exit 1
 fi
 
+if [[ ! -f "$QUEUE_PATCH" ]]; then
+  echo "ERROR: missing queue patch: $QUEUE_PATCH" >&2
+  exit 1
+fi
+
+if git -C "$DRIVER_SOURCE" apply --reverse --check "$QUEUE_PATCH" >/dev/null 2>&1; then
+  echo "Livox bounded-queue patch is already applied."
+elif git -C "$DRIVER_SOURCE" apply --check "$QUEUE_PATCH"; then
+  git -C "$DRIVER_SOURCE" apply "$QUEUE_PATCH"
+  echo "Applied Livox bounded-queue patch."
+else
+  echo "ERROR: Livox bounded-queue patch does not apply cleanly." >&2
+  exit 3
+fi
+
+set +u
 source /opt/ros/humble/setup.bash
+set -u
 cd "$AGILEX_WS"
 
 colcon build \

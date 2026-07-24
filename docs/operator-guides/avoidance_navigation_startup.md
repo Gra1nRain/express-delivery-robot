@@ -16,7 +16,7 @@
 
 启动期间保持硬件急停可用。没有完成初始位姿、TF、避障和安全状态检查前，不得自行把上述两个开关改成 `true`。
 
-Livox ROS2 驱动必须使用 Release 优化构建。未优化构建会导致原始包持续积压，进而让 FAST-LIO 和避障使用过期点云。不得通过增大超时参数绕过 `SAFE_HOLD / stale_cloud_timestamp`。
+Livox ROS2 驱动必须使用 Release 优化构建，并应用有界原始包队列补丁。未优化构建或无界队列会导致原始包持续积压，进而让 FAST-LIO 和避障使用过期点云。队列满时只丢弃最旧包、保留最新包；不得通过增大超时参数绕过 `SAFE_HOLD / stale_cloud_timestamp`。
 
 ## 1. 小车开机后检查
 
@@ -50,7 +50,9 @@ pwd
 /home/agilex/competition_ws/scripts/rebuild_livox_release.sh
 ```
 
-该命令只重编译 `livox_ros_driver2`，不修改其源文件。必须先停止已有 Livox 驱动。
+该命令只对 `livox_ros_driver2` 应用仓库中受控的
+`livox_ros_driver2_bounded_packet_queue.patch`，随后进行 Release 重编译。
+重复执行不会重复应用补丁。必须先停止已有 Livox 驱动。
 
 ## 2. 每个车载终端都要加载环境
 
@@ -80,6 +82,8 @@ cd /home/agilex/competition_ws
 ros2 launch competition_bringup day1_mapping.launch.py \
   start_livox:=true \
   force_livox_host_timestamps:=true \
+  livox_publish_frequency_hz:=20.0 \
+  livox_raw_packet_queue_limit:=256 \
   start_fast_lio:=true \
   start_base:=false \
   start_scan:=true \

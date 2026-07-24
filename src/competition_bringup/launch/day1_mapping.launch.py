@@ -45,25 +45,47 @@ def _launch_setup(context, *args, **kwargs):
 
     if _is_true(LaunchConfiguration("start_livox").perform(context)):
         livox_pkg = get_package_share_directory("livox_ros_driver2")
-        livox_launch = os.path.join(livox_pkg, "launch_ROS2", "msg_MID360_launch.py")
-        livox_include = IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(livox_launch)
+        livox_node = Node(
+            package="livox_ros_driver2",
+            executable="livox_ros_driver2_node",
+            name="livox_lidar_publisher",
+            output="screen",
+            parameters=[
+                {
+                    "xfer_format": 1,
+                    "multi_topic": 0,
+                    "data_src": 0,
+                    "publish_freq": float(
+                        LaunchConfiguration(
+                            "livox_publish_frequency_hz"
+                        ).perform(context)
+                    ),
+                    "output_data_type": 0,
+                    "frame_id": "livox_frame",
+                    "lvx_file_path": "/home/livox/livox_test.lvx",
+                    "user_config_path": os.path.join(
+                        livox_pkg, "config", "MID360_config.json"
+                    ),
+                    "cmdline_input_bd_code": "livox0000000001",
+                }
+            ],
         )
+        livox_actions = [
+            SetEnvironmentVariable(
+                "LIVOX_ROS_MAX_PACKET_QUEUE",
+                LaunchConfiguration("livox_raw_packet_queue_limit").perform(context),
+            )
+        ]
         if _is_true(
             LaunchConfiguration("force_livox_host_timestamps").perform(context)
         ):
-            actions.append(
-                GroupAction(
-                    [
-                        SetEnvironmentVariable(
-                            "LIVOX_ROS_FORCE_HOST_TIMESTAMP", "1"
-                        ),
-                        livox_include,
-                    ]
+            livox_actions.append(
+                SetEnvironmentVariable(
+                    "LIVOX_ROS_FORCE_HOST_TIMESTAMP", "1"
                 )
             )
-        else:
-            actions.append(livox_include)
+        livox_actions.append(livox_node)
+        actions.append(GroupAction(livox_actions))
 
     if _is_true(LaunchConfiguration("start_fast_lio").perform(context)):
         fast_lio_pkg = get_package_share_directory("fast_lio")
@@ -165,6 +187,12 @@ def generate_launch_description():
             DeclareLaunchArgument("start_livox", default_value="true"),
             DeclareLaunchArgument(
                 "force_livox_host_timestamps", default_value="false"
+            ),
+            DeclareLaunchArgument(
+                "livox_publish_frequency_hz", default_value="20.0"
+            ),
+            DeclareLaunchArgument(
+                "livox_raw_packet_queue_limit", default_value="256"
             ),
             DeclareLaunchArgument("start_fast_lio", default_value="true"),
             DeclareLaunchArgument("start_base", default_value="false"),

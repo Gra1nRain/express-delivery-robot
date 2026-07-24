@@ -88,6 +88,8 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertIn("--packages-select livox_ros_driver2", rebuild_text)
         self.assertIn("-DCMAKE_BUILD_TYPE=Release", rebuild_text)
         self.assertIn("pgrep -f", rebuild_text)
+        self.assertIn("livox_ros_driver2_bounded_packet_queue.patch", rebuild_text)
+        self.assertIn("apply --check", rebuild_text)
         self.assertNotIn("rm -", rebuild_text)
 
     def test_livox_acceptance_keeps_strict_latency_limits(self) -> None:
