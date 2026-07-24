@@ -37,11 +37,7 @@ from competition_control.ranger_twist_adapter import (
     RangerMiniV3Geometry,
     adapt_yaw_rate_for_ranger_driver,
 )
-
-try:
-    import yaml
-except Exception:  # pragma: no cover - yaml is present on the robot image.
-    yaml = None
+from day5_run_policy import load_route_metadata, resolve_watchdog_timeout_s
 
 try:
     from ranger_msgs.msg import SystemState
@@ -136,17 +132,6 @@ def _parse_json_string(value: str | None) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else None
-
-
-def _load_route_metadata(path: Path) -> tuple[int | None, tuple[float, float] | None]:
-    if yaml is None or not path.exists():
-        return None, None
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    points = data.get("points") or []
-    if not points:
-        return None, None
-    finish = points[-1]
-    return len(points), (float(finish["x"]), float(finish["y"]))
 
 
 class RelayMonitor(Node):
@@ -552,7 +537,15 @@ def _hold_after_stop(
 
 
 def run(args: argparse.Namespace) -> int:
-    route_point_count, finish_xy = _load_route_metadata(Path(args.route_file))
+    route_metadata = load_route_metadata(Path(args.route_file))
+    route_point_count = route_metadata.point_count
+    finish_xy = route_metadata.finish_xy
+    watchdog_timeout_s = resolve_watchdog_timeout_s(
+        args.watchdog_timeout_s,
+        route_metadata.duration_s,
+        duration_scale=args.watchdog_duration_scale,
+        margin_s=args.watchdog_margin_s,
+    )
     log_dir = Path(args.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = log_dir / f"{args.label}.jsonl"
@@ -591,6 +584,8 @@ def run(args: argparse.Namespace) -> int:
                         "route_file": args.route_file,
                         "route_point_count": route_point_count,
                         "finish_xy": finish_xy,
+                        "planned_duration_s": route_metadata.duration_s,
+                        "watchdog_timeout_s": watchdog_timeout_s,
                     },
                     ensure_ascii=False,
                 )
@@ -735,7 +730,7 @@ def run(args: argparse.Namespace) -> int:
                 if elapsed_s > 6.0 and abs(float(node.data.get("lateral_error_m", 0.0))) > args.max_lateral_error_m:
                     stop_reason = "tracking_lateral_error_over_limit"
                     break
-                if elapsed_s >= args.watchdog_timeout_s:
+                if elapsed_s >= watchdog_timeout_s:
                     stop_reason = "watchdog_timeout_route_not_complete"
                     break
 
@@ -777,6 +772,8 @@ def run(args: argparse.Namespace) -> int:
         f"label={args.label}",
         f"stop_reason={stop_reason}",
         f"route_point_count={route_point_count}",
+        f"planned_duration_s={route_metadata.duration_s}",
+        f"watchdog_timeout_s={watchdog_timeout_s:.3f}",
         f"finish_xy={finish_xy}",
         f"samples={samples}",
         "initialpose=skipped_existing_map_tf"
@@ -832,7 +829,17 @@ def main() -> int:
     parser.add_argument("--log-dir", default="/home/agilex/competition_ws/log")
     parser.add_argument("--prepose-timeout-s", type=float, default=18.0)
     parser.add_argument("--local-ready-timeout-s", type=float, default=20.0)
-    parser.add_argument("--watchdog-timeout-s", type=float, default=420.0)
+    parser.add_argument(
+        "--watchdog-timeout-s",
+        type=float,
+        default=None,
+        help=(
+            "Explicit watchdog timeout. By default use trajectory duration * "
+            "watchdog-duration-scale + watchdog-margin-s."
+        ),
+    )
+    parser.add_argument("--watchdog-duration-scale", type=float, default=2.5)
+    parser.add_argument("--watchdog-margin-s", type=float, default=60.0)
     parser.add_argument("--sustained-error-s", type=float, default=4.0)
     parser.add_argument("--scan-stop-m", type=float, default=0.34)
     parser.add_argument("--max-command-mps", type=float, default=0.23)

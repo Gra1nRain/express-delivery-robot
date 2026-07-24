@@ -1,0 +1,24 @@
+# Day5 motion validation topics. Keep /tf_static with transient-local QoS.
+/tf
+/tf_static
+/initialpose
+/map
+/odom
+/system_state
+/motion_state
+/cloud_registered_body
+/avoidance/scan
+/avoidance/local_costmap
+/avoidance/proximity_status
+/avoidance/stop_request
+/planning/optimized_trajectory
+/planning/local_trajectory
+/planning/local_replan_status
+/control/body_cmd
+/control/tracking_error
+/control/state_valid
+/control/status
+/control/executed_path
+/safety/event
+/cmd_vel_safe
+/cmd_vel

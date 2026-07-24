@@ -121,7 +121,15 @@
 
 ## 建议
 
-- 录包至少包含 `/tf`、`/tf_static`、`/odom`、`/system_state`、`/motion_state`、`/control/body_cmd`、`/control/tracking_error`、`/control/state_valid`、`/control/status`、`/safety/event` 和最终命令 topic。
+- 使用 `scripts/day5_sequential_bringup.sh` 固化 2026-07-24 实车成功的启动顺序：
+  先用 latest-only 探针确认 Livox 扫描末点新鲜，再启动 FAST-LIO，最后确认
+  `/cloud_registered_body` P95 年龄。该脚本不会启用底盘 relay。
+- 使用 `scripts/day5_record_motion.sh <run_label>` 录包。权威 topic 清单位于
+  `config/day5/bag_topics.txt`；`config/day5/bag_qos_overrides.yaml` 为
+  `/tf_static` 设置 transient-local QoS，避免静态 TF 在录包晚于节点启动时丢失。
+- `day5_full_route_relay.py` 的看门狗默认按冻结轨迹
+  `duration_s * 2.5 + 60s` 计算，且不低于 `120s`；没有合法 `duration_s`
+  时才回退到旧 `420s`。现场仍可用 `--watchdog-timeout-s` 显式覆盖。
 - 每次实车控制验证后，使用 `scripts/analyze_day5_field_motion.py` 对 `day5_full_route_relay.py` 产生的 JSONL 做自动验收；如果传入冻结轨迹，还可以按 `straight`、`turn`、`decel` 分场景检查横向误差 `<0.15m`、航向误差 `<5deg`。狭窄区域不能从轨迹自动判断，需用 `--scenario-index-range narrow:start:end` 标注对应 target index 窗口。
 
   ```bash
@@ -142,7 +150,10 @@
 
 ## 未验证
 
-- Day5 已完成 Livox、FAST-LIO、Ranger base、anchor、MPPI 和 safety 的联合无运动检查，并完成 `traffic_light_stop_line` 2.6m 短段实车；尚未执行 `drop_dock` 半程或整线实车，本记录不声称整线实车已通过。
+- 2026-07-24 已完成分段全路线覆盖并到达终点，详细事实见
+  `docs/evidence/day5/day5_full_route_timebase_stop_20260724.md`。
+- 新增的顺序启动、自动看门狗与 `/tf_static` 录包工具尚未进行下一次不中断
+  全段实车复验；因此仍不声称一次不中断整线已经通过。
 - 离线模型没有包含执行器延迟、轮胎侧偏、地面摩擦变化和 FAST-LIO 实际噪声。
 - 在线局部避障/简单代价图尚未实现；整线贴合冻结轨迹或 proximity hard-stop 不能证明小车具备绕开货架的能力。
 - 曲率连续非线性优化、CBF/QP、显式差速自旋恢复和连续 footprint 扫掠仍在 `docs/algorithm-debt.md` 登记。
