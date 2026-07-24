@@ -10,6 +10,7 @@ import time
 import rclpy
 from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.duration import Duration
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import (
     HistoryPolicy,
@@ -310,11 +311,7 @@ class AvoidanceManagerNode(Node):
             20,
         )
         self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(
-            self._tf_buffer,
-            self,
-            spin_thread=True,
-        )
+        self._tf_listener = TransformListener(self._tf_buffer, self)
         self._latest_odometry: Odometry | None = None
         self._latest_odometry_received_s = 0.0
         self._last_cloud_received_s = 0.0
@@ -565,9 +562,12 @@ def _stamp_to_seconds(stamp) -> float:
 def main() -> None:
     rclpy.init()
     node = AvoidanceManagerNode()
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 
