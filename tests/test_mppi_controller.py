@@ -56,6 +56,18 @@ def _constant_curvature_trajectory(radius_m: float = 1.0) -> ControlTrajectory:
     return ControlTrajectory(frame_id="map", route_name="arc", points=tuple(points))
 
 
+def _curvature_ramp_trajectory() -> ControlTrajectory:
+    return ControlTrajectory(
+        frame_id="map",
+        route_name="curvature_ramp",
+        points=(
+            ControlTrajectoryPoint(0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.0),
+            ControlTrajectoryPoint(0.1, 0.0, 0.0, 0.1, 1.0, 0.15, 2.0 / 3.0),
+            ControlTrajectoryPoint(0.2, 0.0, 0.0, 0.2, 1.0, 0.15, 4.0 / 3.0),
+        ),
+    )
+
+
 class MPPIControllerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.params = MPPIParams(
@@ -127,6 +139,40 @@ class MPPIControllerTest(unittest.TestCase):
 
         self.assertEqual(command.status, "TRACKING")
         self.assertGreater(command.curvature_1pm, 0.80)
+
+    def test_sparse_reference_curvature_is_interpolated_at_control_time(self) -> None:
+        params = replace(
+            self.params,
+            horizon_steps=8,
+            speed_noise_std_mps=0.0,
+            curvature_noise_std_1pm=0.0,
+            max_curvature_rate_1pmps=100.0,
+            feedback_blend=1.0,
+        )
+        controller = MPPIController(
+            _curvature_ramp_trajectory(),
+            params,
+            random_seed=29,
+        )
+
+        command = controller.compute_command(
+            VehicleState(x=0.0, y=0.0, yaw=0.0, linear_speed_mps=0.15)
+        )
+
+        # At 50 ms the reference lies only 7.5% of the way to the next
+        # 0.10 m point. Selecting the whole next point would command 1.0 1/m.
+        self.assertAlmostEqual(command.curvature_1pm, 0.075, places=3)
+
+    def test_large_tracking_error_still_returns_a_corrective_command(self) -> None:
+        controller = MPPIController(_straight_trajectory(), self.params, random_seed=31)
+
+        command = controller.compute_command(
+            VehicleState(x=0.5, y=0.35, yaw=0.0, linear_speed_mps=0.06)
+        )
+
+        self.assertEqual(command.status, "TRACKING")
+        self.assertGreater(command.linear_x_mps, 0.0)
+        self.assertLess(command.curvature_1pm, 0.0)
 
     def test_rejects_trajectory_outside_runtime_turning_radius(self) -> None:
         with self.assertRaisesRegex(ValueError, "turning-radius envelope"):

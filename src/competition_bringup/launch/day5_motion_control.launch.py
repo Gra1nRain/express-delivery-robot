@@ -322,8 +322,29 @@ def _launch_setup(context, *args, **kwargs):
                     "max_acceleration_mps2": safety["max_acceleration_mps2"],
                     "max_deceleration_mps2": safety["max_deceleration_mps2"],
                     "min_turning_radius_m": safety["min_turning_radius_m"],
+                    "recovery_lateral_error_m": safety.get(
+                        "recovery_lateral_error_m",
+                        0.10,
+                    ),
+                    "recovery_heading_error_deg": safety.get(
+                        "recovery_heading_error_deg",
+                        10.0,
+                    ),
+                    "recovery_clear_lateral_error_m": safety.get(
+                        "recovery_clear_lateral_error_m",
+                        0.06,
+                    ),
+                    "recovery_clear_heading_error_deg": safety.get(
+                        "recovery_clear_heading_error_deg",
+                        5.0,
+                    ),
+                    "recovery_speed_mps": safety.get("recovery_speed_mps", 0.06),
                     "max_lateral_error_m": safety["max_lateral_error_m"],
                     "max_heading_error_deg": safety["max_heading_error_deg"],
+                    "tracking_error_timeout_s": safety.get(
+                        "tracking_error_timeout_s",
+                        1.0,
+                    ),
                     "avoidance_stop_topic": safety["avoidance_stop_topic"],
                     "require_avoidance_source": safety["require_avoidance_source"],
                     "avoidance_timeout_s": safety["avoidance_timeout_s"],

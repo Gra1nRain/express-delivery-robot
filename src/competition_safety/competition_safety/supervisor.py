@@ -16,8 +16,14 @@ class SafetyLimits:
     max_acceleration_mps2: float = 0.20
     max_deceleration_mps2: float = 0.30
     min_turning_radius_m: float = 0.81
-    max_lateral_error_m: float = 0.15
-    max_heading_error_rad: float = math.radians(20.0)
+    recovery_lateral_error_m: float = 0.10
+    recovery_heading_error_rad: float = math.radians(10.0)
+    recovery_clear_lateral_error_m: float = 0.06
+    recovery_clear_heading_error_rad: float = math.radians(5.0)
+    recovery_speed_mps: float = 0.06
+    max_lateral_error_m: float = 0.40
+    max_heading_error_rad: float = math.radians(45.0)
+    tracking_error_timeout_s: float = 1.0
     nominal_period_s: float = 0.05
 
 
@@ -51,13 +57,35 @@ class SafetySupervisor:
     def __init__(self, limits: SafetyLimits) -> None:
         if limits.min_turning_radius_m <= 0.0:
             raise ValueError("min_turning_radius_m must be positive")
+        if not (
+            0.0
+            <= limits.recovery_clear_lateral_error_m
+            < limits.recovery_lateral_error_m
+            < limits.max_lateral_error_m
+        ):
+            raise ValueError("lateral recovery thresholds must be strictly ordered")
+        if not (
+            0.0
+            <= limits.recovery_clear_heading_error_rad
+            < limits.recovery_heading_error_rad
+            < limits.max_heading_error_rad
+        ):
+            raise ValueError("heading recovery thresholds must be strictly ordered")
+        if limits.recovery_speed_mps <= 0.0:
+            raise ValueError("recovery_speed_mps must be positive")
+        if limits.tracking_error_timeout_s < 0.0:
+            raise ValueError("tracking_error_timeout_s must be non-negative")
         self._limits = limits
         self._last_output_speed_mps: float | None = None
         self._last_output_time_s: float | None = None
+        self._tracking_recovery_active = False
+        self._hard_tracking_error_since_s: float | None = None
 
     def reset(self) -> None:
         self._last_output_speed_mps = None
         self._last_output_time_s = None
+        self._tracking_recovery_active = False
+        self._hard_tracking_error_since_s = None
 
     def filter_command(
         self,
@@ -92,12 +120,20 @@ class SafetySupervisor:
             self._record_output(0.0, context.now_s)
             return SafeCommand(0.0, 0.0, "SAFE_HOLD", ("controller_not_tracking",))
 
+        tracking_faults = self._update_tracking_policy(command, context.now_s)
+        if tracking_faults:
+            self._record_output(0.0, context.now_s)
+            return SafeCommand(0.0, 0.0, "SAFE_HOLD", tuple(tracking_faults))
+
         reasons: list[str] = []
         speed = command.linear_x_mps
         yaw_rate = command.yaw_rate_radps
         bounded_speed = min(self._limits.max_speed_mps, max(0.0, speed))
         if abs(bounded_speed - speed) > 1e-12:
             reasons.append("speed_limited")
+        if self._tracking_recovery_active:
+            bounded_speed = min(bounded_speed, self._limits.recovery_speed_mps)
+            reasons.append("tracking_recovery")
 
         period = self._period(context.now_s)
         previous_speed = (
@@ -124,9 +160,52 @@ class SafetySupervisor:
         return SafeCommand(
             linear_x_mps=bounded_speed,
             yaw_rate_radps=bounded_yaw_rate,
-            status="SAFE_LIMITED" if reasons else "SAFE_ACTIVE",
+            status=(
+                "SAFE_RECOVERY"
+                if self._tracking_recovery_active
+                else "SAFE_LIMITED" if reasons else "SAFE_ACTIVE"
+            ),
             reasons=tuple(reasons),
         )
+
+    def _update_tracking_policy(
+        self,
+        command: BodyCommand,
+        now_s: float,
+    ) -> list[str]:
+        lateral_error = abs(command.lateral_error_m)
+        heading_error = abs(command.heading_error_rad)
+        hard_lateral = lateral_error > self._limits.max_lateral_error_m
+        hard_heading = heading_error > self._limits.max_heading_error_rad
+        if hard_lateral or hard_heading:
+            if self._hard_tracking_error_since_s is None:
+                self._hard_tracking_error_since_s = now_s
+        else:
+            self._hard_tracking_error_since_s = None
+
+        hard_reasons: list[str] = []
+        if (
+            self._hard_tracking_error_since_s is not None
+            and now_s - self._hard_tracking_error_since_s
+            >= self._limits.tracking_error_timeout_s
+        ):
+            if hard_lateral:
+                hard_reasons.append("lateral_error_persistent")
+            if hard_heading:
+                hard_reasons.append("heading_error_persistent")
+
+        if self._tracking_recovery_active:
+            if (
+                lateral_error <= self._limits.recovery_clear_lateral_error_m
+                and heading_error <= self._limits.recovery_clear_heading_error_rad
+            ):
+                self._tracking_recovery_active = False
+        elif (
+            lateral_error > self._limits.recovery_lateral_error_m
+            or heading_error > self._limits.recovery_heading_error_rad
+        ):
+            self._tracking_recovery_active = True
+        return hard_reasons
 
     def _fault_reasons(
         self,
@@ -170,10 +249,6 @@ class SafetySupervisor:
             reasons.append("future_command")
         if context.state_stamp_s > context.now_s + 1e-6:
             reasons.append("future_state")
-        if abs(command.lateral_error_m) > self._limits.max_lateral_error_m:
-            reasons.append("lateral_error_exceeded")
-        if abs(command.heading_error_rad) > self._limits.max_heading_error_rad:
-            reasons.append("heading_error_exceeded")
         if self._last_output_time_s is not None and context.now_s < self._last_output_time_s:
             reasons.append("safety_time_reversed")
         return reasons

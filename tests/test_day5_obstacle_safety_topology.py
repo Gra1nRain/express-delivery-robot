@@ -8,6 +8,32 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
+    def test_tracking_error_uses_recovery_band_before_persistent_hold(self) -> None:
+        safety = yaml.safe_load(
+            (REPO_ROOT / "config" / "safety" / "safety_params.yaml").read_text(
+                encoding="utf-8"
+            )
+        )["safety"]
+
+        self.assertLess(
+            safety["recovery_clear_lateral_error_m"],
+            safety["recovery_lateral_error_m"],
+        )
+        self.assertLess(
+            safety["recovery_lateral_error_m"],
+            safety["max_lateral_error_m"],
+        )
+        self.assertLess(
+            safety["recovery_clear_heading_error_deg"],
+            safety["recovery_heading_error_deg"],
+        )
+        self.assertLess(
+            safety["recovery_heading_error_deg"],
+            safety["max_heading_error_deg"],
+        )
+        self.assertGreater(safety["recovery_speed_mps"], 0.0)
+        self.assertGreater(safety["tracking_error_timeout_s"], 0.0)
+
     def test_day5_motion_launch_has_a_live_obstacle_stop_source(self) -> None:
         launch_text = (
             REPO_ROOT

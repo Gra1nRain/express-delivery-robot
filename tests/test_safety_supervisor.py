@@ -12,15 +12,21 @@ from competition_control.mppi_controller import BodyCommand
 from competition_safety.supervisor import SafetyContext, SafetyLimits, SafetySupervisor
 
 
-def _command(*, speed: float = 0.10, yaw_rate: float = 0.05) -> BodyCommand:
+def _command(
+    *,
+    speed: float = 0.10,
+    yaw_rate: float = 0.05,
+    lateral_error_m: float = 0.02,
+    heading_error_deg: float = 2.0,
+) -> BodyCommand:
     curvature = yaw_rate / speed if abs(speed) > 1e-9 else 0.0
     return BodyCommand(
         linear_x_mps=speed,
         yaw_rate_radps=yaw_rate,
         curvature_1pm=curvature,
         target_index=10,
-        lateral_error_m=0.02,
-        heading_error_rad=math.radians(2.0),
+        lateral_error_m=lateral_error_m,
+        heading_error_rad=math.radians(heading_error_deg),
         status="TRACKING",
     )
 
@@ -52,8 +58,14 @@ class SafetySupervisorTest(unittest.TestCase):
                 max_acceleration_mps2=0.20,
                 max_deceleration_mps2=0.30,
                 min_turning_radius_m=0.81,
-                max_lateral_error_m=0.15,
-                max_heading_error_rad=math.radians(20.0),
+                recovery_lateral_error_m=0.10,
+                recovery_heading_error_rad=math.radians(10.0),
+                recovery_clear_lateral_error_m=0.06,
+                recovery_clear_heading_error_rad=math.radians(5.0),
+                recovery_speed_mps=0.06,
+                max_lateral_error_m=0.40,
+                max_heading_error_rad=math.radians(45.0),
+                tracking_error_timeout_s=1.0,
                 nominal_period_s=0.05,
             )
         )
@@ -125,6 +137,58 @@ class SafetySupervisorTest(unittest.TestCase):
         self.assertIn("speed_limited", output.reasons)
         self.assertIn("acceleration_limited", output.reasons)
         self.assertIn("curvature_limited", output.reasons)
+
+    def test_moderate_tracking_error_slows_down_without_holding(self) -> None:
+        output = self.supervisor.filter_command(
+            _command(lateral_error_m=0.17),
+            _healthy_context(measured_speed_mps=0.05),
+        )
+
+        self.assertEqual(output.status, "SAFE_RECOVERY")
+        self.assertGreater(output.linear_x_mps, 0.0)
+        self.assertLessEqual(output.linear_x_mps, 0.06)
+        self.assertIn("tracking_recovery", output.reasons)
+
+    def test_tracking_recovery_uses_hysteresis(self) -> None:
+        entered = self.supervisor.filter_command(
+            _command(speed=0.06, lateral_error_m=0.12),
+            _healthy_context(now_s=10.00, command_stamp_s=9.98, state_stamp_s=9.98),
+        )
+        retained = self.supervisor.filter_command(
+            _command(speed=0.06, lateral_error_m=0.08),
+            _healthy_context(now_s=10.05, command_stamp_s=10.03, state_stamp_s=10.03),
+        )
+        cleared = self.supervisor.filter_command(
+            _command(speed=0.06, lateral_error_m=0.04),
+            _healthy_context(now_s=10.10, command_stamp_s=10.08, state_stamp_s=10.08),
+        )
+
+        self.assertEqual(entered.status, "SAFE_RECOVERY")
+        self.assertEqual(retained.status, "SAFE_RECOVERY")
+        self.assertEqual(cleared.status, "SAFE_ACTIVE")
+
+    def test_large_tracking_error_must_persist_before_hard_hold(self) -> None:
+        first = self.supervisor.filter_command(
+            _command(lateral_error_m=0.45),
+            _healthy_context(now_s=10.00, command_stamp_s=9.98, state_stamp_s=9.98),
+        )
+        brief = self.supervisor.filter_command(
+            _command(lateral_error_m=0.45),
+            _healthy_context(now_s=10.50, command_stamp_s=10.48, state_stamp_s=10.48),
+        )
+        persistent = self.supervisor.filter_command(
+            _command(lateral_error_m=0.45),
+            _healthy_context(now_s=11.01, command_stamp_s=10.99, state_stamp_s=10.99),
+        )
+
+        self.assertEqual(first.status, "SAFE_RECOVERY")
+        self.assertEqual(brief.status, "SAFE_RECOVERY")
+        self.assertEqual(persistent.status, "SAFE_HOLD")
+        self.assertEqual(
+            (persistent.linear_x_mps, persistent.yaw_rate_radps),
+            (0.0, 0.0),
+        )
+        self.assertIn("lateral_error_persistent", persistent.reasons)
 
     def test_goal_stop_respects_deceleration_limit_before_safe_stop(self) -> None:
         self.supervisor.filter_command(

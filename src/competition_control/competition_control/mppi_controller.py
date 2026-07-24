@@ -104,8 +104,6 @@ class MPPIParams:
     min_turning_radius_m: float = 0.81
     max_curvature_rate_1pmps: float = 0.80
     goal_position_tolerance_m: float = 0.10
-    recovery_lateral_error_m: float = 0.30
-    recovery_heading_error_rad: float = math.radians(65.0)
     position_weight: float = 45.0
     heading_weight: float = 12.0
     speed_weight: float = 4.0
@@ -117,6 +115,16 @@ class MPPIParams:
     lateral_feedback_gain_1pm_per_m: float = 1.5
     heading_feedback_gain_1pm_per_rad: float = 1.0
     feedback_blend: float = 0.35
+
+
+@dataclass(frozen=True)
+class _ReferenceHorizon:
+    x: np.ndarray
+    y: np.ndarray
+    yaw: np.ndarray
+    speed: np.ndarray
+    curvature: np.ndarray
+    upper_indices: np.ndarray
 
 
 class MPPIController:
@@ -193,7 +201,7 @@ class MPPIController:
 
     def compute_command(self, state: VehicleState) -> BodyCommand:
         nearest = self._nearest_index(state)
-        reference_indices = self._reference_indices(nearest)
+        reference = self._reference_horizon(nearest)
         lateral_error, heading_error = self._tracking_errors(state, nearest)
         goal_distance = math.hypot(
             state.x - self._xy[-1, 0],
@@ -206,23 +214,12 @@ class MPPIController:
                 heading_error_rad=heading_error,
                 status="GOAL_REACHED",
             )
-        if (
-            abs(lateral_error) > self._params.recovery_lateral_error_m
-            or abs(heading_error) > self._params.recovery_heading_error_rad
-        ):
-            return BodyCommand.hold(
-                target_index=nearest,
-                lateral_error_m=lateral_error,
-                heading_error_rad=heading_error,
-                status="RECOVERY_REQUIRED",
-            )
-
-        self._warm_start(reference_indices, lateral_error, heading_error)
+        self._warm_start(reference, lateral_error, heading_error)
         for _ in range(max(1, self._params.iterations)):
             noise = self._sample_noise()
             candidates = self._nominal[np.newaxis, :, :] + noise
             candidates = self._enforce_controls(candidates, state.linear_speed_mps)
-            costs = self._rollout_costs(state, candidates, reference_indices)
+            costs = self._rollout_costs(state, candidates, reference)
             normalized = costs - np.min(costs)
             weights = np.exp(-normalized / max(self._params.temperature, 1e-6))
             weight_sum = float(np.sum(weights))
@@ -240,7 +237,7 @@ class MPPIController:
         feedback_curvature = self._feedback_curvature(lateral_error, heading_error)
         blend = self._feedback_blend()
         stabilized_curvature = (
-            float(self._curvature[int(reference_indices[0])]) + feedback_curvature
+            float(reference.curvature[0]) + feedback_curvature
         )
         curvature = (
             (1.0 - blend) * float(self._nominal[0, 1])
@@ -268,7 +265,7 @@ class MPPIController:
             linear_x_mps=speed,
             yaw_rate_radps=yaw_rate,
             curvature_1pm=curvature,
-            target_index=int(reference_indices[0]),
+            target_index=int(reference.upper_indices[0]),
             lateral_error_m=lateral_error,
             heading_error_rad=heading_error,
             status="TRACKING",
@@ -289,14 +286,37 @@ class MPPIController:
         self._progress_index = max(self._progress_index, nearest)
         return self._progress_index
 
-    def _reference_indices(self, nearest: int) -> np.ndarray:
+    def _reference_horizon(self, nearest: int) -> _ReferenceHorizon:
         timestamps = self._time[nearest] + self._params.control_dt_s * (
             np.arange(self._params.horizon_steps) + 1
         )
-        return np.clip(
+        upper = np.clip(
             np.searchsorted(self._time, timestamps, side="left"),
             0,
             len(self._time) - 1,
+        )
+        lower = np.maximum(0, upper - 1)
+        lower_time = self._time[lower]
+        upper_time = self._time[upper]
+        duration = upper_time - lower_time
+        alpha = np.divide(
+            timestamps - lower_time,
+            duration,
+            out=np.zeros_like(timestamps),
+            where=duration > 1e-12,
+        )
+        alpha = np.clip(alpha, 0.0, 1.0)
+        yaw_delta = _wrap_angle_array(self._yaw[upper] - self._yaw[lower])
+        return _ReferenceHorizon(
+            x=self._xy[lower, 0] + alpha * (self._xy[upper, 0] - self._xy[lower, 0]),
+            y=self._xy[lower, 1] + alpha * (self._xy[upper, 1] - self._xy[lower, 1]),
+            yaw=_wrap_angle_array(self._yaw[lower] + alpha * yaw_delta),
+            speed=self._speed[lower] + alpha * (self._speed[upper] - self._speed[lower]),
+            curvature=(
+                self._curvature[lower]
+                + alpha * (self._curvature[upper] - self._curvature[lower])
+            ),
+            upper_indices=upper,
         )
 
     def _tracking_errors(self, state: VehicleState, index: int) -> tuple[float, float]:
@@ -309,17 +329,17 @@ class MPPIController:
 
     def _warm_start(
         self,
-        reference_indices: np.ndarray,
+        reference: _ReferenceHorizon,
         lateral_error: float,
         heading_error: float,
     ) -> None:
         if not np.any(self._nominal):
-            self._nominal[:, 0] = self._speed[reference_indices]
-            self._nominal[:, 1] = self._curvature[reference_indices]
+            self._nominal[:, 0] = reference.speed
+            self._nominal[:, 1] = reference.curvature
         feedback_curvature = self._feedback_curvature(lateral_error, heading_error)
         max_curvature = 1.0 / self._params.min_turning_radius_m
         desired_curvature = np.clip(
-            self._curvature[reference_indices] + feedback_curvature,
+            reference.curvature + feedback_curvature,
             -max_curvature,
             max_curvature,
         )
@@ -378,7 +398,7 @@ class MPPIController:
         self,
         state: VehicleState,
         controls: np.ndarray,
-        reference_indices: np.ndarray,
+        reference: _ReferenceHorizon,
     ) -> np.ndarray:
         count = controls.shape[0]
         x = np.full(count, state.x)
@@ -392,7 +412,7 @@ class MPPIController:
             ]
         )
         dt = self._params.control_dt_s
-        for step, reference_index in enumerate(reference_indices):
+        for step in range(self._params.horizon_steps):
             speed = controls[:, step, 0]
             curvature = controls[:, step, 1]
             yaw_mid = yaw + 0.5 * speed * curvature * dt
@@ -400,11 +420,11 @@ class MPPIController:
             y += speed * np.sin(yaw_mid) * dt
             yaw = _wrap_angle_array(yaw + speed * curvature * dt)
 
-            dx = x - self._xy[reference_index, 0]
-            dy = y - self._xy[reference_index, 1]
-            heading_error = _wrap_angle_array(yaw - self._yaw[reference_index])
-            speed_error = speed - self._speed[reference_index]
-            curvature_error = curvature - self._curvature[reference_index]
+            dx = x - reference.x[step]
+            dy = y - reference.y[step]
+            heading_error = _wrap_angle_array(yaw - reference.yaw[step])
+            speed_error = speed - reference.speed[step]
+            curvature_error = curvature - reference.curvature[step]
             delta_controls = controls[:, step, :] - previous_controls
             costs += (
                 self._params.position_weight * (dx * dx + dy * dy)
@@ -416,9 +436,8 @@ class MPPIController:
             )
             previous_controls = controls[:, step, :]
 
-        terminal_index = int(reference_indices[-1])
-        terminal_dx = x - self._xy[terminal_index, 0]
-        terminal_dy = y - self._xy[terminal_index, 1]
+        terminal_dx = x - reference.x[-1]
+        terminal_dy = y - reference.y[-1]
         costs += self._params.terminal_weight * (
             terminal_dx * terminal_dx + terminal_dy * terminal_dy
         )

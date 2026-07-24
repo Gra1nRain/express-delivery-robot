@@ -120,12 +120,6 @@ class MPPIControlNode(Node):
             goal_position_tolerance_m=float(
                 self.declare_parameter("goal_position_tolerance_m", 0.10).value
             ),
-            recovery_lateral_error_m=float(
-                self.declare_parameter("recovery_lateral_error_m", 0.30).value
-            ),
-            recovery_heading_error_rad=math.radians(
-                float(self.declare_parameter("recovery_heading_error_deg", 65.0).value)
-            ),
             progress_search_window_points=int(
                 self.declare_parameter("progress_search_window_points", 40).value
             ),

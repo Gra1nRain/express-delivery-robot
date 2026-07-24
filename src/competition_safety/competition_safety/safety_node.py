@@ -51,11 +51,42 @@ class SafetyNode(Node):
                 min_turning_radius_m=float(
                     self.declare_parameter("min_turning_radius_m", 0.81).value
                 ),
+                recovery_lateral_error_m=float(
+                    self.declare_parameter("recovery_lateral_error_m", 0.10).value
+                ),
+                recovery_heading_error_rad=math.radians(
+                    float(
+                        self.declare_parameter(
+                            "recovery_heading_error_deg",
+                            10.0,
+                        ).value
+                    )
+                ),
+                recovery_clear_lateral_error_m=float(
+                    self.declare_parameter(
+                        "recovery_clear_lateral_error_m",
+                        0.06,
+                    ).value
+                ),
+                recovery_clear_heading_error_rad=math.radians(
+                    float(
+                        self.declare_parameter(
+                            "recovery_clear_heading_error_deg",
+                            5.0,
+                        ).value
+                    )
+                ),
+                recovery_speed_mps=float(
+                    self.declare_parameter("recovery_speed_mps", 0.06).value
+                ),
                 max_lateral_error_m=float(
-                    self.declare_parameter("max_lateral_error_m", 0.15).value
+                    self.declare_parameter("max_lateral_error_m", 0.40).value
                 ),
                 max_heading_error_rad=math.radians(
-                    float(self.declare_parameter("max_heading_error_deg", 20.0).value)
+                    float(self.declare_parameter("max_heading_error_deg", 45.0).value)
+                ),
+                tracking_error_timeout_s=float(
+                    self.declare_parameter("tracking_error_timeout_s", 1.0).value
                 ),
                 nominal_period_s=self._period_s,
             )

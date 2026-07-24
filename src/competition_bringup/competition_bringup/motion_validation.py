@@ -234,11 +234,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             min_turning_radius_m=float(
                 safety_config.get("min_turning_radius_m", 0.81)
             ),
+            recovery_lateral_error_m=float(
+                safety_config.get("recovery_lateral_error_m", 0.10)
+            ),
+            recovery_heading_error_rad=math.radians(
+                float(safety_config.get("recovery_heading_error_deg", 10.0))
+            ),
+            recovery_clear_lateral_error_m=float(
+                safety_config.get("recovery_clear_lateral_error_m", 0.06)
+            ),
+            recovery_clear_heading_error_rad=math.radians(
+                float(safety_config.get("recovery_clear_heading_error_deg", 5.0))
+            ),
+            recovery_speed_mps=float(
+                safety_config.get("recovery_speed_mps", 0.06)
+            ),
             max_lateral_error_m=float(
-                safety_config.get("max_lateral_error_m", 0.15)
+                safety_config.get("max_lateral_error_m", 0.40)
             ),
             max_heading_error_rad=math.radians(
-                float(safety_config.get("max_heading_error_deg", 20.0))
+                float(safety_config.get("max_heading_error_deg", 45.0))
+            ),
+            tracking_error_timeout_s=float(
+                safety_config.get("tracking_error_timeout_s", 1.0)
             ),
             nominal_period_s=dt_s,
         ),
