@@ -153,6 +153,9 @@ class ReplanningReport:
     p95_status_gap_s: float | None
     max_status_gap_start_elapsed_s: float | None
     max_status_gap_end_elapsed_s: float | None
+    max_status_gap_before_status: str | None
+    max_status_gap_after_status: str | None
+    max_status_gap_after_detail: str | None
     max_reported_planning_time_ms: float | None
     max_status_gap_limit_s: float
     tf_unavailable_events: int
@@ -331,6 +334,7 @@ def build_report(
     tf_edges: Iterable[tuple[str, str]],
     max_status_gap_s: float = 2.5,
     status_timestamps_ns: Sequence[int] = (),
+    status_payloads: Sequence[Mapping[str, object]] = (),
     bag_start_ns: int | None = None,
     planning_times_ms: Sequence[float] = (),
 ) -> ReplanningReport:
@@ -341,10 +345,13 @@ def build_report(
             (current_ns - previous_ns) / 1e9,
             previous_ns,
             current_ns,
+            index,
         )
-        for previous_ns, current_ns in zip(
-            status_timestamps,
-            status_timestamps[1:],
+        for index, (previous_ns, current_ns) in enumerate(
+            zip(
+                status_timestamps,
+                status_timestamps[1:],
+            )
         )
     )
     peak_gap = max(status_gaps, default=None)
@@ -389,11 +396,30 @@ def build_report(
         status_message_count=len(status_timestamps),
         max_status_gap_s=None if peak_gap is None else peak_gap[0],
         p95_status_gap_s=_percentile(
-            tuple(gap_s for gap_s, _, _ in status_gaps),
+            tuple(gap_s for gap_s, _, _, _ in status_gaps),
             0.95,
         ),
         max_status_gap_start_elapsed_s=gap_start_elapsed_s,
         max_status_gap_end_elapsed_s=gap_end_elapsed_s,
+        max_status_gap_before_status=(
+            str(status_payloads[peak_gap[3]].get("status"))
+            if peak_gap is not None and len(status_payloads) > peak_gap[3]
+            else None
+        ),
+        max_status_gap_after_status=(
+            str(status_payloads[peak_gap[3] + 1].get("status"))
+            if peak_gap is not None and len(status_payloads) > peak_gap[3] + 1
+            else None
+        ),
+        max_status_gap_after_detail=(
+            str(status_payloads[peak_gap[3] + 1].get("detail"))
+            if (
+                peak_gap is not None
+                and len(status_payloads) > peak_gap[3] + 1
+                and status_payloads[peak_gap[3] + 1].get("detail") is not None
+            )
+            else None
+        ),
         max_reported_planning_time_ms=(
             max(planning_times_ms) if planning_times_ms else None
         ),
@@ -466,6 +492,7 @@ def read_bag(
     all_tf_edges: set[tuple[str, str]] = set()
     metrics: list[ReplanEventMetrics] = []
     status_timestamps_ns: list[int] = []
+    status_payloads: list[dict[str, object]] = []
     planning_times_ms: list[float] = []
 
     while reader.has_next():
@@ -503,6 +530,7 @@ def read_bag(
             except (TypeError, json.JSONDecodeError):
                 continue
             status_timestamps_ns.append(timestamp_ns)
+            status_payloads.append(payload)
             planning_time_ms = payload.get("planning_time_ms")
             if isinstance(planning_time_ms, (int, float)):
                 planning_times_ms.append(float(planning_time_ms))
@@ -528,6 +556,7 @@ def read_bag(
         max_local_deviation_m=max_local_deviation_m,
         max_status_gap_s=max_status_gap_s,
         status_timestamps_ns=status_timestamps_ns,
+        status_payloads=status_payloads,
         bag_start_ns=bag_start_ns,
         planning_times_ms=planning_times_ms,
         tf_edges=all_tf_edges,

@@ -123,6 +123,14 @@ class Day5LocalReplanningBagAnalysisTest(unittest.TestCase):
                 2_000_000_000,
                 32_000_000_000,
             ),
+            status_payloads=(
+                {"status": "REFERENCE_CLEAR"},
+                {"status": "REPLANNED"},
+                {
+                    "status": "PLAN_FAILED",
+                    "detail": "hybrid_astar found no path",
+                },
+            ),
             bag_start_ns=1_000_000_000,
             planning_times_ms=(80.0, 29_500.0),
             tf_edges=(),
@@ -133,6 +141,12 @@ class Day5LocalReplanningBagAnalysisTest(unittest.TestCase):
         self.assertEqual(report.max_status_gap_s, 30.0)
         self.assertEqual(report.max_status_gap_start_elapsed_s, 1.0)
         self.assertEqual(report.max_status_gap_end_elapsed_s, 31.0)
+        self.assertEqual(report.max_status_gap_before_status, "REPLANNED")
+        self.assertEqual(report.max_status_gap_after_status, "PLAN_FAILED")
+        self.assertEqual(
+            report.max_status_gap_after_detail,
+            "hybrid_astar found no path",
+        )
         self.assertEqual(report.max_reported_planning_time_ms, 29_500.0)
         self.assertTrue(
             any("max_local_status_gap_s" in item for item in report.failed_checks)
