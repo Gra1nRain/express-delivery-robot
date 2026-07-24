@@ -310,7 +310,11 @@ class AvoidanceManagerNode(Node):
             20,
         )
         self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(self._tf_buffer, self)
+        self._tf_listener = TransformListener(
+            self._tf_buffer,
+            self,
+            spin_thread=True,
+        )
         self._latest_odometry: Odometry | None = None
         self._latest_odometry_received_s = 0.0
         self._last_cloud_received_s = 0.0
