@@ -35,6 +35,16 @@ topic_exists() {
   timeout 5s ros2 topic list 2>/dev/null | grep -Fxq "$topic_name"
 }
 
+refuse_if_process_running() {
+  local process_pattern="$1"
+  local process_label="$2"
+  if pgrep -f -- "$process_pattern" >/dev/null; then
+    echo "ERROR: $process_label is already running; refusing duplicate startup." >&2
+    echo "Stop the existing prerequisite chain before running this script." >&2
+    exit 2
+  fi
+}
+
 wait_for_node() {
   local node_name="$1"
   local deadline=$((SECONDS + STARTUP_TIMEOUT_S))
@@ -90,17 +100,21 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for existing_node in \
-  /livox_lidar_publisher \
-  /laser_mapping \
-  /avoidance_manager
-do
-  if node_exists "$existing_node"; then
-    echo "ERROR: $existing_node is already running; refusing duplicate startup." >&2
-    echo "Stop the existing prerequisite chain before running this script." >&2
-    exit 2
-  fi
-done
+refuse_if_process_running \
+  "ros2 launch competition_bringup day1_mapping.launch.py" \
+  "day1_mapping"
+refuse_if_process_running \
+  "/livox_ros_driver2/lib/livox_ros_driver2/livox_ros_driver2_node" \
+  "Livox driver"
+refuse_if_process_running \
+  "/fast_lio/lib/fast_lio/fastlio_mapping" \
+  "FAST-LIO"
+refuse_if_process_running \
+  "ros2 run competition_avoidance avoidance_manager_node" \
+  "avoidance manager"
+refuse_if_process_running \
+  "/competition_avoidance/lib/competition_avoidance/avoidance_manager_node" \
+  "avoidance manager"
 
 echo "Starting Livox, FAST-LIO and pointcloud_to_laserscan..."
 setsid ros2 launch competition_bringup day1_mapping.launch.py \
