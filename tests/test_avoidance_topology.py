@@ -179,6 +179,25 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertIn("Using existing /odom publisher", startup_text)
         self.assertIn("more than one /odom publisher", startup_text)
 
+    def test_avoidance_nodes_do_not_shutdown_ros_context_twice(self) -> None:
+        node_dir = (
+            REPO_ROOT
+            / "src"
+            / "competition_avoidance"
+            / "competition_avoidance"
+        )
+        for filename in (
+            "avoidance_manager_node.py",
+            "livox_latest_frame_adapter_node.py",
+            "odometry_adapter_node.py",
+        ):
+            node_text = (node_dir / filename).read_text(encoding="utf-8")
+            self.assertIn(
+                "if rclpy.ok():",
+                node_text,
+                msg=filename,
+            )
+
     def test_livox_release_rebuild_is_scoped_and_guarded(self) -> None:
         rebuild_text = (
             REPO_ROOT / "scripts" / "rebuild_livox_release.sh"
