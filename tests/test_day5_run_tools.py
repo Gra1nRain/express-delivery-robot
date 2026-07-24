@@ -76,6 +76,15 @@ class Day5RunScriptTest(unittest.TestCase):
         self.assertIn("start_fast_lio:=false", text)
         self.assertIn("No chassis relay was enabled", text)
 
+    def test_sequential_bringup_owns_and_terminates_launch_process_groups(self) -> None:
+        text = (
+            REPO_ROOT / "scripts" / "day5_sequential_bringup.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(text.count("setsid ros2 launch"), 2)
+        self.assertIn('kill -TERM -- "-$process_group_pid"', text)
+        self.assertIn('kill -KILL -- "-$process_group_pid"', text)
+
     def test_freshness_gate_uses_latest_only_qos(self) -> None:
         text = (
             REPO_ROOT / "scripts" / "day5_sensor_freshness_gate.py"

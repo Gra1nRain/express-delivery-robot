@@ -36,7 +36,8 @@ scripts/day5_sequential_bringup.sh <run_label> \
   semantic_map_file:=/home/agilex/competition_ws/maps/debug/semantic_map_control_validation.yaml
 ```
 
-另开终端启动证据录包：
+看到 `DAY5_SENSORS_READY` 后，再另开终端启动证据录包。不要在
+FAST-LIO 新鲜度门控前录制高带宽点云：
 
 ```bash
 scripts/day5_record_motion.sh <run_label>

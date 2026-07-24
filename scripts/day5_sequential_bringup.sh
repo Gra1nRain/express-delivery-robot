@@ -40,22 +40,32 @@ FAST_LIO_LOG="$LOG_DIR/${LABEL}_fast_lio.log"
 BRINGUP_PID=""
 FAST_LIO_PID=""
 
+stop_process_group() {
+  local process_group_pid="$1"
+  [[ -n "$process_group_pid" ]] || return 0
+  if kill -0 "$process_group_pid" 2>/dev/null; then
+    kill -TERM -- "-$process_group_pid" 2>/dev/null || true
+    for _ in {1..20}; do
+      kill -0 "$process_group_pid" 2>/dev/null || break
+      sleep 0.2
+    done
+  fi
+  if kill -0 "$process_group_pid" 2>/dev/null; then
+    kill -KILL -- "-$process_group_pid" 2>/dev/null || true
+  fi
+  wait "$process_group_pid" 2>/dev/null || true
+}
+
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
-  if [[ -n "$FAST_LIO_PID" ]] && kill -0 "$FAST_LIO_PID" 2>/dev/null; then
-    kill -INT "$FAST_LIO_PID" 2>/dev/null || true
-  fi
-  if [[ -n "$BRINGUP_PID" ]] && kill -0 "$BRINGUP_PID" 2>/dev/null; then
-    kill -INT "$BRINGUP_PID" 2>/dev/null || true
-  fi
-  [[ -z "$FAST_LIO_PID" ]] || wait "$FAST_LIO_PID" 2>/dev/null || true
-  [[ -z "$BRINGUP_PID" ]] || wait "$BRINGUP_PID" 2>/dev/null || true
+  stop_process_group "$FAST_LIO_PID"
+  stop_process_group "$BRINGUP_PID"
   exit "$status"
 }
 trap cleanup EXIT INT TERM
 
-ros2 launch competition_bringup day5_motion_control.launch.py \
+setsid ros2 launch competition_bringup day5_motion_control.launch.py \
   start_fast_lio:=false \
   "$@" >"$BRINGUP_LOG" 2>&1 &
 BRINGUP_PID=$!
@@ -66,7 +76,7 @@ python3 "$SCRIPT_DIR/day5_sensor_freshness_gate.py" \
   --max-p95-age-s 0.45 \
   --sample-count 20
 
-ros2 launch fast_lio mapping.launch.py \
+setsid ros2 launch fast_lio mapping.launch.py \
   config_path:="$COMPETITION_WS/config/mapping" \
   config_file:="$FAST_LIO_CONFIG" \
   rviz:=false >"$FAST_LIO_LOG" 2>&1 &

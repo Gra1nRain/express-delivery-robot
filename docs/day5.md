@@ -127,6 +127,8 @@
 - 使用 `scripts/day5_record_motion.sh <run_label>` 录包。权威 topic 清单位于
   `config/day5/bag_topics.txt`；`config/day5/bag_qos_overrides.yaml` 为
   `/tf_static` 设置 transient-local QoS，避免静态 TF 在录包晚于节点启动时丢失。
+  应等待顺序启动输出 `DAY5_SENSORS_READY` 后再开始录包，避免 FAST-LIO
+  初始化期间同时承担高带宽点云序列化和磁盘写入。
 - `day5_full_route_relay.py` 的看门狗默认按冻结轨迹
   `duration_s * 2.5 + 60s` 计算，且不低于 `120s`；没有合法 `duration_s`
   时才回退到旧 `420s`。现场仍可用 `--watchdog-timeout-s` 显式覆盖。
