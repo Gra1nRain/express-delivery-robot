@@ -6,6 +6,7 @@ avoidance_manager:
 
     cloud_topic: /cloud_registered_body
     odometry_topic: /odom
+    expected_odometry_frame: camera_init
     map_frame: map
     expected_cloud_frame: body
     maximum_cloud_age_s: 0.50
@@ -21,6 +22,7 @@ avoidance_manager:
     corridor_update_topic: /avoidance/corridor_update
     stop_request_topic: /avoidance/stop_request
     local_costmap_topic: /avoidance/local_costmap
+    scan_topic: /avoidance/scan
 
     # Conservative limits inherited from the frozen global-planning envelope.
     planning_min_turning_radius_m: 0.81
@@ -44,6 +46,9 @@ avoidance_manager:
     grid_y_min_m: -2.50
     grid_y_max_m: 2.50
     grid_inflation_radius_m: 0.20
+    scan_bin_count: 360
+    scan_range_min_m: 0.10
+    scan_range_max_m: 6.00
 
     perception_z_max_m: 2.20
     ground_max_z_m: -0.20

@@ -237,8 +237,10 @@ active [3]
 `start_navigation_prerequisites.sh` 会复用已经健康运行的 Day5 传感器链；
 只有在完整兼容链不存在时，才按 2026-07-24 验证过的 sensor-first 顺序
 启动 Livox、FAST-LIO 和 Day5 无运动前置节点。该入口显式保持
-`start_base:=false`、`start_chassis_adapter:=false`，并且不启动新增避障
-或局部重规划。
+`start_base:=false`、`start_chassis_adapter:=false`。它会启动原有
+`local_replanner`、MPPI 和 Safety，但在新增避障尚未发布 costmap 时，
+局部规划和 Safety 均保持等待/停车状态；它不启动新增避障，也不启动旧
+`proximity_stop`。
 
 前置节点就绪后，脚本自动使用 `day5_localization.rviz` 打开 RViz。不要同时
 运行其他 RViz。
@@ -306,6 +308,21 @@ timeout 10s ros2 run tf2_ros tf2_echo map camera_init
 ```
 
 能够连续输出平移和旋转数据，说明 `map -> camera_init` 已建立。
+
+随后在新终端中启动唯一的增量避障运行入口：
+
+```bash
+source /home/agilex/competition_ws/scripts/car_source_env.sh
+set +u
+cd /home/agilex/competition_ws
+
+./scripts/start_avoidance_runtime.sh
+```
+
+该脚本只增加 `avoidance_manager`，不会再次启动 Day5、Livox、FAST-LIO、
+MPPI、Safety 或地图服务器。发现 `/odom`、`/avoidance/stop_request`、
+`/avoidance/local_costmap`、`/planning/local_trajectory` 或命令出口存在
+重复发布者时会拒绝启动。
 
 继续检查：
 

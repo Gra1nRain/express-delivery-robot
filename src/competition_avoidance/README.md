@@ -15,6 +15,7 @@
   -> /avoidance/status
   -> /avoidance/corridor_update
   -> /avoidance/local_costmap
+  -> /avoidance/scan
   -> /avoidance/stop_request
 ```
 
@@ -35,23 +36,32 @@
 
 ## 安全运行
 
-`vehicle_avoidance_bringup.launch.py` 当前只允许 dry-run。它固定：
+`vehicle_avoidance_bringup.launch.py` 当前只允许 dry-run，并且只启动
+`avoidance_manager`。它不再 include 整套 Day5，因此可以安全叠加到
+`start_navigation_prerequisites.sh` 已经启动的传感器、定位、规划、控制和
+安全链，不会重复启动 Livox、FAST-LIO、MPPI 或 Safety。
 
-```text
-start_base:=false
-start_chassis_adapter:=false
-start_proximity_stop:=false
-command_output_topic:=/cmd_vel_safe
+推荐在发布初始位姿后使用：
+
+```bash
+/home/agilex/competition_ws/scripts/start_avoidance_runtime.sh
 ```
 
-旧 `proximity_stop_node` 的源码仍保留；dry-run 运行配置只选择本包作为规范
-`/avoidance/local_costmap` 和 `/avoidance/stop_request` 发布者，避免多发布者冲突。
+该入口会在启动前后检查 `/odom`、`/cloud_registered_body`、
+`/avoidance/local_costmap`、`/avoidance/stop_request`、
+`/planning/local_trajectory`、`/cmd_vel_safe` 和 `/cmd_vel` 的发布者数量。
+旧 `proximity_stop_node` 的源码仍保留，但存在旧发布者时新入口会拒绝启动。
+
+`/avoidance/local_costmap` 在点云对应的 TF 时间戳下直接锚到 `map`，避免局部
+规划器用最新 TF 转换旧 body 栅格。`/avoidance/scan` 继续使用 `body` frame，
+仅用于 RViz 显示，不作为避障算法输入。
 
 ## 已验证事实
 
 - 纯 Python 点云聚类、跟踪、CPA/TTC 风险和决策接口有 PC 单元测试。
 - 架构测试保证新增节点不拥有 `/cmd_vel` 或 `/planning/local_trajectory`。
 - 点云、里程计、TF 或时间戳异常时，模块持续发布停车请求。
+- `/odom` 的 `header.frame_id` 与运行配置不一致时，模块 fail-closed。
 
 ## 未验证
 

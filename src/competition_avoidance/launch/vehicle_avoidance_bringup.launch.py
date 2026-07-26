@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Safe additive avoidance bringup with every chassis motion gate closed."""
+"""Start only the additive avoidance adapter on an existing Day5 chain."""
 
 import os
 
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -26,25 +24,7 @@ def _launch_setup(context, *args, **kwargs):
             "This additive launch is dry-run only; chassis output remains blocked."
         )
 
-    bringup_share = get_package_share_directory("competition_bringup")
-    day5_launch = os.path.join(
-        bringup_share,
-        "launch",
-        "day5_motion_control.launch.py",
-    )
     return [
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(day5_launch),
-            launch_arguments={
-                "start_livox": LaunchConfiguration("start_livox"),
-                "start_fast_lio": LaunchConfiguration("start_fast_lio"),
-                "start_base": "false",
-                "start_chassis_adapter": "false",
-                "start_proximity_stop": "false",
-                "command_output_topic": "/cmd_vel_safe",
-                "rviz": LaunchConfiguration("rviz"),
-            }.items(),
-        ),
         Node(
             package="competition_avoidance",
             executable="avoidance_manager_node",
@@ -62,9 +42,6 @@ def generate_launch_description():
             DeclareLaunchArgument("dry_run", default_value="true"),
             DeclareLaunchArgument("enable_chassis_output", default_value="false"),
             DeclareLaunchArgument("operation_mode", default_value="dry_run"),
-            DeclareLaunchArgument("start_livox", default_value="true"),
-            DeclareLaunchArgument("start_fast_lio", default_value="true"),
-            DeclareLaunchArgument("rviz", default_value="false"),
             DeclareLaunchArgument(
                 "avoidance_params_file",
                 default_value=os.path.join(

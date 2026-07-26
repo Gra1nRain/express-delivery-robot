@@ -100,9 +100,12 @@ publisher_count_is_one() {
 
 compatible_day5_chain_running() {
   node_exists /livox_lidar_publisher &&
-    node_exists /laser_mapping &&
+  node_exists /laser_mapping &&
     node_exists /fastlio_anchor &&
     node_exists /day5_map_server &&
+    node_exists /local_replanner &&
+    node_exists /mppi_control &&
+    node_exists /competition_safety &&
     publisher_count_is_one /cloud_registered_body &&
     publisher_count_is_one /Odometry &&
     publisher_count_is_one /map
@@ -248,8 +251,8 @@ else
     start_chassis_adapter:=false \
     command_output_topic:=/cmd_vel_safe \
     start_proximity_stop:=false \
-    start_local_replanner:=false \
-    replanning_enabled:=false \
+    start_local_replanner:=true \
+    replanning_enabled:=true \
     rviz:=false >"$DAY5_LOG" 2>&1 &
   DAY5_PID=$!
 

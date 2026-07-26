@@ -17,11 +17,15 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
-from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import LaserScan, PointCloud2
 from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformException, TransformListener
 
+from competition_avoidance.costmap_frame import (
+    transform_grid_origin,
+    yaw_quaternion,
+)
 from competition_avoidance.engine import AvoidanceDecision, AvoidanceEngine
 from competition_avoidance.perception import (
     ObstacleDetection,
@@ -63,6 +67,9 @@ class AvoidanceManagerNode(Node):
         self._odometry_topic = str(
             self.declare_parameter("odometry_topic", "/odom").value
         )
+        self._expected_odometry_frame = str(
+            self.declare_parameter("expected_odometry_frame", "camera_init").value
+        )
         self._map_frame = str(self.declare_parameter("map_frame", "map").value)
         self._expected_cloud_frame = str(
             self.declare_parameter("expected_cloud_frame", "body").value
@@ -79,14 +86,14 @@ class AvoidanceManagerNode(Node):
         self._transform_timeout_s = float(
             self.declare_parameter("transform_timeout_s", 0.05).value
         )
-        self._processing_rate_gate = LatestSampleRateGate(
-            float(
-                self.declare_parameter(
-                    "maximum_processing_frequency_hz",
-                    10.0,
-                ).value
-            )
+        processing_frequency_hz = float(
+            self.declare_parameter(
+                "maximum_processing_frequency_hz",
+                10.0,
+            ).value
         )
+        self._processing_rate_gate = LatestSampleRateGate(processing_frequency_hz)
+        self._scan_time_s = 1.0 / processing_frequency_hz
         stop_frequency_hz = float(
             self.declare_parameter("stop_publish_frequency_hz", 20.0).value
         )
@@ -167,6 +174,15 @@ class AvoidanceManagerNode(Node):
             y_max_m=float(self.declare_parameter("grid_y_max_m", 2.50).value),
             inflation_radius_m=float(
                 self.declare_parameter("grid_inflation_radius_m", 0.20).value
+            ),
+            scan_bin_count=int(
+                self.declare_parameter("scan_bin_count", 360).value
+            ),
+            scan_range_min_m=float(
+                self.declare_parameter("scan_range_min_m", 0.10).value
+            ),
+            scan_range_max_m=float(
+                self.declare_parameter("scan_range_max_m", 6.00).value
             ),
         )
         self._proximity_config = proximity_config
@@ -313,6 +329,16 @@ class AvoidanceManagerNode(Node):
             depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
         )
+        self._scan_publisher = self.create_publisher(
+            LaserScan,
+            str(
+                self.declare_parameter(
+                    "scan_topic",
+                    "/avoidance/scan",
+                ).value
+            ),
+            cloud_qos,
+        )
         self.create_subscription(
             PointCloud2,
             self._cloud_topic,
@@ -328,6 +354,7 @@ class AvoidanceManagerNode(Node):
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
         self._latest_odometry: Odometry | None = None
+        self._latest_odometry_error = ""
         self._latest_odometry_received_s = 0.0
         self._last_cloud_received_s = 0.0
         self._stop_required = True
@@ -343,7 +370,18 @@ class AvoidanceManagerNode(Node):
         return self.get_clock().now().nanoseconds / 1e9
 
     def _odometry_callback(self, message: Odometry) -> None:
+        if (
+            self._expected_odometry_frame
+            and message.header.frame_id != self._expected_odometry_frame
+        ):
+            self._latest_odometry = None
+            self._latest_odometry_error = (
+                f"{message.header.frame_id}->{self._expected_odometry_frame}"
+            )
+            self._latest_odometry_received_s = self._now_s()
+            return
         self._latest_odometry = message
+        self._latest_odometry_error = ""
         self._latest_odometry_received_s = self._now_s()
 
     def _cloud_callback(self, message: PointCloud2) -> None:
@@ -381,8 +419,17 @@ class AvoidanceManagerNode(Node):
             self._proximity_config,
             self._grid_config,
         )
-        self._costmap_publisher.publish(_costmap_message(message, clearance.costmap))
+        self._scan_publisher.publish(
+            _scan_message(message, clearance, self._grid_config, self._scan_time_s)
+        )
 
+        if self._latest_odometry_error:
+            self._fail_closed(
+                "odometry_frame_mismatch",
+                detail=self._latest_odometry_error,
+                cloud_age_s=cloud_age_s,
+            )
+            return
         if (
             self._latest_odometry is None
             or now_s - self._latest_odometry_received_s > self._odometry_timeout_s
@@ -400,8 +447,17 @@ class AvoidanceManagerNode(Node):
             self._fail_closed("cloud_transform_unavailable", detail=str(exc))
             return
 
-        body_detections = cluster_points(points, self._perception_config)
         yaw = _yaw_from_quaternion(transform.transform.rotation)
+        self._costmap_publisher.publish(
+            _costmap_message(
+                message,
+                clearance.costmap,
+                map_frame=self._map_frame,
+                transform=transform,
+                yaw=yaw,
+            )
+        )
+        body_detections = cluster_points(points, self._perception_config)
         map_detections = tuple(
             _transform_detection(detection, transform, yaw)
             for detection in body_detections
@@ -533,16 +589,50 @@ class AvoidanceManagerNode(Node):
         )
 
 
-def _costmap_message(cloud: PointCloud2, local_costmap) -> OccupancyGrid:
+def _costmap_message(
+    cloud: PointCloud2,
+    local_costmap,
+    *,
+    map_frame: str,
+    transform,
+    yaw: float,
+) -> OccupancyGrid:
     message = OccupancyGrid()
-    message.header = cloud.header
+    message.header.stamp = cloud.header.stamp
+    message.header.frame_id = map_frame
     message.info.resolution = local_costmap.resolution_m
     message.info.width = local_costmap.width
     message.info.height = local_costmap.height
-    message.info.origin.position.x = local_costmap.origin_x_m
-    message.info.origin.position.y = local_costmap.origin_y_m
-    message.info.origin.orientation.w = 1.0
+    origin_x, origin_y = transform_grid_origin(
+        origin_x_m=local_costmap.origin_x_m,
+        origin_y_m=local_costmap.origin_y_m,
+        translation_x_m=float(transform.transform.translation.x),
+        translation_y_m=float(transform.transform.translation.y),
+        yaw_rad=yaw,
+    )
+    message.info.origin.position.x = origin_x
+    message.info.origin.position.y = origin_y
+    quaternion = yaw_quaternion(yaw)
+    message.info.origin.orientation.x = quaternion[0]
+    message.info.origin.orientation.y = quaternion[1]
+    message.info.origin.orientation.z = quaternion[2]
+    message.info.origin.orientation.w = quaternion[3]
     message.data = list(local_costmap.data)
+    return message
+
+
+def _scan_message(cloud, clearance, grid_config, scan_time_s: float) -> LaserScan:
+    message = LaserScan()
+    message.header = cloud.header
+    message.angle_min = clearance.scan_angle_min_rad
+    message.angle_increment = clearance.scan_angle_increment_rad
+    message.angle_max = message.angle_min + message.angle_increment * (
+        len(clearance.scan_ranges_m) - 1
+    )
+    message.scan_time = scan_time_s
+    message.range_min = grid_config.scan_range_min_m
+    message.range_max = grid_config.scan_range_max_m
+    message.ranges = list(clearance.scan_ranges_m)
     return message
 
 

@@ -31,7 +31,7 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertEqual(config["proximity_stop_distance_m"], 0.85)
         self.assertGreaterEqual(config["dynamic_safety_margin_m"], 0.40)
 
-    def test_new_launch_keeps_all_existing_motion_gates_closed(self) -> None:
+    def test_new_launch_is_incremental_and_keeps_motion_topics_out(self) -> None:
         launch_text = (
             REPO_ROOT
             / "src"
@@ -40,11 +40,11 @@ class AvoidanceTopologyTest(unittest.TestCase):
             / "vehicle_avoidance_bringup.launch.py"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('"start_base": "false"', launch_text)
-        self.assertIn('"start_chassis_adapter": "false"', launch_text)
-        self.assertIn('"command_output_topic": "/cmd_vel_safe"', launch_text)
-        self.assertIn('"start_proximity_stop": "false"', launch_text)
+        self.assertIn('executable="avoidance_manager_node"', launch_text)
+        self.assertNotIn("IncludeLaunchDescription", launch_text)
+        self.assertNotIn("day5_motion_control.launch.py", launch_text)
         self.assertNotIn('"/cmd_vel"', launch_text)
+        self.assertNotIn('"/cmd_vel_safe"', launch_text)
 
     def test_avoidance_adapter_owns_only_avoidance_topics(self) -> None:
         node_text = (
@@ -61,10 +61,22 @@ class AvoidanceTopologyTest(unittest.TestCase):
             "/avoidance/corridor_update",
             "/avoidance/stop_request",
             "/avoidance/local_costmap",
+            "/avoidance/scan",
         ):
             self.assertIn(topic, node_text)
         self.assertNotIn('"/cmd_vel"', node_text)
         self.assertNotIn('"/planning/local_trajectory"', node_text)
+
+    def test_avoidance_profile_freezes_odometry_semantics(self) -> None:
+        config = yaml.safe_load(
+            (
+                REPO_ROOT / "config" / "avoidance" / "avoidance_params.yaml"
+            ).read_text(encoding="utf-8")
+        )["avoidance_manager"]["ros__parameters"]
+
+        self.assertEqual(config["odometry_topic"], "/odom")
+        self.assertEqual(config["expected_odometry_frame"], "camera_init")
+        self.assertEqual(config["scan_topic"], "/avoidance/scan")
 
     def test_odometry_adapter_bridges_fast_lio_without_touching_navigation(self) -> None:
         setup_text = (
@@ -144,8 +156,8 @@ class AvoidanceTopologyTest(unittest.TestCase):
             startup_text,
         )
         self.assertIn("start_proximity_stop:=false", startup_text)
-        self.assertIn("start_local_replanner:=false", startup_text)
-        self.assertIn("replanning_enabled:=false", startup_text)
+        self.assertIn("start_local_replanner:=true", startup_text)
+        self.assertIn("replanning_enabled:=true", startup_text)
         self.assertNotIn("fast_lio_mid360_day1.yaml", startup_text)
         self.assertNotIn(
             "setsid ros2 run competition_avoidance avoidance_manager_node",
@@ -254,6 +266,27 @@ class AvoidanceTopologyTest(unittest.TestCase):
             "day1_mapping is already running; refusing duplicate startup",
             startup_text,
         )
+
+    def test_incremental_runtime_refuses_duplicate_publishers(self) -> None:
+        runtime_text = (
+            REPO_ROOT / "scripts" / "start_avoidance_runtime.sh"
+        ).read_text(encoding="utf-8")
+
+        for topic in (
+            "/odom",
+            "/cloud_registered_body",
+            "/avoidance/stop_request",
+            "/avoidance/local_costmap",
+            "/avoidance/scan",
+            "/planning/local_trajectory",
+            "/cmd_vel_safe",
+            "/cmd_vel",
+        ):
+            self.assertIn(topic, runtime_text)
+        self.assertIn("require_exact_publishers", runtime_text)
+        self.assertIn("require_zero_publishers", runtime_text)
+        self.assertIn("vehicle_avoidance_bringup.launch.py", runtime_text)
+        self.assertNotIn("day5_motion_control.launch.py", runtime_text)
 
     def test_localization_rviz_shows_map_and_body_cloud_without_avoidance(self) -> None:
         rviz_text = (
