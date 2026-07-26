@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from itertools import chain
 import math
 import time
 
@@ -27,6 +28,7 @@ from competition_avoidance.costmap_frame import (
     yaw_quaternion,
 )
 from competition_avoidance.engine import AvoidanceDecision, AvoidanceEngine
+from competition_avoidance.obstacle_memory import MapObstacleMemory
 from competition_avoidance.perception import (
     ObstacleDetection,
     PerceptionConfig,
@@ -40,6 +42,7 @@ from competition_safety.proximity_stop import (
     LocalGridConfig,
     ProximityStopConfig,
     evaluate_local_clearance,
+    should_stop_for_points,
 )
 
 
@@ -188,6 +191,17 @@ class AvoidanceManagerNode(Node):
         )
         self._proximity_config = proximity_config
         self._grid_config = grid_config
+        self._obstacle_memory = MapObstacleMemory(
+            ttl_s=float(
+                self.declare_parameter("planning_obstacle_memory_ttl_s", 1.50).value
+            ),
+            resolution_m=float(
+                self.declare_parameter(
+                    "planning_obstacle_memory_resolution_m",
+                    grid_config.resolution_m,
+                ).value
+            ),
+        )
         self._clearance_footprint_bounds = (
             grid_config.x_min_m,
             proximity_config.x_min_m,
@@ -429,15 +443,6 @@ class AvoidanceManagerNode(Node):
             x_max_m=footprint_x_max,
             y_half_width_m=footprint_y_half_width,
         )
-        clearance = evaluate_local_clearance(
-            clearance_points,
-            self._proximity_config,
-            self._grid_config,
-        )
-        self._scan_publisher.publish(
-            _scan_message(message, clearance, self._grid_config, self._scan_time_s)
-        )
-
         if self._latest_odometry_error:
             self._fail_closed(
                 "odometry_frame_mismatch",
@@ -463,10 +468,42 @@ class AvoidanceManagerNode(Node):
             return
 
         yaw = _yaw_from_quaternion(transform.transform.rotation)
+        current_proximity_stop, _ = should_stop_for_points(
+            clearance_points,
+            self._proximity_config,
+        )
+        remembered_points = self._obstacle_memory.update(
+            (
+                point
+                for point in clearance_points
+                if self._grid_config.x_min_m <= point[0] < self._grid_config.x_max_m
+                and self._grid_config.y_min_m <= point[1] < self._grid_config.y_max_m
+                and self._proximity_config.z_min_m
+                <= point[2]
+                <= self._proximity_config.z_max_m
+            ),
+            translation_x_m=float(transform.transform.translation.x),
+            translation_y_m=float(transform.transform.translation.y),
+            yaw_rad=yaw,
+            timestamp_s=stamp_s,
+        )
+        planning_clearance = evaluate_local_clearance(
+            chain(clearance_points, remembered_points),
+            self._proximity_config,
+            self._grid_config,
+        )
+        self._scan_publisher.publish(
+            _scan_message(
+                message,
+                planning_clearance,
+                self._grid_config,
+                self._scan_time_s,
+            )
+        )
         self._costmap_publisher.publish(
             _costmap_message(
                 message,
-                clearance.costmap,
+                planning_clearance.costmap,
                 map_frame=self._map_frame,
                 transform=transform,
                 yaw=yaw,
@@ -491,7 +528,7 @@ class AvoidanceManagerNode(Node):
                 map_detections,
                 timestamp_s=stamp_s,
                 ego=ego,
-                proximity_stop=clearance.stop,
+                proximity_stop=current_proximity_stop,
             )
         except ValueError as exc:
             self._fail_closed("tracker_timestamp_error", detail=str(exc))

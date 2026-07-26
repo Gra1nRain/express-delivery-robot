@@ -30,6 +30,8 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertEqual(config["maximum_unknown_dynamic_radius_m"], 0.80)
         self.assertEqual(config["proximity_stop_distance_m"], 1.20)
         self.assertEqual(config["proximity_min_points"], 2)
+        self.assertEqual(config["planning_obstacle_memory_ttl_s"], 1.50)
+        self.assertEqual(config["planning_obstacle_memory_resolution_m"], 0.10)
         self.assertGreaterEqual(config["dynamic_safety_margin_m"], 0.40)
 
     def test_new_launch_is_incremental_and_keeps_motion_topics_out(self) -> None:

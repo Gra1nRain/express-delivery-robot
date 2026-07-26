@@ -50,6 +50,11 @@ avoidance_manager:
     grid_y_min_m: -2.50
     grid_y_max_m: 2.50
     grid_inflation_radius_m: 0.20
+    # Local replanning runs at 1 Hz while sparse MID360 bucket returns may
+    # disappear between FAST-LIO frames. Retain occupied map cells long enough
+    # for the existing planner to consume them and start a detour.
+    planning_obstacle_memory_ttl_s: 1.50
+    planning_obstacle_memory_resolution_m: 0.10
     scan_bin_count: 360
     scan_range_min_m: 0.10
     scan_range_max_m: 6.00
