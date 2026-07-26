@@ -6,10 +6,36 @@ import unittest
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_avoidance"))
 
-from competition_avoidance.perception import PerceptionConfig, cluster_points
+from competition_avoidance.perception import (
+    PerceptionConfig,
+    cluster_points,
+    exclude_vehicle_footprint_points,
+)
 
 
 class AvoidancePerceptionTest(unittest.TestCase):
+    def test_vehicle_footprint_filter_keeps_forward_safety_obstacles(self) -> None:
+        points = [
+            (-0.47, -0.175, 0.10),
+            (0.24, 0.00, 0.10),
+            (0.25, 0.00, 0.10),
+            (0.30, 0.00, 0.10),
+            (-0.30, 0.30, 0.10),
+        ]
+
+        filtered = exclude_vehicle_footprint_points(
+            points,
+            x_min_m=-0.50,
+            x_max_m=0.25,
+            y_half_width_m=0.25,
+        )
+
+        self.assertNotIn((-0.47, -0.175, 0.10), filtered)
+        self.assertNotIn((0.24, 0.00, 0.10), filtered)
+        self.assertIn((0.25, 0.00, 0.10), filtered)
+        self.assertIn((0.30, 0.00, 0.10), filtered)
+        self.assertIn((-0.30, 0.30, 0.10), filtered)
+
     def test_cone_cluster_survives_ground_and_self_filtering(self) -> None:
         cone_points = [
             (2.0 + dx, dy, z)

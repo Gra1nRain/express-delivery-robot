@@ -56,6 +56,37 @@ class ObstacleDetection:
         return 0.5 * math.hypot(self.length_m, self.width_m)
 
 
+def exclude_vehicle_footprint_points(
+    points: Iterable[tuple[float, float, float]],
+    *,
+    x_min_m: float,
+    x_max_m: float,
+    y_half_width_m: float,
+) -> tuple[tuple[float, float, float], ...]:
+    """Remove returns inside the vehicle footprint without masking the stop zone.
+
+    The longitudinal upper bound is half-open so a point exactly at the
+    proximity gate's x_min remains available to the safety check.
+    """
+
+    if x_max_m <= x_min_m:
+        raise ValueError("footprint x_max_m must exceed x_min_m")
+    if y_half_width_m <= 0.0:
+        raise ValueError("footprint y_half_width_m must be positive")
+
+    filtered: list[tuple[float, float, float]] = []
+    for raw_x, raw_y, raw_z in points:
+        point = (float(raw_x), float(raw_y), float(raw_z))
+        x, y, _ = point
+        inside_footprint = (
+            x_min_m <= x < x_max_m
+            and -y_half_width_m <= y <= y_half_width_m
+        )
+        if not inside_footprint:
+            filtered.append(point)
+    return tuple(filtered)
+
+
 def cluster_points(
     points: Iterable[tuple[float, float, float]],
     config: PerceptionConfig = PerceptionConfig(),

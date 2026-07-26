@@ -31,6 +31,7 @@ from competition_avoidance.perception import (
     ObstacleDetection,
     PerceptionConfig,
     cluster_points,
+    exclude_vehicle_footprint_points,
 )
 from competition_avoidance.rate_gate import LatestSampleRateGate
 from competition_avoidance.risk import EgoState, RiskConfig
@@ -187,6 +188,11 @@ class AvoidanceManagerNode(Node):
         )
         self._proximity_config = proximity_config
         self._grid_config = grid_config
+        self._clearance_footprint_bounds = (
+            grid_config.x_min_m,
+            proximity_config.x_min_m,
+            vehicle_width / 2.0,
+        )
         self._perception_config = PerceptionConfig(
             x_min_m=grid_config.x_min_m,
             x_max_m=grid_config.x_max_m,
@@ -414,8 +420,17 @@ class AvoidanceManagerNode(Node):
                 skip_nans=True,
             )
         )
-        clearance = evaluate_local_clearance(
+        footprint_x_min, footprint_x_max, footprint_y_half_width = (
+            self._clearance_footprint_bounds
+        )
+        clearance_points = exclude_vehicle_footprint_points(
             points,
+            x_min_m=footprint_x_min,
+            x_max_m=footprint_x_max,
+            y_half_width_m=footprint_y_half_width,
+        )
+        clearance = evaluate_local_clearance(
+            clearance_points,
             self._proximity_config,
             self._grid_config,
         )
