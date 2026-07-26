@@ -1,6 +1,7 @@
 *.cfg text eol=lf
 *.launch.py text eol=lf
 *.md text eol=lf
+*.patch text eol=lf
 *.env text eol=lf
 *.py text eol=lf
 *.sh text eol=lf
