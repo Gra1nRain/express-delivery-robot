@@ -33,12 +33,16 @@ avoidance_manager:
     vehicle_width_m: 0.50
 
     proximity_x_min_m: 0.25
-    proximity_stop_distance_m: 0.85
+    # 2026-07-27 bucket-contact regression: the closest two valid MID360
+    # returns were at x=1.056/1.060 m in body while the former 0.85 m gate
+    # remained clear. Keep a conservative margin without changing the
+    # protected safety implementation.
+    proximity_stop_distance_m: 1.20
     proximity_front_half_angle_rad: 0.4363
     proximity_lateral_half_width_m: 0.45
     proximity_z_min_m: -0.25
     proximity_z_max_m: 0.80
-    proximity_min_points: 3
+    proximity_min_points: 2
 
     grid_resolution_m: 0.05
     grid_x_min_m: -0.50
