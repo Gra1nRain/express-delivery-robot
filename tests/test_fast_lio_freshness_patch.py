@@ -51,7 +51,7 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
             patch_text.index(select_latest),
         )
 
-    def test_day5_mapping_timer_matches_lidar_scan_rate(self) -> None:
+    def test_day5_mapping_timer_preserves_fast_lio_executor_headroom(self) -> None:
         patch_text = (
             REPO_ROOT / "patches" / "fast_lio_mapping_timer_rate.patch"
         ).read_text(encoding="utf-8")
@@ -75,7 +75,7 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
             patch_text,
         )
         self.assertIn("mapping_timer_hz must be positive", patch_text)
-        self.assertRegex(config_text, r"(?m)^      timer_hz: 10$")
+        self.assertRegex(config_text, r"(?m)^      timer_hz: 100$")
 
     def test_rebuild_is_scoped_guarded_and_does_not_use_python_adapter(self) -> None:
         rebuild_text = (

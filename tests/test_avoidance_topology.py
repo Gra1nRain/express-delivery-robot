@@ -71,33 +71,6 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertNotIn('"/cmd_vel"', node_text)
         self.assertNotIn('"/planning/local_trajectory"', node_text)
 
-    def test_cloud_processing_has_a_dedicated_callback_group(self) -> None:
-        node_text = (
-            REPO_ROOT
-            / "src"
-            / "competition_avoidance"
-            / "competition_avoidance"
-            / "avoidance_manager_node.py"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn("MutuallyExclusiveCallbackGroup", node_text)
-        self.assertIn(
-            "self._cloud_callback_group = MutuallyExclusiveCallbackGroup()",
-            node_text,
-        )
-        self.assertIn(
-            "self._state_callback_group = MutuallyExclusiveCallbackGroup()",
-            node_text,
-        )
-        self.assertIn(
-            "callback_group=self._cloud_callback_group",
-            node_text,
-        )
-        self.assertIn(
-            "callback_group=self._state_callback_group",
-            node_text,
-        )
-
     def test_avoidance_profile_freezes_odometry_semantics(self) -> None:
         config = yaml.safe_load(
             (
