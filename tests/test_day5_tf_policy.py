@@ -82,7 +82,7 @@ class Day5TfPolicyTest(unittest.TestCase):
             '"livox_publish_frequency_hz", default_value="10.0"', day1_text
         )
         self.assertIn(
-            '"livox_raw_packet_queue_limit", default_value="256"', day1_text
+            '"livox_raw_packet_queue_limit", default_value="1"', day1_text
         )
         self.assertIn('"publish_freq": float(', day1_text)
         self.assertIn('"LIVOX_ROS_MAX_PACKET_QUEUE"', day1_text)

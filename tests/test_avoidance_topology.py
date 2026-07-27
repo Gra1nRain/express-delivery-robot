@@ -45,10 +45,30 @@ class AvoidanceTopologyTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn('executable="avoidance_manager_node"', launch_text)
+        self.assertIn(
+            'executable="pointcloud_to_laserscan_node"',
+            launch_text,
+        )
+        self.assertIn('executable="odometry_adapter_node"', launch_text)
+        self.assertIn('("cloud_in", "/cloud_registered_body")', launch_text)
+        self.assertIn('("scan", "/avoidance/scan")', launch_text)
         self.assertNotIn("IncludeLaunchDescription", launch_text)
         self.assertNotIn("day5_motion_control.launch.py", launch_text)
         self.assertNotIn('"/cmd_vel"', launch_text)
         self.assertNotIn('"/cmd_vel_safe"', launch_text)
+
+    def test_scan_converter_dependency_is_explicit(self) -> None:
+        package_text = (
+            REPO_ROOT
+            / "src"
+            / "competition_avoidance"
+            / "package.xml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "<exec_depend>pointcloud_to_laserscan</exec_depend>",
+            package_text,
+        )
 
     def test_avoidance_adapter_owns_only_avoidance_topics(self) -> None:
         node_text = (

@@ -7,7 +7,7 @@
 
 ```text
 /cloud_registered_body
-  -> 现有 proximity_stop
+  -> 现有 C++ pointcloud_to_laserscan
   -> /avoidance/scan (Live Scan，唯一发布者)
   -> avoidance_manager + /odom + map<-body TF
   -> LaserScan 平面点转换/聚类
@@ -22,8 +22,10 @@
 ```
 
 `avoidance_manager` 不再重复订阅大型 3D 点云，也不发布
-`/avoidance/scan`。二维聚类使用 `SCAN_CANDIDATE` 标签，仅表示可参与连续运动
-判定，不表示已经识别人或锥桶。
+`/avoidance/scan`。`pointcloud_to_laserscan` 复用现有
+`config/mapping/pointcloud_to_laserscan_day1.yaml`，用 C++ 将 body 点云转换为
+Live Scan；二维聚类使用 `SCAN_CANDIDATE` 标签，仅表示可参与连续运动判定，
+不表示已经识别人或锥桶。
 
 现有 `LocalTrajectoryPlanner` 继续订阅 `/avoidance/local_costmap`，现有
 `SafetySupervisor` 继续订阅 `/avoidance/stop_request`。本包不发布
@@ -43,9 +45,10 @@
 ## 安全运行
 
 `vehicle_avoidance_bringup.launch.py` 当前只允许 dry-run，并且只启动
-`avoidance_manager`。它不 include 整套 Day5，因此只能在人工确认传感器、
-定位、规划、控制和安全链均已就绪且没有重复发布者后手动叠加；它不会启动
-Livox、FAST-LIO、MPPI 或 Safety。
+`pointcloud_to_laserscan`、`odometry_adapter` 和 `avoidance_manager`。
+它不 include 整套 Day5，因此只能在人工确认传感器、定位、规划、控制和安全
+链均已就绪且没有重复发布者后手动叠加；它不会启动 Livox、FAST-LIO、MPPI
+或 Safety。
 
 发布初始位姿并完成人工拓扑检查后，直接启动：
 
@@ -58,11 +61,12 @@ ros2 launch competition_avoidance vehicle_avoidance_bringup.launch.py \
   avoidance_params_file:=/home/agilex/competition_ws/config/avoidance/avoidance_params.yaml
 ```
 
-Day5 必须使用
-`config/safety/safety_params_day5_avoidance_scan.yaml` 启动原
-`proximity_stop`。该配置只把它的停车请求和代价地图改到诊断话题；Live Scan
-仍保持 `/avoidance/scan`。这样规范 `/avoidance/stop_request` 和
-`/avoidance/local_costmap` 仍各只有 `avoidance_manager` 一个发布者。
+使用此增量链时，Day5 必须显式设置 `start_proximity_stop:=false`，并且基础
+建图链不得同时启动另一个 `pointcloud_to_laserscan`。实车已经验证原 Python
+`proximity_stop` 在高频全量处理大点云时会拖慢传感器链；它也会与新增模块
+争用规范停车和代价地图话题。由现有 C++ 转换器唯一发布
+`/avoidance/scan`，由 `avoidance_manager` 唯一发布
+`/avoidance/stop_request` 和 `/avoidance/local_costmap`。
 
 启动前必须人工检查 `/odom`、`/cloud_registered_body`、`/avoidance/scan`、
 `/avoidance/local_costmap`、`/avoidance/stop_request`、
@@ -76,6 +80,8 @@ Day5 必须使用
 ## 已验证事实
 
 - LaserScan 转平面点、聚类、跟踪、CPA/TTC 风险和决策接口有 PC 单元测试。
+- C++ Live Scan 转换在实车连续 10 分钟无运动验收中保持 10 Hz，平均延迟
+  48 ms、最大延迟 81 ms，CPU 占用约 2%。
 - 架构测试保证新增节点不拥有 `/cmd_vel` 或 `/planning/local_trajectory`。
 - Live Scan、里程计、TF 或时间戳异常时，模块持续发布停车请求。
 - `/odom` 的 `header.frame_id` 与运行配置不一致时，模块 fail-closed。

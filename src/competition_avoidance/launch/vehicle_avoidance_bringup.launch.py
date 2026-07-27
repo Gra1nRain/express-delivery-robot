@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start only the additive avoidance adapter on an existing Day5 chain."""
+"""Start the motion-free Live Scan avoidance chain on an existing Day5 stack."""
 
 import os
 
@@ -26,6 +26,29 @@ def _launch_setup(context, *args, **kwargs):
 
     return [
         Node(
+            package="pointcloud_to_laserscan",
+            executable="pointcloud_to_laserscan_node",
+            name="pointcloud_to_laserscan",
+            output="screen",
+            parameters=[LaunchConfiguration("scan_config_file")],
+            remappings=[
+                ("cloud_in", "/cloud_registered_body"),
+                ("scan", "/avoidance/scan"),
+            ],
+        ),
+        Node(
+            package="competition_avoidance",
+            executable="odometry_adapter_node",
+            name="odometry_adapter",
+            output="screen",
+            parameters=[
+                {
+                    "input_topic": "/Odometry",
+                    "output_topic": "/odom",
+                }
+            ],
+        ),
+        Node(
             package="competition_avoidance",
             executable="avoidance_manager_node",
             name="avoidance_manager",
@@ -42,6 +65,15 @@ def generate_launch_description():
             DeclareLaunchArgument("dry_run", default_value="true"),
             DeclareLaunchArgument("enable_chassis_output", default_value="false"),
             DeclareLaunchArgument("operation_mode", default_value="dry_run"),
+            DeclareLaunchArgument(
+                "scan_config_file",
+                default_value=os.path.join(
+                    competition_ws,
+                    "config",
+                    "mapping",
+                    "pointcloud_to_laserscan_day1.yaml",
+                ),
+            ),
             DeclareLaunchArgument(
                 "avoidance_params_file",
                 default_value=os.path.join(
