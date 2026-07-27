@@ -11,6 +11,7 @@ INTERNAL_BUFFER_PATCH="$COMPETITION_WS/patches/fast_lio_latest_internal_buffer.p
 TIMER_RATE_PATCH="$COMPETITION_WS/patches/fast_lio_mapping_timer_rate.patch"
 EXECUTOR_PATCH="$COMPETITION_WS/patches/fast_lio_executor_callback_groups.patch"
 PREPROCESS_LOCK_PATCH="$COMPETITION_WS/patches/fast_lio_preprocess_lock_scope.patch"
+BODY_CLOUD_PATCH="$COMPETITION_WS/patches/fast_lio_independent_body_cloud_publish.patch"
 
 if [[ ! -d "$FAST_LIO_SOURCE" ]]; then
   echo "ERROR: FAST-LIO source is missing from $FAST_LIO_SOURCE" >&2
@@ -55,6 +56,8 @@ apply_patch_once "$EXECUTOR_PATCH" "executor callback groups" \
   "rclcpp::executors::MultiThreadedExecutor executor("
 apply_patch_once "$PREPROCESS_LOCK_PATCH" "preprocess lock scope" \
   "FAST_LIO_PREPROCESS_OUTSIDE_SYNC_LOCK"
+apply_patch_once "$BODY_CLOUD_PATCH" "independent body cloud publishing" \
+  "FAST_LIO_INDEPENDENT_BODY_CLOUD_PUBLISH"
 
 set +u
 source /opt/ros/humble/setup.bash

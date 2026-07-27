@@ -44,7 +44,10 @@
       path_en: false
       effect_map_en: false
       map_en: false
-      scan_publish_en: true
+      # /cloud_registered performs a full world-frame conversion and was
+      # measured to throttle FAST-LIO from about 10 Hz to about 0.7 Hz.
+      # The patched publisher keeps the body cloud independent of this switch.
+      scan_publish_en: false
       dense_publish_en: false
       scan_bodyframe_pub_en: true
 

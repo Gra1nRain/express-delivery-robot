@@ -123,6 +123,36 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
         )
         self.assertNotIn("+    mtx_buffer.lock();", patch_text)
 
+    def test_body_cloud_can_publish_without_world_cloud_conversion(self) -> None:
+        patch_text = (
+            REPO_ROOT
+            / "patches"
+            / "fast_lio_independent_body_cloud_publish.patch"
+        ).read_text(encoding="utf-8")
+        config_text = (
+            REPO_ROOT
+            / "config"
+            / "mapping"
+            / "fast_lio_mid360_day5_control.yaml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("FAST_LIO_INDEPENDENT_BODY_CLOUD_PUBLISH", patch_text)
+        self.assertIn(
+            "+            if (scan_body_pub_en) "
+            "publish_frame_body(pubLaserCloudFull_body_);",
+            patch_text,
+        )
+        self.assertIn(
+            "-            if (scan_pub_en && scan_body_pub_en) "
+            "publish_frame_body(pubLaserCloudFull_body_);",
+            patch_text,
+        )
+        self.assertRegex(config_text, r"(?m)^      scan_publish_en: false$")
+        self.assertRegex(
+            config_text,
+            r"(?m)^      scan_bodyframe_pub_en: true$",
+        )
+
     def test_rebuild_is_scoped_guarded_and_does_not_use_python_adapter(self) -> None:
         rebuild_text = (
             REPO_ROOT / "scripts" / "rebuild_fast_lio_release.sh"
@@ -135,10 +165,18 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
         self.assertIn("fast_lio_mapping_timer_rate.patch", rebuild_text)
         self.assertIn("fast_lio_executor_callback_groups.patch", rebuild_text)
         self.assertIn("fast_lio_preprocess_lock_scope.patch", rebuild_text)
+        self.assertIn(
+            "fast_lio_independent_body_cloud_publish.patch",
+            rebuild_text,
+        )
         self.assertIn("apply --reverse --check", rebuild_text)
         self.assertIn("apply --check", rebuild_text)
         self.assertIn('grep -Fq "$patch_marker"', rebuild_text)
         self.assertIn("FAST_LIO_PREPROCESS_OUTSIDE_SYNC_LOCK", rebuild_text)
+        self.assertIn(
+            "FAST_LIO_INDEPENDENT_BODY_CLOUD_PUBLISH",
+            rebuild_text,
+        )
         self.assertIn("pgrep -f", rebuild_text)
         self.assertNotIn("livox_latest_frame_adapter_node", rebuild_text)
         self.assertNotIn("rm -", rebuild_text)

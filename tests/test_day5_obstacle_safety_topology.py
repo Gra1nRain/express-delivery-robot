@@ -59,13 +59,13 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         publish_config = fast_lio_config["/**"]["ros__parameters"]["publish"]
         preprocess_config = fast_lio_config["/**"]["ros__parameters"]["preprocess"]
         proximity_config = safety_config["proximity_stop"]
-        self.assertTrue(
+        self.assertFalse(
             publish_config["scan_publish_en"],
-            "FAST-LIO scan_publish_en is the master switch for point cloud outputs.",
+            "Day5 must not build the unused world-frame cloud in the control loop.",
         )
         self.assertTrue(
             publish_config["scan_bodyframe_pub_en"],
-            "Day5 motion must expose body-frame FAST-LIO points for obstacle stop.",
+            "The FAST-LIO patch keeps the body cloud available independently.",
         )
         self.assertIn("proximity_stop_node", launch_text)
         self.assertTrue(safety_config["safety"]["require_avoidance_source"])
