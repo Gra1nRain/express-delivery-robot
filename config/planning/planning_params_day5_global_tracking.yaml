@@ -31,21 +31,46 @@ semantic_route_graph:
   keepout_enabled: true
 
 replanning:
-  enabled: false
-  plugin: reference_aware_hybrid_astar
-  frequency_hz: 1.0
-  lookahead_distance_m: 3.0
-  reference_deviation_weight: 2.0
-  inflation_radius_m: 0.45
-  search_padding_m: 3.0
-  goal_position_tolerance_m: 0.25
-  goal_heading_tolerance_deg: 15.0
-  max_expansions: 250000
-  reference_search_window_points: 120
-  costmap_topic: /avoidance/local_costmap
+  enabled: true
+  plugin: dwa
+  frequency_hz: 2.0
+  cloud_topic: /cloud_registered_body
+  cloud_qos_depth: 1
+  expected_cloud_frame: body
+  odom_topic: /odom
+  max_cloud_age_s: 2.0
+  max_odom_age_s: 0.50
+  z_min_m: -0.25
+  z_max_m: 0.80
+  obstacle_x_min_m: 0.05
+  obstacle_x_max_m: 4.00
+  obstacle_y_half_width_m: 2.50
+  cloud_point_stride: 4
+  cloud_voxel_size_m: 0.10
+  max_obstacle_points: 2000
+  min_speed_mps: 0.05
+  max_speed_mps: 0.20
+  max_acceleration_mps2: 0.20
+  max_deceleration_mps2: 0.30
+  max_yaw_rate_radps: 0.30
+  max_yaw_acceleration_radps2: 0.60
+  prediction_horizon_s: 6.0
+  simulation_step_s: 0.20
+  speed_sample_count: 4
+  yaw_rate_sample_count: 11
+  obstacle_clearance_m: 0.55
+  reference_lookahead_m: 1.50
+  max_reference_deviation_m: 1.20
+  reference_search_window_points: 160
+  progress_weight: 6.0
+  path_distance_weight: 2.0
+  goal_distance_weight: 1.0
+  heading_weight: 0.3
+  clearance_weight: 0.8
+  speed_weight: 1.0
+  yaw_rate_weight: 0.15
   local_trajectory_topic: /planning/local_trajectory
+  local_stop_request_topic: /planning/local_stop_request
   status_topic: /planning/local_replan_status
-  max_costmap_age_s: 4.0
-  local_trajectory_timeout_s: 4.0
-  max_retries: 1
+  local_trajectory_timeout_s: 2.0
   failure_action: SAFE_HOLD

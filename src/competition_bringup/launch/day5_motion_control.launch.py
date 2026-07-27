@@ -181,49 +181,89 @@ def _launch_setup(context, *args, **kwargs):
                     "local_trajectory_timeout_s": replanning[
                         "local_trajectory_timeout_s"
                     ],
+                    "local_stop_request_topic": replanning[
+                        "local_stop_request_topic"
+                    ],
                 }
             ],
         ),
         Node(
             package="competition_planning",
-            executable="local_replanner_node",
-            name="local_replanner",
+            executable="dwa_local_planner_node",
+            name="dwa_local_planner",
             output="screen",
             condition=IfCondition(LaunchConfiguration("start_local_replanner")),
             parameters=[
                 {
                     "trajectory_file": LaunchConfiguration("trajectory_file"),
-                    "map_file": LaunchConfiguration("map_file"),
                     "map_frame": estimator["map_frame"],
                     "base_frame": tracking_base_frame,
                     "frequency_hz": replanning["frequency_hz"],
-                    "lookahead_distance_m": replanning["lookahead_distance_m"],
-                    "inflation_radius_m": replanning["inflation_radius_m"],
-                    "search_padding_m": replanning["search_padding_m"],
-                    "sample_spacing_m": global_planner["path_sample_spacing_m"],
+                    "cloud_topic": replanning["cloud_topic"],
+                    "cloud_qos_depth": replanning["cloud_qos_depth"],
+                    "expected_cloud_frame": replanning["expected_cloud_frame"],
+                    "odom_topic": replanning["odom_topic"],
+                    "max_cloud_age_s": replanning["max_cloud_age_s"],
+                    "max_odom_age_s": replanning["max_odom_age_s"],
+                    "z_min_m": replanning["z_min_m"],
+                    "z_max_m": replanning["z_max_m"],
+                    "obstacle_x_min_m": replanning["obstacle_x_min_m"],
+                    "obstacle_x_max_m": replanning["obstacle_x_max_m"],
+                    "obstacle_y_half_width_m": replanning[
+                        "obstacle_y_half_width_m"
+                    ],
+                    "cloud_point_stride": replanning["cloud_point_stride"],
+                    "cloud_voxel_size_m": replanning["cloud_voxel_size_m"],
+                    "max_obstacle_points": replanning["max_obstacle_points"],
+                    "min_speed_mps": replanning["min_speed_mps"],
+                    "max_speed_mps": replanning["max_speed_mps"],
+                    "max_acceleration_mps2": replanning[
+                        "max_acceleration_mps2"
+                    ],
+                    "max_deceleration_mps2": replanning[
+                        "max_deceleration_mps2"
+                    ],
+                    "max_yaw_rate_radps": replanning["max_yaw_rate_radps"],
+                    "max_yaw_acceleration_radps2": replanning[
+                        "max_yaw_acceleration_radps2"
+                    ],
                     "min_turning_radius_m": motion["min_turning_radius_m"],
-                    "step_length_m": global_planner["hybrid_step_length_m"],
-                    "curvature_bins": global_planner["hybrid_curvature_bins"],
-                    "heading_bins": global_planner["hybrid_heading_bins"],
-                    "goal_position_tolerance_m": replanning[
-                        "goal_position_tolerance_m"
+                    "prediction_horizon_s": replanning["prediction_horizon_s"],
+                    "simulation_step_s": replanning["simulation_step_s"],
+                    "speed_sample_count": replanning["speed_sample_count"],
+                    "yaw_rate_sample_count": replanning[
+                        "yaw_rate_sample_count"
                     ],
-                    "goal_heading_tolerance_deg": replanning[
-                        "goal_heading_tolerance_deg"
+                    "obstacle_clearance_m": replanning[
+                        "obstacle_clearance_m"
                     ],
-                    "reference_deviation_weight": replanning[
-                        "reference_deviation_weight"
+                    "reference_lookahead_m": replanning[
+                        "reference_lookahead_m"
                     ],
-                    "max_expansions": replanning["max_expansions"],
+                    "max_reference_deviation_m": replanning[
+                        "max_reference_deviation_m"
+                    ],
                     "reference_search_window_points": replanning[
                         "reference_search_window_points"
                     ],
-                    "costmap_topic": replanning["costmap_topic"],
+                    "progress_weight": replanning["progress_weight"],
+                    "path_distance_weight": replanning[
+                        "path_distance_weight"
+                    ],
+                    "goal_distance_weight": replanning[
+                        "goal_distance_weight"
+                    ],
+                    "heading_weight": replanning["heading_weight"],
+                    "clearance_weight": replanning["clearance_weight"],
+                    "speed_weight": replanning["speed_weight"],
+                    "yaw_rate_weight": replanning["yaw_rate_weight"],
                     "local_trajectory_topic": replanning[
                         "local_trajectory_topic"
                     ],
+                    "local_stop_request_topic": replanning[
+                        "local_stop_request_topic"
+                    ],
                     "status_topic": replanning["status_topic"],
-                    "max_costmap_age_s": replanning["max_costmap_age_s"],
                 }
             ],
         ),

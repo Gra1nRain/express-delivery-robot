@@ -83,6 +83,7 @@ class MPPIControlNode(Node):
             raise ValueError("local_trajectory_timeout_s must be positive")
         self._latest_local_plan_stamp_s: float | None = None
         self._local_plan_error: str | None = None
+        self._local_stop_requested = self._replanning_enabled
         self._control_period_s = 1.0 / float(
             self.declare_parameter("frequency_hz", 20.0).value
         )
@@ -256,6 +257,17 @@ class MPPIControlNode(Node):
                 self._local_trajectory_callback,
                 1,
             )
+            self.create_subscription(
+                Bool,
+                str(
+                    self.declare_parameter(
+                        "local_stop_request_topic",
+                        "/planning/local_stop_request",
+                    ).value
+                ),
+                self._local_stop_callback,
+                10,
+            )
         self._timer = self.create_timer(self._control_period_s, self._control_cycle)
         self.get_logger().info(
             f"MPPI ready: trajectory={trajectory_file}, "
@@ -318,6 +330,9 @@ class MPPIControlNode(Node):
         self._latest_local_plan_stamp_s = _stamp_to_seconds(message.header.stamp)
         self._local_plan_error = None
 
+    def _local_stop_callback(self, message: Bool) -> None:
+        self._local_stop_requested = bool(message.data)
+
     def _control_cycle(self) -> None:
         now = self.get_clock().now()
         now_s = now.nanoseconds / 1e9
@@ -376,7 +391,14 @@ class MPPIControlNode(Node):
                 )
                 self._publish_executed_pose(vehicle_state, now.to_msg())
                 local_plan_age_s = self._local_plan_age_s(now_s)
-                if self._replanning_enabled and (
+                if self._replanning_enabled and self._local_stop_requested:
+                    command = BodyCommand.hold(
+                        target_index=0,
+                        lateral_error_m=0.0,
+                        heading_error_rad=0.0,
+                        status="LOCAL_PLANNER_STOP",
+                    )
+                elif self._replanning_enabled and (
                     local_plan_age_s is None
                     or local_plan_age_s > self._local_trajectory_timeout_s
                 ):

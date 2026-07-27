@@ -8,7 +8,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class Day5OnlineReplanningTopologyTest(unittest.TestCase):
-    def test_live_costmap_drives_reference_aware_local_trajectory(self) -> None:
+    def test_live_body_cloud_drives_dwa_local_trajectory(self) -> None:
         planning = yaml.safe_load(
             (REPO_ROOT / "config" / "planning" / "planning_params.yaml").read_text(
                 encoding="utf-8"
@@ -34,12 +34,12 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         planning_setup = (
             REPO_ROOT / "src" / "competition_planning" / "setup.py"
         ).read_text(encoding="utf-8")
-        replanner_node = (
+        dwa_node = (
             REPO_ROOT
             / "src"
             / "competition_planning"
             / "competition_planning"
-            / "local_replanner_node.py"
+            / "dwa_local_planner_node.py"
         ).read_text(encoding="utf-8")
         control_node = (
             REPO_ROOT
@@ -55,7 +55,7 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         ]
         runtime_turning_radius = control["motion"]["min_turning_radius_m"]
         self.assertTrue(replanning["enabled"])
-        self.assertEqual(replanning["plugin"], "reference_aware_hybrid_astar")
+        self.assertEqual(replanning["plugin"], "dwa")
         self.assertEqual(global_turning_radius, 0.81)
         self.assertEqual(runtime_turning_radius, 0.60)
         self.assertEqual(
@@ -66,32 +66,35 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             runtime_turning_radius,
             control["motion"]["ranger_driver_min_turn_radius_m"],
         )
-        self.assertGreaterEqual(replanning["lookahead_distance_m"], 3.0)
-        self.assertGreater(replanning["reference_deviation_weight"], 0.0)
-        self.assertLessEqual(replanning["search_padding_m"], 1.5)
         self.assertEqual(
-            replanning["costmap_topic"],
-            "/avoidance/local_costmap",
+            replanning["cloud_topic"],
+            "/cloud_registered_body",
         )
+        self.assertEqual(
+            replanning["cloud_topic"],
+            safety["proximity_stop"]["cloud_topic"],
+        )
+        self.assertEqual(replanning["cloud_qos_depth"], 1)
+        self.assertEqual(replanning["expected_cloud_frame"], "body")
+        self.assertGreater(replanning["obstacle_clearance_m"], 0.45)
+        self.assertGreater(replanning["prediction_horizon_s"], 0.0)
         self.assertEqual(
             replanning["local_trajectory_topic"],
             control["visualization"]["local_trajectory_topic"],
         )
-        self.assertGreaterEqual(
-            safety["proximity_stop"]["grid_x_max_m"],
-            replanning["lookahead_distance_m"],
+        self.assertEqual(
+            replanning["local_stop_request_topic"],
+            "/planning/local_stop_request",
         )
-        self.assertGreaterEqual(
-            safety["proximity_stop"]["grid_y_max_m"],
-            2.0,
-        )
-        self.assertIn("local_replanner_node", planning_setup)
-        self.assertIn("local_replanner_node", launch_text)
+        self.assertIn("dwa_local_planner_node", planning_setup)
+        self.assertIn('executable="dwa_local_planner_node"', launch_text)
+        self.assertNotIn('executable="local_replanner_node"', launch_text)
         self.assertIn("start_local_replanner", launch_text)
-        self.assertIn("OccupancyGrid", replanner_node)
-        self.assertIn("LocalTrajectoryPlanner", replanner_node)
-        local_replanner_launch = launch_text.split(
-            'executable="local_replanner_node"',
+        self.assertIn("PointCloud2", dwa_node)
+        self.assertIn("DWALocalPlanner", dwa_node)
+        self.assertIn("local_stop_request_topic", dwa_node)
+        dwa_launch = launch_text.split(
+            'executable="dwa_local_planner_node"',
             maxsplit=1,
         )[1].split(
             'executable="proximity_stop_node"',
@@ -99,13 +102,15 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         )[0]
         self.assertIn(
             '"min_turning_radius_m": motion["min_turning_radius_m"]',
-            local_replanner_launch,
+            dwa_launch,
         )
         self.assertNotIn(
             '"min_turning_radius_m": global_planner[',
-            local_replanner_launch,
+            dwa_launch,
         )
         self.assertIn("local_trajectory_topic", control_node)
+        self.assertIn("local_stop_request_topic", control_node)
+        self.assertIn("LOCAL_PLANNER_STOP", control_node)
         self.assertIn("parameterize_local_path", control_node)
         self.assertIn("replace_trajectory", control_node)
         self.assertIn("LOCAL_PLAN_STALE", control_node)
