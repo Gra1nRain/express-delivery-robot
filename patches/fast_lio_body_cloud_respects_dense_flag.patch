@@ -1,0 +1,21 @@
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -557,12 +557,15 @@ void publish_frame_world(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::Shared
+ 
+ void publish_frame_body(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudFull_body)
+ {
+-    int size = feats_undistort->points.size();
++    // FAST_LIO_BODY_CLOUD_RESPECTS_DENSE_FLAG
++    PointCloudXYZI::Ptr laserCloudBodyRes(
++        dense_pub_en ? feats_undistort : feats_down_body);
++    int size = laserCloudBodyRes->points.size();
+     PointCloudXYZI::Ptr laserCloudIMUBody(new PointCloudXYZI(size, 1));
+ 
+     for (int i = 0; i < size; i++)
+     {
+-        RGBpointBodyLidarToIMU(&feats_undistort->points[i], \
++        RGBpointBodyLidarToIMU(&laserCloudBodyRes->points[i], \
+                             &laserCloudIMUBody->points[i]);
+     }
+ 
