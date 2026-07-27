@@ -75,6 +75,7 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
             patch_text,
         )
         self.assertIn("mapping_timer_hz must be positive", patch_text)
+        self.assertRegex(config_text, r"(?m)^    point_filter_num: 10$")
         self.assertRegex(config_text, r"(?m)^      timer_hz: 100$")
 
     def test_fast_lio_separates_sensor_and_mapping_callbacks(self) -> None:

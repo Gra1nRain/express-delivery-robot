@@ -1,7 +1,10 @@
 /**:
   ros__parameters:
     feature_extract_enable: false
-    point_filter_num: 5
+    # 2026-07-27 static-avoidance A/B on the Jetson: 5 reduced FAST-LIO to
+    # about 0.78 Hz / 1.4 s delay, while 10 sustained about 9.98 Hz with
+    # 0.037 s mean and 0.061 s maximum odometry delay.
+    point_filter_num: 10
     max_iteration: 3
     filter_size_surf: 0.5
     filter_size_map: 0.5
