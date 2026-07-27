@@ -25,12 +25,16 @@ fi
 apply_patch_once() {
   local patch_path="$1"
   local patch_label="$2"
+  local patch_marker="$3"
+  local source_file="$FAST_LIO_SOURCE/src/laserMapping.cpp"
 
   if [[ ! -f "$patch_path" ]]; then
     echo "ERROR: missing FAST-LIO patch: $patch_path" >&2
     exit 1
   fi
-  if git -C "$FAST_LIO_SOURCE" apply --reverse --check "$patch_path" \
+  if grep -Fq "$patch_marker" "$source_file"; then
+    echo "FAST-LIO $patch_label patch marker is already present."
+  elif git -C "$FAST_LIO_SOURCE" apply --reverse --check "$patch_path" \
        >/dev/null 2>&1; then
     echo "FAST-LIO $patch_label patch is already applied."
   elif git -C "$FAST_LIO_SOURCE" apply --check "$patch_path"; then
@@ -42,11 +46,15 @@ apply_patch_once() {
   fi
 }
 
-apply_patch_once "$QOS_PATCH" "latest-sample QoS"
-apply_patch_once "$INTERNAL_BUFFER_PATCH" "latest internal buffer"
-apply_patch_once "$TIMER_RATE_PATCH" "mapping timer rate"
-apply_patch_once "$EXECUTOR_PATCH" "executor callback groups"
-apply_patch_once "$PREPROCESS_LOCK_PATCH" "preprocess lock scope"
+apply_patch_once "$QOS_PATCH" "latest-sample QoS" "lidar_qos.keep_last(1);"
+apply_patch_once "$INTERNAL_BUFFER_PATCH" "latest internal buffer" \
+  "while (lidar_buffer.size() > 1)"
+apply_patch_once "$TIMER_RATE_PATCH" "mapping timer rate" \
+  'declare_parameter<int>("mapping.timer_hz", 100);'
+apply_patch_once "$EXECUTOR_PATCH" "executor callback groups" \
+  "rclcpp::executors::MultiThreadedExecutor executor("
+apply_patch_once "$PREPROCESS_LOCK_PATCH" "preprocess lock scope" \
+  "FAST_LIO_PREPROCESS_OUTSIDE_SYNC_LOCK"
 
 set +u
 source /opt/ros/humble/setup.bash

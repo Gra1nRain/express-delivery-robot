@@ -115,6 +115,7 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
         short_lock = "+        std::lock_guard<std::mutex> lock(mtx_buffer);"
         self.assertIn(preprocess, patch_text)
         self.assertIn(short_lock, patch_text)
+        self.assertIn("FAST_LIO_PREPROCESS_OUTSIDE_SYNC_LOCK", patch_text)
         self.assertLess(
             patch_text.index(preprocess),
             patch_text.index(short_lock),
@@ -135,6 +136,8 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
         self.assertIn("fast_lio_preprocess_lock_scope.patch", rebuild_text)
         self.assertIn("apply --reverse --check", rebuild_text)
         self.assertIn("apply --check", rebuild_text)
+        self.assertIn('grep -Fq "$patch_marker"', rebuild_text)
+        self.assertIn("FAST_LIO_PREPROCESS_OUTSIDE_SYNC_LOCK", rebuild_text)
         self.assertIn("pgrep -f", rebuild_text)
         self.assertNotIn("livox_latest_frame_adapter_node", rebuild_text)
         self.assertNotIn("rm -", rebuild_text)

@@ -1,7 +1,7 @@
 diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
 --- a/src/laserMapping.cpp
 +++ b/src/laserMapping.cpp
-@@ -311,10 +311,14 @@ double timediff_lidar_wrt_imu = 0.0;
+@@ -311,10 +311,15 @@ double timediff_lidar_wrt_imu = 0.0;
  bool   timediff_set_flg = false;
  void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg) 
  {
@@ -11,6 +11,7 @@ diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
 -    scan_count ++;
 +    PointCloudXYZI::Ptr ptr(new PointCloudXYZI());
 +    p_pre->process(msg, ptr);
++    // FAST_LIO_PREPROCESS_OUTSIDE_SYNC_LOCK
 +
 +    {
 +        std::lock_guard<std::mutex> lock(mtx_buffer);
