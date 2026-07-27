@@ -10,6 +10,7 @@ import time
 
 import rclpy
 from nav_msgs.msg import OccupancyGrid, Odometry
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -352,6 +353,8 @@ class AvoidanceManagerNode(Node):
             depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
         )
+        self._cloud_callback_group = MutuallyExclusiveCallbackGroup()
+        self._state_callback_group = MutuallyExclusiveCallbackGroup()
         self._scan_publisher = self.create_publisher(
             LaserScan,
             str(
@@ -367,12 +370,14 @@ class AvoidanceManagerNode(Node):
             self._cloud_topic,
             self._cloud_callback,
             cloud_qos,
+            callback_group=self._cloud_callback_group,
         )
         self.create_subscription(
             Odometry,
             self._odometry_topic,
             self._odometry_callback,
             20,
+            callback_group=self._state_callback_group,
         )
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -382,7 +387,11 @@ class AvoidanceManagerNode(Node):
         self._last_cloud_received_s = 0.0
         self._stop_required = True
         self._stop_reason = "waiting_for_perception"
-        self.create_timer(1.0 / stop_frequency_hz, self._stop_cycle)
+        self.create_timer(
+            1.0 / stop_frequency_hz,
+            self._stop_cycle,
+            callback_group=self._state_callback_group,
+        )
         self.get_logger().info(
             "Additive avoidance manager ready in dry-run mode: "
             f"cloud={self._cloud_topic}, odometry={self._odometry_topic}, "
