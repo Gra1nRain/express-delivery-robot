@@ -34,6 +34,23 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
             patch_text,
         )
 
+    def test_sync_discards_waiting_lidar_frames_before_selecting_next(self) -> None:
+        patch_text = (
+            REPO_ROOT
+            / "patches"
+            / "fast_lio_latest_internal_buffer.patch"
+        ).read_text(encoding="utf-8")
+
+        discard_loop = "while (lidar_buffer.size() > 1)"
+        select_latest = "meas.lidar = lidar_buffer.front();"
+        self.assertIn(discard_loop, patch_text)
+        self.assertIn("lidar_buffer.pop_front();", patch_text)
+        self.assertIn("time_buffer.pop_front();", patch_text)
+        self.assertLess(
+            patch_text.index(discard_loop),
+            patch_text.index(select_latest),
+        )
+
     def test_rebuild_is_scoped_guarded_and_does_not_use_python_adapter(self) -> None:
         rebuild_text = (
             REPO_ROOT / "scripts" / "rebuild_fast_lio_release.sh"
@@ -42,6 +59,7 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
         self.assertIn("--packages-select fast_lio", rebuild_text)
         self.assertIn("-DCMAKE_BUILD_TYPE=Release", rebuild_text)
         self.assertIn("fast_lio_latest_lidar_qos.patch", rebuild_text)
+        self.assertIn("fast_lio_latest_internal_buffer.patch", rebuild_text)
         self.assertIn("apply --reverse --check", rebuild_text)
         self.assertIn("apply --check", rebuild_text)
         self.assertIn("pgrep -f", rebuild_text)
