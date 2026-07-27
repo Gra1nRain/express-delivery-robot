@@ -381,7 +381,8 @@ class RelayMonitor(Node):
     def local_ready(self) -> bool:
         trajectory_ready = (
             bool(self._args.global_tracking_mode)
-            or self.data.get("local_status_value") in ("REPLANNED", "REFERENCE_CLEAR")
+            or self.data.get("local_status_value")
+            in ("REPLANNED", "REFERENCE_CLEAR", "DWA_TRACKING", "DWA_AVOIDING")
         )
         return (
             trajectory_ready

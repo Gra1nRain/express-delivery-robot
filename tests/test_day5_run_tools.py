@@ -136,6 +136,14 @@ class Day5RunScriptTest(unittest.TestCase):
         self.assertIn("default=None", text)
         self.assertIn("elapsed_s >= watchdog_timeout_s", text)
 
+    def test_relay_accepts_dwa_ready_states(self) -> None:
+        text = (
+            REPO_ROOT / "scripts" / "day5_full_route_relay.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"DWA_TRACKING"', text)
+        self.assertIn('"DWA_AVOIDING"', text)
+
 
 if __name__ == "__main__":
     unittest.main()
