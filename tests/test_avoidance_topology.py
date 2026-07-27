@@ -285,8 +285,19 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertIn("-DCMAKE_BUILD_TYPE=Release", rebuild_text)
         self.assertIn("pgrep -f", rebuild_text)
         self.assertIn("livox_ros_driver2_bounded_packet_queue.patch", rebuild_text)
+        self.assertIn("livox_ros_driver2_sensor_qos.patch", rebuild_text)
         self.assertIn("apply --check", rebuild_text)
         self.assertNotIn("rm -", rebuild_text)
+
+        qos_patch = (
+            REPO_ROOT / "patches" / "livox_ros_driver2_sensor_qos.patch"
+        ).read_text(encoding="utf-8")
+        self.assertIn("rclcpp::SensorDataQoS()", qos_patch)
+        self.assertIn("qos.keep_last(1)", qos_patch)
+        self.assertIn(
+            "create_publisher<CustomMsg>(topic_name, qos)",
+            qos_patch,
+        )
 
     def test_livox_acceptance_keeps_strict_latency_limits(self) -> None:
         acceptance_text = (

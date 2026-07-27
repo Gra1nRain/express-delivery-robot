@@ -1,0 +1,15 @@
+diff --git a/src/lddc.cpp b/src/lddc.cpp
+--- a/src/lddc.cpp
++++ b/src/lddc.cpp
+@@ -532,8 +532,10 @@ std::shared_ptr<rclcpp::PublisherBase> Lddc::CreatePublisher(uint8_t msg_type,
+       return cur_node_->create_publisher<PointCloud2>(topic_name, queue_size);
+     } else if (kLivoxCustomMsg == msg_type) {
+       DRIVER_INFO(*cur_node_,
+           "%s publish use livox custom format", topic_name.c_str());
+-      return cur_node_->create_publisher<CustomMsg>(topic_name, queue_size);
++      auto qos = rclcpp::SensorDataQoS();
++      qos.keep_last(1);
++      return cur_node_->create_publisher<CustomMsg>(topic_name, qos);
+     }
+ #if 0
+     else if (kPclPxyziMsg == msg_type)  {
