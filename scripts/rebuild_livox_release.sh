@@ -27,11 +27,13 @@ apply_patch_once() {
     echo "ERROR: missing Livox patch: $patch_path" >&2
     exit 1
   fi
-  if git -C "$DRIVER_SOURCE" apply --reverse --check "$patch_path" \
+  if git -C "$DRIVER_SOURCE" apply --reverse --check --ignore-space-change \
+       "$patch_path" \
        >/dev/null 2>&1; then
     echo "Livox $patch_label patch is already applied."
-  elif git -C "$DRIVER_SOURCE" apply --check "$patch_path"; then
-    git -C "$DRIVER_SOURCE" apply "$patch_path"
+  elif git -C "$DRIVER_SOURCE" apply --check --ignore-space-change \
+       "$patch_path"; then
+    git -C "$DRIVER_SOURCE" apply --ignore-space-change "$patch_path"
     echo "Applied Livox $patch_label patch."
   else
     echo "ERROR: Livox $patch_label patch does not apply cleanly." >&2

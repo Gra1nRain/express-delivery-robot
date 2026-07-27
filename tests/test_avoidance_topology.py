@@ -287,6 +287,7 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertIn("livox_ros_driver2_bounded_packet_queue.patch", rebuild_text)
         self.assertIn("livox_ros_driver2_sensor_qos.patch", rebuild_text)
         self.assertIn("apply --check", rebuild_text)
+        self.assertIn("apply --check --ignore-space-change", rebuild_text)
         self.assertNotIn("rm -", rebuild_text)
 
         qos_patch = (
