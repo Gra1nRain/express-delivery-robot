@@ -27,6 +27,7 @@ from competition_planning.dwa_local_planner import (
     DWALocalPlanner,
     DWAPlanningError,
     DWAVelocity,
+    filter_and_downsample_obstacle_points,
 )
 from competition_planning.local_replanner_node import (
     _load_reference_path,
@@ -268,6 +269,9 @@ class DWALocalPlannerNode(Node):
             message,
             z_min_m=self._z_min_m,
             z_max_m=self._z_max_m,
+            x_min_m=self._obstacle_x_min_m,
+            x_max_m=self._obstacle_x_max_m,
+            y_half_width_m=self._obstacle_y_half_width_m,
             point_stride=self._cloud_point_stride,
             voxel_size_m=self._cloud_voxel_size_m,
             max_points=self._max_obstacle_points,
@@ -409,38 +413,28 @@ def _downsample_cloud(
     *,
     z_min_m: float,
     z_max_m: float,
+    x_min_m: float,
+    x_max_m: float,
+    y_half_width_m: float,
     point_stride: int,
     voxel_size_m: float,
     max_points: int,
 ) -> tuple[tuple[float, float, float], ...]:
-    points: list[tuple[float, float, float]] = []
-    occupied_voxels: set[tuple[int, int, int]] = set()
-    for index, point in enumerate(
+    return filter_and_downsample_obstacle_points(
         point_cloud2.read_points(
             message,
             field_names=("x", "y", "z"),
             skip_nans=True,
-        )
-    ):
-        if index % point_stride:
-            continue
-        x = float(point[0])
-        y = float(point[1])
-        z = float(point[2])
-        if not z_min_m <= z <= z_max_m:
-            continue
-        voxel = (
-            math.floor(x / voxel_size_m),
-            math.floor(y / voxel_size_m),
-            math.floor(z / voxel_size_m),
-        )
-        if voxel in occupied_voxels:
-            continue
-        occupied_voxels.add(voxel)
-        points.append((x, y, z))
-        if len(points) >= max_points:
-            break
-    return tuple(points)
+        ),
+        z_min_m=z_min_m,
+        z_max_m=z_max_m,
+        x_min_m=x_min_m,
+        x_max_m=x_max_m,
+        y_half_width_m=y_half_width_m,
+        point_stride=point_stride,
+        voxel_size_m=voxel_size_m,
+        max_points=max_points,
+    )
 
 
 def _stamp_to_seconds(stamp) -> float:

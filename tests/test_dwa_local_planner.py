@@ -11,6 +11,7 @@ from competition_planning.dwa_local_planner import (
     DWALocalPlanner,
     DWAPlanningError,
     DWAVelocity,
+    filter_and_downsample_obstacle_points,
 )
 from competition_planning.semantic_planner import PathPoint
 
@@ -111,6 +112,26 @@ class DWALocalPlannerTest(unittest.TestCase):
             DWAConfig(min_speed_mps=0.2, max_speed_mps=0.1)
         with self.assertRaises(ValueError):
             DWAConfig(speed_sample_count=1)
+
+    def test_obstacle_crop_runs_before_point_limit(self) -> None:
+        irrelevant_points = tuple(
+            (-2.0, -3.0 + 0.01 * index, 0.0) for index in range(300)
+        )
+        front_obstacle = (1.40, 0.0, 0.0)
+
+        points = filter_and_downsample_obstacle_points(
+            (*irrelevant_points, front_obstacle),
+            z_min_m=-0.25,
+            z_max_m=0.80,
+            x_min_m=0.05,
+            x_max_m=4.0,
+            y_half_width_m=2.5,
+            point_stride=1,
+            voxel_size_m=0.01,
+            max_points=20,
+        )
+
+        self.assertEqual(points, (front_obstacle,))
 
 
 if __name__ == "__main__":

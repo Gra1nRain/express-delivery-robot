@@ -85,6 +85,47 @@ class DWAPlan:
     status: str
 
 
+def filter_and_downsample_obstacle_points(
+    points_xyz: Iterable[Sequence[float]],
+    *,
+    z_min_m: float,
+    z_max_m: float,
+    x_min_m: float,
+    x_max_m: float,
+    y_half_width_m: float,
+    point_stride: int,
+    voxel_size_m: float,
+    max_points: int,
+) -> tuple[tuple[float, float, float], ...]:
+    """Keep the local obstacle window before applying the point-count cap."""
+    points: list[tuple[float, float, float]] = []
+    occupied_voxels: set[tuple[int, int, int]] = set()
+    for index, point in enumerate(points_xyz):
+        if index % point_stride:
+            continue
+        x = float(point[0])
+        y = float(point[1])
+        z = float(point[2])
+        if not (
+            z_min_m <= z <= z_max_m
+            and x_min_m <= x <= x_max_m
+            and abs(y) <= y_half_width_m
+        ):
+            continue
+        voxel = (
+            math.floor(x / voxel_size_m),
+            math.floor(y / voxel_size_m),
+            math.floor(z / voxel_size_m),
+        )
+        if voxel in occupied_voxels:
+            continue
+        occupied_voxels.add(voxel)
+        points.append((x, y, z))
+        if len(points) >= max_points:
+            break
+    return tuple(points)
+
+
 class DWALocalPlanner:
     """Select a short forward arc that is safe and remains near Hybrid A*."""
 
