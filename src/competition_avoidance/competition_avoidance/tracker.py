@@ -17,6 +17,7 @@ class TrackerConfig:
     static_speed_mps: float = 0.08
     moving_confirmation_count: int = 2
     static_confirmation_count: int = 3
+    dynamic_classification_enabled: bool = True
     allow_unknown_dynamic: bool = False
     maximum_unknown_dynamic_radius_m: float = 0.80
     alpha: float = 0.85
@@ -189,6 +190,16 @@ class ObstacleTracker:
         self._update_motion_state(track)
 
     def _update_motion_state(self, track: _Track) -> None:
+        if not self._config.dynamic_classification_enabled:
+            track.moving_streak = 0
+            track.static_streak += 1
+            if (
+                track.motion_state == "DYNAMIC"
+                or track.static_streak >= self._config.static_confirmation_count
+            ):
+                track.motion_state = "STATIC"
+            return
+
         if (
             track.classification == "CONE_CANDIDATE"
             or (

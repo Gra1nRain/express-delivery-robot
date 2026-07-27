@@ -108,6 +108,33 @@ class AvoidanceTrackerTest(unittest.TestCase):
         self.assertEqual(result[0].motion_state, "DYNAMIC")
         self.assertGreater(result[0].speed_mps, 0.35)
 
+    def test_static_commissioning_keeps_moving_scan_candidate_static(self) -> None:
+        tracker = ObstacleTracker(
+            TrackerConfig(
+                dynamic_classification_enabled=False,
+                association_gate_m=0.80,
+                minimum_confirmed_hits=2,
+                moving_confirmation_count=2,
+                static_confirmation_count=2,
+            )
+        )
+        result = ()
+        for index in range(5):
+            result = tracker.update(
+                (
+                    _classified_obstacle(
+                        0.15 * index,
+                        "SCAN_CANDIDATE",
+                        0.40,
+                    ),
+                ),
+                timestamp_s=1.0 + 0.1 * index,
+            )
+
+        self.assertTrue(result[0].confirmed)
+        self.assertGreater(result[0].speed_mps, 0.35)
+        self.assertEqual(result[0].motion_state, "STATIC")
+
     def test_cone_candidate_remains_static_despite_centroid_motion(self) -> None:
         tracker = ObstacleTracker(_vehicle_profile())
         result = ()

@@ -249,6 +249,12 @@ class AvoidanceManagerNode(Node):
             ),
         )
         tracker_config = TrackerConfig(
+            dynamic_classification_enabled=bool(
+                self.declare_parameter(
+                    "dynamic_classification_enabled",
+                    True,
+                ).value
+            ),
             association_gate_m=float(
                 self.declare_parameter("association_gate_m", 0.80).value
             ),

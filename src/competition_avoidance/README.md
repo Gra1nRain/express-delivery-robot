@@ -27,6 +27,10 @@
 Live Scan；二维聚类使用 `SCAN_CANDIDATE` 标签，仅表示可参与连续运动判定，
 不表示已经识别人或锥桶。
 
+当前静态避障联调配置显式设置 `dynamic_classification_enabled: false`：所有确认轨迹
+都作为静态障碍进入局部代价地图，避免无语义的 Scan 质心抖动触发动态减速/停车。
+动态跟踪实现仍完整保留，完成静态实车验收后再单独启用并验证。
+
 现有 `LocalTrajectoryPlanner` 继续订阅 `/avoidance/local_costmap`，现有
 `SafetySupervisor` 继续订阅 `/avoidance/stop_request`。本包不发布
 `/planning/local_trajectory`、`/cmd_vel_safe` 或 `/cmd_vel`。

@@ -69,6 +69,9 @@ avoidance_manager:
     cluster_tolerance_m: 0.30
     minimum_cluster_points: 2
 
+    # Static commissioning phase: retain the dynamic tracker implementation but
+    # prevent scan centroid jitter from commanding dynamic slow/stop decisions.
+    dynamic_classification_enabled: false
     association_gate_m: 0.35
     track_timeout_s: 0.80
     minimum_confirmed_hits: 2
