@@ -23,6 +23,9 @@
       scan_rate: 10
 
     mapping:
+      # Match the MID360 scan rate so the single-threaded executor has time
+      # to service fresh LiDAR/IMU callbacks between mapping cycles.
+      timer_hz: 10
       acc_cov: 0.1
       gyr_cov: 0.1
       b_acc_cov: 0.0001

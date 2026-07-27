@@ -51,6 +51,32 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
             patch_text.index(select_latest),
         )
 
+    def test_day5_mapping_timer_matches_lidar_scan_rate(self) -> None:
+        patch_text = (
+            REPO_ROOT / "patches" / "fast_lio_mapping_timer_rate.patch"
+        ).read_text(encoding="utf-8")
+        config_text = (
+            REPO_ROOT
+            / "config"
+            / "mapping"
+            / "fast_lio_mid360_day5_control.yaml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'declare_parameter<int>("mapping.timer_hz", 100);',
+            patch_text,
+        )
+        self.assertIn(
+            'get_parameter_or<int>("mapping.timer_hz", mapping_timer_hz, 100);',
+            patch_text,
+        )
+        self.assertIn(
+            "1000.0 / static_cast<double>(mapping_timer_hz)",
+            patch_text,
+        )
+        self.assertIn("mapping_timer_hz must be positive", patch_text)
+        self.assertRegex(config_text, r"(?m)^      timer_hz: 10$")
+
     def test_rebuild_is_scoped_guarded_and_does_not_use_python_adapter(self) -> None:
         rebuild_text = (
             REPO_ROOT / "scripts" / "rebuild_fast_lio_release.sh"
@@ -60,6 +86,7 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
         self.assertIn("-DCMAKE_BUILD_TYPE=Release", rebuild_text)
         self.assertIn("fast_lio_latest_lidar_qos.patch", rebuild_text)
         self.assertIn("fast_lio_latest_internal_buffer.patch", rebuild_text)
+        self.assertIn("fast_lio_mapping_timer_rate.patch", rebuild_text)
         self.assertIn("apply --reverse --check", rebuild_text)
         self.assertIn("apply --check", rebuild_text)
         self.assertIn("pgrep -f", rebuild_text)
