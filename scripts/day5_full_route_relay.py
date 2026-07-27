@@ -695,7 +695,16 @@ def run(args: argparse.Namespace) -> int:
                 if _route_complete(node, route_point_count, finish_xy):
                     stop_reason = "route_complete"
                     break
-                if bool(node.data.get("stop_request", False)) or bool(node.data.get("proximity_stop", False)):
+                proximity_blocked = bool(
+                    node.data.get("stop_request", False)
+                ) or bool(node.data.get("proximity_stop", False))
+                if _sustained(
+                    bad_since,
+                    "proximity_stop",
+                    proximity_blocked,
+                    now_s,
+                    args.sustained_error_s,
+                ):
                     stop_reason = "proximity_stop_request"
                     break
                 if node.data.get("scan_min") is not None and float(node.data["scan_min"]) < args.scan_stop_m:

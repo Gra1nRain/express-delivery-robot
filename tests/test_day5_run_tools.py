@@ -144,6 +144,14 @@ class Day5RunScriptTest(unittest.TestCase):
         self.assertIn('"DWA_TRACKING"', text)
         self.assertIn('"DWA_AVOIDING"', text)
 
+    def test_relay_debounces_temporary_proximity_stop(self) -> None:
+        text = (
+            REPO_ROOT / "scripts" / "day5_full_route_relay.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("proximity_blocked = bool(", text)
+        self.assertIn('"proximity_stop",', text)
+
 
 if __name__ == "__main__":
     unittest.main()
