@@ -251,6 +251,9 @@ class AvoidanceManagerNode(Node):
             static_confirmation_count=int(
                 self.declare_parameter("static_confirmation_count", 3).value
             ),
+            allow_unknown_dynamic=bool(
+                self.declare_parameter("allow_unknown_dynamic", False).value
+            ),
             maximum_unknown_dynamic_radius_m=float(
                 self.declare_parameter(
                     "maximum_unknown_dynamic_radius_m",

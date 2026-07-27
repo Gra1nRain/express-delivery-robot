@@ -72,6 +72,9 @@ avoidance_manager:
     static_speed_mps: 0.18
     moving_confirmation_count: 3
     static_confirmation_count: 3
+    # Competition dynamic obstacles are crossing pedestrians. Low-confidence
+    # UNKNOWN clusters remain in static replanning and proximity protection.
+    allow_unknown_dynamic: false
     maximum_unknown_dynamic_radius_m: 0.80
 
     prediction_horizon_s: 3.0

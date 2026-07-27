@@ -17,6 +17,7 @@ class TrackerConfig:
     static_speed_mps: float = 0.08
     moving_confirmation_count: int = 2
     static_confirmation_count: int = 3
+    allow_unknown_dynamic: bool = False
     maximum_unknown_dynamic_radius_m: float = 0.80
     alpha: float = 0.85
     beta: float = 0.45
@@ -192,8 +193,11 @@ class ObstacleTracker:
             track.classification == "CONE_CANDIDATE"
             or (
                 track.classification == "UNKNOWN"
-                and track.radius_m
-                > self._config.maximum_unknown_dynamic_radius_m
+                and (
+                    not self._config.allow_unknown_dynamic
+                    or track.radius_m
+                    > self._config.maximum_unknown_dynamic_radius_m
+                )
             )
         ):
             track.moving_streak = 0
