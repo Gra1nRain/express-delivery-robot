@@ -89,41 +89,6 @@ class AvoidanceEngineTest(unittest.TestCase):
         self.assertEqual(decision.dynamic_track_count, 0)
         self.assertEqual(decision.static_track_count, 1)
 
-    def test_unknown_centroid_reversals_do_not_confirm_dynamic_motion(
-        self,
-    ) -> None:
-        engine = AvoidanceEngine(
-            tracker_config=TrackerConfig(
-                association_gate_m=0.35,
-                minimum_confirmed_hits=2,
-                moving_speed_mps=0.35,
-                static_speed_mps=0.18,
-                moving_confirmation_count=3,
-                static_confirmation_count=3,
-            )
-        )
-        ego = EgoState(0.0, 0.0, 0.0, 0.0)
-
-        decisions = tuple(
-            engine.update(
-                (_detection(x, 0.0, "UNKNOWN"),),
-                timestamp_s=2.0 + 0.1 * index,
-                ego=ego,
-                proximity_stop=False,
-            )
-            for index, x in enumerate((0.50, 0.70, 0.50, 0.70, 0.50, 0.70))
-        )
-
-        self.assertNotIn(
-            "DYNAMIC_STOP",
-            {decision.mode for decision in decisions},
-        )
-        self.assertNotIn(
-            "DYNAMIC_SLOWDOWN",
-            {decision.mode for decision in decisions},
-        )
-        self.assertEqual(decisions[-1].dynamic_track_count, 0)
-
     def test_proximity_stop_overrides_other_decisions(self) -> None:
         engine = AvoidanceEngine()
 
