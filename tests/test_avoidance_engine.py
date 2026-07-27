@@ -53,6 +53,42 @@ class AvoidanceEngineTest(unittest.TestCase):
         self.assertFalse(decision.stop_required)
         self.assertEqual(decision.static_track_count, 1)
 
+    def test_dynamic_track_becoming_cone_immediately_returns_to_static_replan(
+        self,
+    ) -> None:
+        engine = AvoidanceEngine(
+            tracker_config=TrackerConfig(
+                association_gate_m=1.0,
+                minimum_confirmed_hits=2,
+                moving_speed_mps=0.35,
+                static_speed_mps=0.18,
+                moving_confirmation_count=2,
+                static_confirmation_count=3,
+            )
+        )
+        ego = EgoState(0.0, 0.0, 0.0, 0.0)
+
+        for timestamp_s, x in ((1.0, 0.40), (1.1, 0.50), (1.2, 0.60)):
+            decision = engine.update(
+                (_detection(x, 0.0, "UNKNOWN"),),
+                timestamp_s=timestamp_s,
+                ego=ego,
+                proximity_stop=False,
+            )
+        self.assertEqual(decision.mode, "DYNAMIC_STOP")
+
+        decision = engine.update(
+            (_detection(0.70, 0.0, "CONE_CANDIDATE"),),
+            timestamp_s=1.3,
+            ego=ego,
+            proximity_stop=False,
+        )
+
+        self.assertEqual(decision.mode, "STATIC_REPLAN")
+        self.assertFalse(decision.stop_required)
+        self.assertEqual(decision.dynamic_track_count, 0)
+        self.assertEqual(decision.static_track_count, 1)
+
     def test_proximity_stop_overrides_other_decisions(self) -> None:
         engine = AvoidanceEngine()
 

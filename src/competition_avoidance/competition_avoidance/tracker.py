@@ -198,7 +198,10 @@ class ObstacleTracker:
         ):
             track.moving_streak = 0
             track.static_streak += 1
-            if track.static_streak >= self._config.static_confirmation_count:
+            if (
+                track.motion_state == "DYNAMIC"
+                or track.static_streak >= self._config.static_confirmation_count
+            ):
                 track.motion_state = "STATIC"
             return
 
