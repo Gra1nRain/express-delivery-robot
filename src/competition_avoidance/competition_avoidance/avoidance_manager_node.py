@@ -37,6 +37,10 @@ from competition_avoidance.perception import (
 )
 from competition_avoidance.rate_gate import LatestSampleRateGate
 from competition_avoidance.risk import EgoState, RiskConfig
+from competition_avoidance.scan_input import (
+    mark_planar_detection,
+    scan_ranges_to_points,
+)
 from competition_avoidance.tracker import TrackerConfig
 from competition_safety.proximity_stop import (
     LocalGridConfig,
@@ -65,6 +69,20 @@ class AvoidanceManagerNode(Node):
         ):
             raise RuntimeError("avoidance_manager is currently authorized for dry-run only")
 
+        self._perception_input_type = str(
+            self.declare_parameter("perception_input_type", "cloud").value
+        ).strip().lower()
+        if self._perception_input_type not in {"cloud", "scan"}:
+            raise ValueError("perception_input_type must be 'cloud' or 'scan'")
+        self._scan_input_topic = str(
+            self.declare_parameter("scan_input_topic", "/avoidance/scan").value
+        )
+        self._expected_scan_frame = str(
+            self.declare_parameter("expected_scan_frame", "body").value
+        )
+        self._maximum_scan_age_s = float(
+            self.declare_parameter("maximum_scan_age_s", 0.50).value
+        )
         self._cloud_topic = str(
             self.declare_parameter("cloud_topic", "/cloud_registered_body").value
         )
@@ -105,6 +123,7 @@ class AvoidanceManagerNode(Node):
             self.declare_parameter("corridor_ttl_s", 0.50).value
         )
         if min(
+            self._maximum_scan_age_s,
             self._maximum_cloud_age_s,
             self._perception_timeout_s,
             self._odometry_timeout_s,
@@ -352,22 +371,32 @@ class AvoidanceManagerNode(Node):
             depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
         )
-        self._scan_publisher = self.create_publisher(
-            LaserScan,
-            str(
-                self.declare_parameter(
-                    "scan_topic",
-                    "/avoidance/scan",
-                ).value
-            ),
-            cloud_qos,
+        self._scan_output_topic = str(
+            self.declare_parameter(
+                "scan_topic",
+                "/avoidance/scan",
+            ).value
         )
-        self.create_subscription(
-            PointCloud2,
-            self._cloud_topic,
-            self._cloud_callback,
-            cloud_qos,
-        )
+        self._scan_publisher = None
+        if self._perception_input_type == "scan":
+            self.create_subscription(
+                LaserScan,
+                self._scan_input_topic,
+                self._scan_callback,
+                cloud_qos,
+            )
+        else:
+            self._scan_publisher = self.create_publisher(
+                LaserScan,
+                self._scan_output_topic,
+                cloud_qos,
+            )
+            self.create_subscription(
+                PointCloud2,
+                self._cloud_topic,
+                self._cloud_callback,
+                cloud_qos,
+            )
         self.create_subscription(
             Odometry,
             self._odometry_topic,
@@ -379,18 +408,25 @@ class AvoidanceManagerNode(Node):
         self._latest_odometry: Odometry | None = None
         self._latest_odometry_error = ""
         self._latest_odometry_received_s = 0.0
-        self._last_cloud_received_s = 0.0
+        self._last_perception_received_s = 0.0
         self._stop_required = True
         self._stop_reason = "waiting_for_perception"
         self.create_timer(1.0 / stop_frequency_hz, self._stop_cycle)
         self.get_logger().info(
             "Additive avoidance manager ready in dry-run mode: "
-            f"cloud={self._cloud_topic}, odometry={self._odometry_topic}, "
+            f"input={self._perception_input_type}, "
+            f"topic={self._active_perception_topic()}, "
+            f"odometry={self._odometry_topic}, "
             f"planning_radius={planning_radius:.2f}m, max_speed={maximum_speed:.2f}m/s"
         )
 
     def _now_s(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
+
+    def _active_perception_topic(self) -> str:
+        if self._perception_input_type == "scan":
+            return self._scan_input_topic
+        return self._cloud_topic
 
     def _odometry_callback(self, message: Odometry) -> None:
         if (
@@ -410,7 +446,7 @@ class AvoidanceManagerNode(Node):
     def _cloud_callback(self, message: PointCloud2) -> None:
         started_at = time.perf_counter()
         now_s = self._now_s()
-        self._last_cloud_received_s = now_s
+        self._last_perception_received_s = now_s
         if not self._processing_rate_gate.allow(now_s):
             return
         frame_id = message.header.frame_id
@@ -437,6 +473,70 @@ class AvoidanceManagerNode(Node):
                 skip_nans=True,
             )
         )
+        self._process_points(
+            message,
+            points,
+            input_type="cloud",
+            stamp_s=stamp_s,
+            perception_age_s=cloud_age_s,
+            now_s=now_s,
+            started_at=started_at,
+        )
+
+    def _scan_callback(self, message: LaserScan) -> None:
+        started_at = time.perf_counter()
+        now_s = self._now_s()
+        self._last_perception_received_s = now_s
+        if not self._processing_rate_gate.allow(now_s):
+            return
+        frame_id = message.header.frame_id
+        if frame_id != self._expected_scan_frame:
+            self._fail_closed(
+                "scan_frame_mismatch",
+                frame_id=frame_id,
+            )
+            return
+        stamp_s = _stamp_to_seconds(message.header.stamp)
+        scan_age_s = now_s - stamp_s
+        if stamp_s <= 0.0 or scan_age_s < -0.05:
+            self._fail_closed("invalid_scan_timestamp", scan_age_s=scan_age_s)
+            return
+        if scan_age_s > self._maximum_scan_age_s:
+            self._fail_closed("stale_scan_timestamp", scan_age_s=scan_age_s)
+            return
+        try:
+            points = scan_ranges_to_points(
+                ranges=message.ranges,
+                angle_min_rad=float(message.angle_min),
+                angle_increment_rad=float(message.angle_increment),
+                range_min_m=float(message.range_min),
+                range_max_m=float(message.range_max),
+            )
+        except ValueError as exc:
+            self._fail_closed("invalid_scan_metadata", detail=str(exc))
+            return
+        self._process_points(
+            message,
+            points,
+            input_type="scan",
+            stamp_s=stamp_s,
+            perception_age_s=scan_age_s,
+            now_s=now_s,
+            started_at=started_at,
+        )
+
+    def _process_points(
+        self,
+        message,
+        points: tuple[tuple[float, float, float], ...],
+        *,
+        input_type: str,
+        stamp_s: float,
+        perception_age_s: float,
+        now_s: float,
+        started_at: float,
+    ) -> None:
+        frame_id = message.header.frame_id
         footprint_x_min, footprint_x_max, footprint_y_half_width = (
             self._clearance_footprint_bounds
         )
@@ -450,14 +550,19 @@ class AvoidanceManagerNode(Node):
             self._fail_closed(
                 "odometry_frame_mismatch",
                 detail=self._latest_odometry_error,
-                cloud_age_s=cloud_age_s,
+                input_type=input_type,
+                perception_age_s=perception_age_s,
             )
             return
         if (
             self._latest_odometry is None
             or now_s - self._latest_odometry_received_s > self._odometry_timeout_s
         ):
-            self._fail_closed("odometry_unavailable", cloud_age_s=cloud_age_s)
+            self._fail_closed(
+                "odometry_unavailable",
+                input_type=input_type,
+                perception_age_s=perception_age_s,
+            )
             return
         try:
             transform = self._tf_buffer.lookup_transform(
@@ -467,7 +572,10 @@ class AvoidanceManagerNode(Node):
                 timeout=Duration(seconds=self._transform_timeout_s),
             )
         except TransformException as exc:
-            self._fail_closed("cloud_transform_unavailable", detail=str(exc))
+            self._fail_closed(
+                f"{input_type}_transform_unavailable",
+                detail=str(exc),
+            )
             return
 
         yaw = _yaw_from_quaternion(transform.transform.rotation)
@@ -495,14 +603,15 @@ class AvoidanceManagerNode(Node):
             self._proximity_config,
             self._grid_config,
         )
-        self._scan_publisher.publish(
-            _scan_message(
-                message,
-                planning_clearance,
-                self._grid_config,
-                self._scan_time_s,
+        if self._scan_publisher is not None:
+            self._scan_publisher.publish(
+                _scan_message(
+                    message,
+                    planning_clearance,
+                    self._grid_config,
+                    self._scan_time_s,
+                )
             )
-        )
         self._costmap_publisher.publish(
             _costmap_message(
                 message,
@@ -513,6 +622,11 @@ class AvoidanceManagerNode(Node):
             )
         )
         body_detections = cluster_points(points, self._perception_config)
+        if input_type == "scan":
+            body_detections = tuple(
+                mark_planar_detection(detection)
+                for detection in body_detections
+            )
         map_detections = tuple(
             _transform_detection(detection, transform, yaw)
             for detection in body_detections
@@ -542,15 +656,17 @@ class AvoidanceManagerNode(Node):
             decision,
             frame_id=self._map_frame,
             stamp_s=stamp_s,
-            cloud_age_s=cloud_age_s,
+            input_type=input_type,
+            perception_age_s=perception_age_s,
             processing_time_ms=(time.perf_counter() - started_at) * 1000.0,
         )
 
     def _stop_cycle(self) -> None:
         now_s = self._now_s()
         if (
-            self._last_cloud_received_s <= 0.0
-            or now_s - self._last_cloud_received_s > self._perception_timeout_s
+            self._last_perception_received_s <= 0.0
+            or now_s - self._last_perception_received_s
+            > self._perception_timeout_s
         ):
             self._stop_required = True
             self._stop_reason = "perception_timeout"
@@ -579,7 +695,8 @@ class AvoidanceManagerNode(Node):
         *,
         frame_id: str,
         stamp_s: float,
-        cloud_age_s: float,
+        input_type: str,
+        perception_age_s: float,
         processing_time_ms: float,
     ) -> None:
         self._objects_publisher.publish(
@@ -634,7 +751,14 @@ class AvoidanceManagerNode(Node):
                         "risk_track_id": decision.risk.track_id,
                         "time_to_cpa_s": decision.risk.time_to_cpa_s,
                         "distance_at_cpa_m": decision.risk.distance_at_cpa_m,
-                        "cloud_age_s": cloud_age_s,
+                        "input_type": input_type,
+                        "perception_age_s": perception_age_s,
+                        "cloud_age_s": (
+                            perception_age_s if input_type == "cloud" else None
+                        ),
+                        "scan_age_s": (
+                            perception_age_s if input_type == "scan" else None
+                        ),
                         "processing_time_ms": processing_time_ms,
                         "operation_mode": self._operation_mode,
                     },

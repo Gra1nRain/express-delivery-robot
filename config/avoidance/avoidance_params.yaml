@@ -4,13 +4,17 @@ avoidance_manager:
     enable_chassis_output: false
     operation_mode: dry_run
 
+    perception_input_type: scan
+    scan_input_topic: /avoidance/scan
+    expected_scan_frame: body
+    maximum_scan_age_s: 0.50
     cloud_topic: /cloud_registered_body
     odometry_topic: /odom
     expected_odometry_frame: camera_init
     map_frame: map
     expected_cloud_frame: body
     maximum_cloud_age_s: 0.50
-    perception_timeout_s: 0.30
+    perception_timeout_s: 0.75
     odometry_timeout_s: 0.30
     transform_timeout_s: 0.05
     maximum_processing_frequency_hz: 10.0
@@ -63,7 +67,7 @@ avoidance_manager:
     ground_max_z_m: -0.20
     voxel_size_m: 0.08
     cluster_tolerance_m: 0.30
-    minimum_cluster_points: 6
+    minimum_cluster_points: 2
 
     association_gate_m: 0.35
     track_timeout_s: 0.80

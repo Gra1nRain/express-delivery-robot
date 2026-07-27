@@ -71,6 +71,28 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertNotIn('"/cmd_vel"', node_text)
         self.assertNotIn('"/planning/local_trajectory"', node_text)
 
+    def test_scan_mode_subscribes_to_live_scan_without_republishing_it(
+        self,
+    ) -> None:
+        node_text = (
+            REPO_ROOT
+            / "src"
+            / "competition_avoidance"
+            / "competition_avoidance"
+            / "avoidance_manager_node.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('self._perception_input_type == "scan"', node_text)
+        self.assertIn(
+            "self.create_subscription(\n"
+            "                LaserScan,\n"
+            "                self._scan_input_topic,\n"
+            "                self._scan_callback,",
+            node_text,
+        )
+        self.assertIn("self._scan_publisher = None", node_text)
+        self.assertIn("if self._scan_publisher is not None:", node_text)
+
     def test_avoidance_profile_freezes_odometry_semantics(self) -> None:
         config = yaml.safe_load(
             (
@@ -80,7 +102,69 @@ class AvoidanceTopologyTest(unittest.TestCase):
 
         self.assertEqual(config["odometry_topic"], "/odom")
         self.assertEqual(config["expected_odometry_frame"], "camera_init")
-        self.assertEqual(config["scan_topic"], "/avoidance/scan")
+        self.assertEqual(config["perception_input_type"], "scan")
+        self.assertEqual(config["scan_input_topic"], "/avoidance/scan")
+
+    def test_scan_source_profile_keeps_canonical_publishers_unique(self) -> None:
+        safety_config = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "safety"
+                / "safety_params_day5_avoidance_scan.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        avoidance_config = yaml.safe_load(
+            (
+                REPO_ROOT / "config" / "avoidance" / "avoidance_params.yaml"
+            ).read_text(encoding="utf-8")
+        )["avoidance_manager"]["ros__parameters"]
+        proximity = safety_config["proximity_stop"]
+
+        self.assertEqual(proximity["scan_topic"], "/avoidance/scan")
+        self.assertEqual(
+            proximity["stop_request_topic"],
+            "/avoidance/proximity_stop_request",
+        )
+        self.assertEqual(
+            proximity["costmap_topic"],
+            "/avoidance/proximity_costmap",
+        )
+        self.assertEqual(
+            safety_config["safety"]["avoidance_stop_topic"],
+            "/avoidance/stop_request",
+        )
+        self.assertEqual(
+            avoidance_config["stop_request_topic"],
+            "/avoidance/stop_request",
+        )
+        self.assertEqual(
+            avoidance_config["local_costmap_topic"],
+            "/avoidance/local_costmap",
+        )
+
+    def test_scan_source_profile_only_remaps_proximity_outputs(self) -> None:
+        base_config = yaml.safe_load(
+            (
+                REPO_ROOT / "config" / "safety" / "safety_params.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        scan_config = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "safety"
+                / "safety_params_day5_avoidance_scan.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        expected_proximity = dict(base_config["proximity_stop"])
+        expected_proximity["stop_request_topic"] = (
+            "/avoidance/proximity_stop_request"
+        )
+        expected_proximity["costmap_topic"] = "/avoidance/proximity_costmap"
+
+        self.assertEqual(scan_config["safety"], base_config["safety"])
+        self.assertEqual(scan_config["proximity_stop"], expected_proximity)
 
     def test_odometry_adapter_bridges_fast_lio_without_touching_navigation(self) -> None:
         setup_text = (
