@@ -4,7 +4,9 @@ local_replanner:
     map_file: /home/agilex/competition_ws/maps/debug/map.yaml
     map_frame: map
     base_frame: body
-    frequency_hz: 1.0
+    # Hold each accepted local trajectory for about two seconds. This reduces
+    # scan-jitter-driven path switching and leaves CPU headroom for FAST-LIO.
+    frequency_hz: 0.5
     lookahead_distance_m: 1.5
     fallback_lookahead_distance_m: 3.5
     inflation_radius_m: 0.45

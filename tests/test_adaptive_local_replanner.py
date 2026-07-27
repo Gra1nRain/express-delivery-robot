@@ -2,6 +2,8 @@ import pathlib
 import sys
 import unittest
 
+import yaml
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_avoidance"))
@@ -119,6 +121,20 @@ class AdaptiveLocalReplannerTest(unittest.TestCase):
             )
 
         self.assertIsNone(planner.last_selected_lookahead_distance_m)
+
+    def test_field_profile_holds_each_plan_for_two_seconds(self) -> None:
+        profile = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "avoidance"
+                / "adaptive_local_replanner_params.yaml"
+            ).read_text(encoding="utf-8")
+        )["local_replanner"]["ros__parameters"]
+
+        self.assertEqual(profile["frequency_hz"], 0.5)
+        self.assertEqual(profile["lookahead_distance_m"], 1.5)
+        self.assertEqual(profile["fallback_lookahead_distance_m"], 3.5)
 
 
 if __name__ == "__main__":
