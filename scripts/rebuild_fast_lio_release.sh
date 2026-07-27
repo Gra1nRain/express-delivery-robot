@@ -10,6 +10,7 @@ QOS_PATCH="$COMPETITION_WS/patches/fast_lio_latest_lidar_qos.patch"
 INTERNAL_BUFFER_PATCH="$COMPETITION_WS/patches/fast_lio_latest_internal_buffer.patch"
 TIMER_RATE_PATCH="$COMPETITION_WS/patches/fast_lio_mapping_timer_rate.patch"
 EXECUTOR_PATCH="$COMPETITION_WS/patches/fast_lio_executor_callback_groups.patch"
+PREPROCESS_LOCK_PATCH="$COMPETITION_WS/patches/fast_lio_preprocess_lock_scope.patch"
 
 if [[ ! -d "$FAST_LIO_SOURCE" ]]; then
   echo "ERROR: FAST-LIO source is missing from $FAST_LIO_SOURCE" >&2
@@ -45,6 +46,7 @@ apply_patch_once "$QOS_PATCH" "latest-sample QoS"
 apply_patch_once "$INTERNAL_BUFFER_PATCH" "latest internal buffer"
 apply_patch_once "$TIMER_RATE_PATCH" "mapping timer rate"
 apply_patch_once "$EXECUTOR_PATCH" "executor callback groups"
+apply_patch_once "$PREPROCESS_LOCK_PATCH" "preprocess lock scope"
 
 set +u
 source /opt/ros/humble/setup.bash

@@ -1,0 +1,35 @@
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -311,11 +311,15 @@ double timediff_lidar_wrt_imu = 0.0;
+ bool   timediff_set_flg = false;
+ void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg) 
+ {
+-    mtx_buffer.lock();
+     double cur_time = get_time_sec(msg->header.stamp);
+     double preprocess_start_time = omp_get_wtime();
+-    scan_count ++;
++    PointCloudXYZI::Ptr ptr(new PointCloudXYZI());
++    p_pre->process(msg, ptr);
++
++    {
++        std::lock_guard<std::mutex> lock(mtx_buffer);
++        scan_count ++;
+     if (!is_first_lidar && cur_time < last_timestamp_lidar)
+     {
+         std::cerr << "lidar loop back, clear buffer" << std::endl;
+@@ -338,14 +342,12 @@ void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
+         printf("Self sync IMU and LiDAR, time diff is %.10lf \n", timediff_lidar_wrt_imu);
+     }
+ 
+-    PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
+-    p_pre->process(msg, ptr);
+     lidar_buffer.push_back(ptr);
+     time_buffer.push_back(last_timestamp_lidar);
+     
+     s_plot11[scan_count] = omp_get_wtime() - preprocess_start_time;
+-    mtx_buffer.unlock();
++    }
+     sig_buffer.notify_all();
+ }
+ 

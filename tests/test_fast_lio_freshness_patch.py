@@ -104,6 +104,23 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
             patch_text,
         )
 
+    def test_livox_preprocess_does_not_hold_the_sync_buffer_lock(self) -> None:
+        patch_text = (
+            REPO_ROOT
+            / "patches"
+            / "fast_lio_preprocess_lock_scope.patch"
+        ).read_text(encoding="utf-8")
+
+        preprocess = "+    p_pre->process(msg, ptr);"
+        short_lock = "+        std::lock_guard<std::mutex> lock(mtx_buffer);"
+        self.assertIn(preprocess, patch_text)
+        self.assertIn(short_lock, patch_text)
+        self.assertLess(
+            patch_text.index(preprocess),
+            patch_text.index(short_lock),
+        )
+        self.assertNotIn("+    mtx_buffer.lock();", patch_text)
+
     def test_rebuild_is_scoped_guarded_and_does_not_use_python_adapter(self) -> None:
         rebuild_text = (
             REPO_ROOT / "scripts" / "rebuild_fast_lio_release.sh"
@@ -115,6 +132,7 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
         self.assertIn("fast_lio_latest_internal_buffer.patch", rebuild_text)
         self.assertIn("fast_lio_mapping_timer_rate.patch", rebuild_text)
         self.assertIn("fast_lio_executor_callback_groups.patch", rebuild_text)
+        self.assertIn("fast_lio_preprocess_lock_scope.patch", rebuild_text)
         self.assertIn("apply --reverse --check", rebuild_text)
         self.assertIn("apply --check", rebuild_text)
         self.assertIn("pgrep -f", rebuild_text)
