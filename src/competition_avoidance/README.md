@@ -37,20 +37,25 @@
 ## 安全运行
 
 `vehicle_avoidance_bringup.launch.py` 当前只允许 dry-run，并且只启动
-`avoidance_manager`。它不再 include 整套 Day5，因此可以安全叠加到
-`start_navigation_prerequisites.sh` 已经启动的传感器、定位、规划、控制和
-安全链，不会重复启动 Livox、FAST-LIO、MPPI 或 Safety。
+`avoidance_manager`。它不 include 整套 Day5，因此只能在人工确认传感器、
+定位、规划、控制和安全链均已就绪且没有重复发布者后手动叠加；它不会启动
+Livox、FAST-LIO、MPPI 或 Safety。
 
-推荐在发布初始位姿后使用：
+发布初始位姿并完成人工拓扑检查后，直接启动：
 
 ```bash
-/home/agilex/competition_ws/scripts/start_avoidance_runtime.sh
+source /home/agilex/competition_ws/scripts/car_source_env.sh
+ros2 launch competition_avoidance vehicle_avoidance_bringup.launch.py \
+  dry_run:=true \
+  enable_chassis_output:=false \
+  operation_mode:=dry_run \
+  avoidance_params_file:=/home/agilex/competition_ws/config/avoidance/avoidance_params.yaml
 ```
 
-该入口会在启动前后检查 `/odom`、`/cloud_registered_body`、
+启动前必须人工检查 `/odom`、`/cloud_registered_body`、
 `/avoidance/local_costmap`、`/avoidance/stop_request`、
 `/planning/local_trajectory`、`/cmd_vel_safe` 和 `/cmd_vel` 的发布者数量。
-旧 `proximity_stop_node` 的源码仍保留，但存在旧发布者时新入口会拒绝启动。
+旧 `proximity_stop_node` 的源码仍保留，但不得与 `avoidance_manager` 同时运行。
 
 `/avoidance/local_costmap` 在点云对应的 TF 时间戳下直接锚到 `map`，避免局部
 规划器用最新 TF 转换旧 body 栅格。`/avoidance/scan` 继续使用 `body` frame，

@@ -234,16 +234,10 @@ active [3]
 
 ## 6. 项目专用 RViz
 
-`start_navigation_prerequisites.sh` 会复用已经健康运行的 Day5 传感器链；
-只有在完整兼容链不存在时，才按 2026-07-24 验证过的 sensor-first 顺序
-启动 Livox、FAST-LIO 和 Day5 无运动前置节点。该入口显式保持
-`start_base:=false`、`start_chassis_adapter:=false`。它会启动原有
-`local_replanner`、MPPI 和 Safety，但在新增避障尚未发布 costmap 时，
-局部规划和 Safety 均保持等待/停车状态；它不启动新增避障，也不启动旧
-`proximity_stop`。
-
-前置节点就绪后，脚本自动使用 `day5_localization.rviz` 打开 RViz。不要同时
-运行其他 RViz。
+当前不提供整车一键启动脚本。跑通静态避障前，按本指南逐节点直接启动并人工
+检查发布者数量；保持 `start_base:=false`、`start_chassis_adapter:=false`，
+不要启动旧 `proximity_stop`。确认 Livox、FAST-LIO、`local_replanner`、
+MPPI、Safety 和地图服务器均正常后，再打开 `day5_localization.rviz`。
 
 如果 RViz 被单独关闭，或者需要手动恢复，再在小车 Ubuntu 桌面的终端中执行：
 
@@ -309,20 +303,24 @@ timeout 10s ros2 run tf2_ros tf2_echo map camera_init
 
 能够连续输出平移和旋转数据，说明 `map -> camera_init` 已建立。
 
-随后在新终端中启动唯一的增量避障运行入口：
+随后在新终端中直接启动唯一的增量避障节点：
 
 ```bash
 source /home/agilex/competition_ws/scripts/car_source_env.sh
 set +u
 cd /home/agilex/competition_ws
 
-./scripts/start_avoidance_runtime.sh
+ros2 launch competition_avoidance vehicle_avoidance_bringup.launch.py \
+  dry_run:=true \
+  enable_chassis_output:=false \
+  operation_mode:=dry_run \
+  avoidance_params_file:=/home/agilex/competition_ws/config/avoidance/avoidance_params.yaml
 ```
 
-该脚本只增加 `avoidance_manager`，不会再次启动 Day5、Livox、FAST-LIO、
-MPPI、Safety 或地图服务器。发现 `/odom`、`/avoidance/stop_request`、
-`/avoidance/local_costmap`、`/planning/local_trajectory` 或命令出口存在
-重复发布者时会拒绝启动。
+该 launch 只增加 `avoidance_manager`，不会再次启动 Day5、Livox、
+FAST-LIO、MPPI、Safety 或地图服务器。它不会替代人工拓扑门禁；启动前必须
+确认 `/odom`、`/avoidance/stop_request`、`/avoidance/local_costmap`、
+`/planning/local_trajectory` 和命令出口不存在重复发布者。
 
 继续检查：
 

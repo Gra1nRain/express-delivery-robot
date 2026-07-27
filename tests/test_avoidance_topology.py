@@ -86,8 +86,12 @@ class AvoidanceTopologyTest(unittest.TestCase):
         setup_text = (
             REPO_ROOT / "src" / "competition_avoidance" / "setup.py"
         ).read_text(encoding="utf-8")
-        startup_text = (
-            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
+        node_text = (
+            REPO_ROOT
+            / "src"
+            / "competition_avoidance"
+            / "competition_avoidance"
+            / "odometry_adapter_node.py"
         ).read_text(encoding="utf-8")
 
         self.assertIn(
@@ -95,12 +99,9 @@ class AvoidanceTopologyTest(unittest.TestCase):
             "competition_avoidance.odometry_adapter_node:main",
             setup_text,
         )
-        self.assertIn(
-            "ros2 run competition_avoidance odometry_adapter_node",
-            startup_text,
-        )
-        self.assertIn("wait_for_topic /odom", startup_text)
-        self.assertNotIn("topic_tools relay", startup_text)
+        self.assertIn('"/Odometry"', node_text)
+        self.assertIn('"/odom"', node_text)
+        self.assertNotIn('"/cmd_vel"', node_text)
 
     def test_livox_latest_frame_adapter_is_additive_and_motion_free(self) -> None:
         setup_text = (
@@ -145,62 +146,12 @@ class AvoidanceTopologyTest(unittest.TestCase):
                 / "fast_lio_mid360_avoidance_latest.yaml"
             ).read_text(encoding="utf-8")
         )["/**"]["ros__parameters"]
-        startup_text = (
-            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
-        ).read_text(encoding="utf-8")
-
         self.assertEqual(raw_config["common"]["lid_topic"], "/livox/lidar")
         self.assertEqual(
             adapter_config["common"]["lid_topic"],
             "/avoidance/livox_latest",
         )
         self.assertEqual(adapter_config["preprocess"]["scan_rate"], 10)
-        self.assertIn(
-            "day5_sequential_bringup.sh",
-            startup_text,
-        )
-        self.assertIn("start_proximity_stop:=false", startup_text)
-        self.assertIn("start_local_replanner:=true", startup_text)
-        self.assertIn("replanning_enabled:=true", startup_text)
-        self.assertNotIn("fast_lio_mid360_day1.yaml", startup_text)
-        self.assertNotIn(
-            "setsid ros2 run competition_avoidance avoidance_manager_node",
-            startup_text,
-        )
-        self.assertNotIn(
-            "Starting additive latest-frame LiDAR adapter",
-            startup_text,
-        )
-        self.assertNotIn("LIVOX_ADAPTER_PID=", startup_text)
-
-    def test_prerequisite_cmd_vel_gate_counts_publishers(self) -> None:
-        startup_text = (
-            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn("topic_publisher_count()", startup_text)
-        self.assertIn("require_zero_publishers /cmd_vel", startup_text)
-        self.assertNotIn("if topic_exists /cmd_vel", startup_text)
-        self.assertIn(
-            "Publisher count: 0 is safe even when Ranger subscribes",
-            startup_text,
-        )
-
-    def test_prerequisite_reuses_one_existing_odom_publisher(self) -> None:
-        startup_text = (
-            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn(
-            'ODOM_PUBLISHER_COUNT="$(topic_publisher_count /odom)"',
-            startup_text,
-        )
-        self.assertIn(
-            "if (( ODOM_PUBLISHER_COUNT == 0 )); then",
-            startup_text,
-        )
-        self.assertIn("Using existing /odom publisher", startup_text)
-        self.assertIn("more than one /odom publisher", startup_text)
 
     def test_avoidance_nodes_do_not_shutdown_ros_context_twice(self) -> None:
         node_dir = (
@@ -241,56 +192,6 @@ class AvoidanceTopologyTest(unittest.TestCase):
         self.assertIn("default=120.0", acceptance_text)
         self.assertIn("default=0.30", acceptance_text)
         self.assertIn("default=0.50", acceptance_text)
-
-    def test_prerequisite_frontend_starts_project_rviz_configuration(self) -> None:
-        startup_text = (
-            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn("day5_localization.rviz", startup_text)
-        self.assertIn("__node:=rviz2_day5_localization", startup_text)
-        self.assertIn("wait_for_node /rviz2_day5_localization", startup_text)
-        self.assertIn("XAUTHORITY=", startup_text)
-        self.assertIn("XDG_RUNTIME_DIR=", startup_text)
-        self.assertIn("DBUS_SESSION_BUS_ADDRESS=", startup_text)
-        self.assertIn('start_base:=false', startup_text)
-        self.assertIn('/cmd_vel publisher_count=0', startup_text)
-
-    def test_prerequisite_frontend_reuses_a_compatible_day5_chain(self) -> None:
-        startup_text = (
-            REPO_ROOT / "scripts" / "start_navigation_prerequisites.sh"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn("compatible_day5_chain_running()", startup_text)
-        self.assertIn(
-            "Reusing compatible Day5 prerequisite chain",
-            startup_text,
-        )
-        self.assertNotIn(
-            "day1_mapping is already running; refusing duplicate startup",
-            startup_text,
-        )
-
-    def test_incremental_runtime_refuses_duplicate_publishers(self) -> None:
-        runtime_text = (
-            REPO_ROOT / "scripts" / "start_avoidance_runtime.sh"
-        ).read_text(encoding="utf-8")
-
-        for topic in (
-            "/odom",
-            "/cloud_registered_body",
-            "/avoidance/stop_request",
-            "/avoidance/local_costmap",
-            "/avoidance/scan",
-            "/planning/local_trajectory",
-            "/cmd_vel_safe",
-            "/cmd_vel",
-        ):
-            self.assertIn(topic, runtime_text)
-        self.assertIn("require_exact_publishers", runtime_text)
-        self.assertIn("require_zero_publishers", runtime_text)
-        self.assertIn("vehicle_avoidance_bringup.launch.py", runtime_text)
-        self.assertNotIn("day5_motion_control.launch.py", runtime_text)
 
     def test_localization_rviz_shows_map_and_body_cloud_without_avoidance(self) -> None:
         rviz_text = (
