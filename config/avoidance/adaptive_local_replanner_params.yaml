@@ -1,0 +1,25 @@
+local_replanner:
+  ros__parameters:
+    trajectory_file: /home/agilex/competition_ws/docs/evidence/day5/debug_continuous_trajectory.yaml
+    map_file: /home/agilex/competition_ws/maps/debug/map.yaml
+    map_frame: map
+    base_frame: body
+    frequency_hz: 1.0
+    lookahead_distance_m: 1.5
+    fallback_lookahead_distance_m: 3.5
+    inflation_radius_m: 0.45
+    search_padding_m: 1.5
+    sample_spacing_m: 0.10
+    min_turning_radius_m: 0.60
+    step_length_m: 0.20
+    curvature_bins: 9
+    heading_bins: 72
+    goal_position_tolerance_m: 0.25
+    goal_heading_tolerance_deg: 15.0
+    reference_deviation_weight: 2.0
+    max_expansions: 10000
+    reference_search_window_points: 120
+    costmap_topic: /avoidance/local_costmap
+    local_trajectory_topic: /planning/local_trajectory
+    status_topic: /planning/local_replan_status
+    max_costmap_age_s: 4.0

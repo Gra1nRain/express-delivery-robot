@@ -21,6 +21,7 @@ setup(
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
+            "adaptive_local_replanner_node = competition_avoidance.adaptive_local_replanner_node:main",
             "avoidance_manager_node = competition_avoidance.avoidance_manager_node:main",
             "livox_latest_frame_adapter_node = competition_avoidance.livox_latest_frame_adapter_node:main",
             "odometry_adapter_node = competition_avoidance.odometry_adapter_node:main",
