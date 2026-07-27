@@ -44,7 +44,7 @@ class Day5RvizObservabilityTest(unittest.TestCase):
             proximity["costmap_topic"],
             proximity["scan_topic"],
             proximity["marker_topic"],
-            proximity["cloud_topic"],
+            "/cloud_registered_body",
             "/map",
         }
 

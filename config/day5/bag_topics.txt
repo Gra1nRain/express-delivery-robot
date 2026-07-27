@@ -7,6 +7,7 @@
 /system_state
 /motion_state
 /cloud_registered_body
+/scan
 /avoidance/scan
 /avoidance/local_costmap
 /avoidance/proximity_status

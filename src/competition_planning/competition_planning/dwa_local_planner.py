@@ -85,6 +85,48 @@ class DWAPlan:
     status: str
 
 
+def occupied_grid_cell_centers(
+    data: Iterable[int],
+    *,
+    width: int,
+    height: int,
+    resolution_m: float,
+    origin_x_m: float,
+    origin_y_m: float,
+    occupancy_threshold: int,
+    x_min_m: float,
+    x_max_m: float,
+    y_half_width_m: float,
+    max_points: int,
+) -> tuple[tuple[float, float], ...]:
+    """Extract occupied cell centres from an already-inflated local costmap."""
+
+    if width < 1 or height < 1 or resolution_m <= 0.0:
+        raise ValueError("costmap geometry is invalid")
+    if not 0 <= occupancy_threshold <= 100:
+        raise ValueError("occupancy_threshold must be in [0, 100]")
+    if x_max_m <= x_min_m or y_half_width_m <= 0.0 or max_points < 1:
+        raise ValueError("costmap obstacle bounds are invalid")
+
+    occupied: list[tuple[float, float]] = []
+    for index, value in enumerate(data):
+        if index >= width * height:
+            break
+        if int(value) < occupancy_threshold:
+            continue
+        row, column = divmod(index, width)
+        x = origin_x_m + (column + 0.5) * resolution_m
+        y = origin_y_m + (row + 0.5) * resolution_m
+        if not (x_min_m <= x <= x_max_m and abs(y) <= y_half_width_m):
+            continue
+        occupied.append((x, y))
+
+    if len(occupied) <= max_points:
+        return tuple(occupied)
+    stride = math.ceil(len(occupied) / max_points)
+    return tuple(occupied[::stride][:max_points])
+
+
 def filter_and_downsample_obstacle_points(
     points_xyz: Iterable[Sequence[float]],
     *,

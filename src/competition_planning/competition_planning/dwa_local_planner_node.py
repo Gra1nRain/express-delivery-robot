@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ROS adapter from the live body cloud to a DWA local reference path."""
+"""ROS adapter from an inflated 2D costmap to a DWA local reference path."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 import math
 import time
 
-from nav_msgs.msg import Odometry, Path
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
 import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node
@@ -17,8 +17,6 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
-from sensor_msgs.msg import PointCloud2
-from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -27,7 +25,7 @@ from competition_planning.dwa_local_planner import (
     DWALocalPlanner,
     DWAPlanningError,
     DWAVelocity,
-    filter_and_downsample_obstacle_points,
+    occupied_grid_cell_centers,
 )
 from competition_planning.local_replanner_node import (
     _load_reference_path,
@@ -133,17 +131,20 @@ class DWALocalPlannerNode(Node):
                 ),
             )
         )
-        self._expected_cloud_frame = str(
-            self.declare_parameter("expected_cloud_frame", "body").value
+        obstacle_source = str(
+            self.declare_parameter("obstacle_source", "costmap").value
+        ).lower()
+        if obstacle_source != "costmap":
+            raise ValueError("obstacle_source must be 'costmap'")
+        self._expected_obstacle_frame = str(
+            self.declare_parameter("expected_obstacle_frame", "body").value
         )
-        self._max_cloud_age_s = float(
-            self.declare_parameter("max_cloud_age_s", 2.0).value
+        self._max_obstacle_age_s = float(
+            self.declare_parameter("max_obstacle_age_s", 0.50).value
         )
         self._max_odom_age_s = float(
             self.declare_parameter("max_odom_age_s", 0.50).value
         )
-        self._z_min_m = float(self.declare_parameter("z_min_m", -0.25).value)
-        self._z_max_m = float(self.declare_parameter("z_max_m", 0.80).value)
         self._obstacle_x_min_m = float(
             self.declare_parameter("obstacle_x_min_m", 0.05).value
         )
@@ -153,37 +154,30 @@ class DWALocalPlannerNode(Node):
         self._obstacle_y_half_width_m = float(
             self.declare_parameter("obstacle_y_half_width_m", 2.5).value
         )
-        self._cloud_point_stride = int(
-            self.declare_parameter("cloud_point_stride", 4).value
-        )
-        self._cloud_voxel_size_m = float(
-            self.declare_parameter("cloud_voxel_size_m", 0.10).value
+        self._costmap_occupancy_threshold = int(
+            self.declare_parameter("costmap_occupancy_threshold", 50).value
         )
         self._max_obstacle_points = int(
             self.declare_parameter("max_obstacle_points", 2000).value
         )
-        if self._max_cloud_age_s <= 0.0 or self._max_odom_age_s <= 0.0:
+        if self._max_obstacle_age_s <= 0.0 or self._max_odom_age_s <= 0.0:
             raise ValueError("sensor age limits must be positive")
-        if self._z_max_m <= self._z_min_m:
-            raise ValueError("z_max_m must be greater than z_min_m")
         if (
             self._obstacle_x_max_m <= self._obstacle_x_min_m
             or self._obstacle_y_half_width_m <= 0.0
         ):
             raise ValueError("obstacle bounds are invalid")
-        if (
-            self._cloud_point_stride < 1
-            or self._cloud_voxel_size_m <= 0.0
-            or self._max_obstacle_points < 1
-        ):
-            raise ValueError("cloud sampling parameters are invalid")
+        if not 0 <= self._costmap_occupancy_threshold <= 100:
+            raise ValueError("costmap_occupancy_threshold must be in [0, 100]")
+        if self._max_obstacle_points < 1:
+            raise ValueError("max_obstacle_points must be positive")
 
         self._tf_buffer = Buffer(cache_time=Duration(seconds=5.0))
         self._tf_listener = TransformListener(self._tf_buffer, self)
-        self._cloud_points: tuple[tuple[float, float, float], ...] | None = None
-        self._cloud_frame = ""
-        self._cloud_received_s = 0.0
-        self._cloud_header_stamp_s = 0.0
+        self._obstacle_points: tuple[tuple[float, float], ...] | None = None
+        self._obstacle_frame = ""
+        self._obstacle_received_s = 0.0
+        self._obstacle_header_stamp_s = 0.0
         self._velocity: DWAVelocity | None = None
         self._odom_received_s = 0.0
         self._previous_reference_index = 0
@@ -218,23 +212,23 @@ class DWALocalPlannerNode(Node):
             ),
             10,
         )
-        cloud_qos = QoSProfile(
+        costmap_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
-            depth=int(self.declare_parameter("cloud_qos_depth", 1).value),
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
         )
-        cloud_topic = str(
+        costmap_topic = str(
             self.declare_parameter(
-                "cloud_topic",
-                "/cloud_registered_body",
+                "costmap_topic",
+                "/avoidance/local_costmap",
             ).value
         )
         self.create_subscription(
-            PointCloud2,
-            cloud_topic,
-            self._cloud_callback,
-            cloud_qos,
+            OccupancyGrid,
+            costmap_topic,
+            self._costmap_callback,
+            costmap_qos,
         )
         self.create_subscription(
             Odometry,
@@ -246,39 +240,51 @@ class DWALocalPlannerNode(Node):
         self._stop_publisher.publish(Bool(data=True))
         self.get_logger().info(
             "DWA local planner ready: "
-            f"cloud={cloud_topic}, reference={trajectory_file}, "
+            f"inflated_costmap={costmap_topic}, reference={trajectory_file}, "
             f"frequency={frequency_hz:.2f}Hz"
         )
 
     def _now_s(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
 
-    def _cloud_callback(self, message: PointCloud2) -> None:
+    def _costmap_callback(self, message: OccupancyGrid) -> None:
         received_s = self._now_s()
         if (
-            self._expected_cloud_frame
-            and message.header.frame_id != self._expected_cloud_frame
+            self._expected_obstacle_frame
+            and message.header.frame_id != self._expected_obstacle_frame
         ):
-            self._cloud_points = None
+            self._obstacle_points = None
             self._publish_stop(
-                "CLOUD_FRAME_MISMATCH",
-                detail=f"{message.header.frame_id}->{self._expected_cloud_frame}",
+                "COSTMAP_FRAME_MISMATCH",
+                detail=(
+                    f"{message.header.frame_id}->{self._expected_obstacle_frame}"
+                ),
             )
             return
-        self._cloud_points = _downsample_cloud(
-            message,
-            z_min_m=self._z_min_m,
-            z_max_m=self._z_max_m,
+        origin_yaw = _yaw_from_quaternion(message.info.origin.orientation)
+        if abs(origin_yaw) > 1e-6:
+            self._obstacle_points = None
+            self._publish_stop(
+                "COSTMAP_ORIGIN_ROTATED",
+                detail=f"yaw={origin_yaw:.6f}",
+            )
+            return
+        self._obstacle_points = occupied_grid_cell_centers(
+            message.data,
+            width=int(message.info.width),
+            height=int(message.info.height),
+            resolution_m=float(message.info.resolution),
+            origin_x_m=float(message.info.origin.position.x),
+            origin_y_m=float(message.info.origin.position.y),
+            occupancy_threshold=self._costmap_occupancy_threshold,
             x_min_m=self._obstacle_x_min_m,
             x_max_m=self._obstacle_x_max_m,
             y_half_width_m=self._obstacle_y_half_width_m,
-            point_stride=self._cloud_point_stride,
-            voxel_size_m=self._cloud_voxel_size_m,
             max_points=self._max_obstacle_points,
         )
-        self._cloud_frame = message.header.frame_id
-        self._cloud_received_s = received_s
-        self._cloud_header_stamp_s = _stamp_to_seconds(message.header.stamp)
+        self._obstacle_frame = message.header.frame_id
+        self._obstacle_received_s = received_s
+        self._obstacle_header_stamp_s = _stamp_to_seconds(message.header.stamp)
 
     def _odom_callback(self, message: Odometry) -> None:
         self._velocity = DWAVelocity(
@@ -290,21 +296,27 @@ class DWALocalPlannerNode(Node):
     def _planning_cycle(self) -> None:
         now = self.get_clock().now()
         now_s = now.nanoseconds / 1e9
-        if self._cloud_points is None or self._cloud_received_s <= 0.0:
-            self._publish_stop("WAITING_FOR_CLOUD")
+        if self._obstacle_points is None or self._obstacle_received_s <= 0.0:
+            self._publish_stop("WAITING_FOR_COSTMAP")
             return
-        cloud_age_s = now_s - self._cloud_received_s
-        if cloud_age_s > self._max_cloud_age_s:
-            self._publish_stop("CLOUD_STALE", cloud_age_s=cloud_age_s)
+        obstacle_age_s = now_s - self._obstacle_received_s
+        if obstacle_age_s > self._max_obstacle_age_s:
+            self._publish_stop(
+                "COSTMAP_STALE",
+                obstacle_age_s=obstacle_age_s,
+            )
             return
         if self._velocity is None or self._odom_received_s <= 0.0:
-            self._publish_stop("WAITING_FOR_ODOMETRY", cloud_age_s=cloud_age_s)
+            self._publish_stop(
+                "WAITING_FOR_ODOMETRY",
+                obstacle_age_s=obstacle_age_s,
+            )
             return
         odom_age_s = now_s - self._odom_received_s
         if odom_age_s > self._max_odom_age_s:
             self._publish_stop(
                 "ODOMETRY_STALE",
-                cloud_age_s=cloud_age_s,
+                obstacle_age_s=obstacle_age_s,
                 odom_age_s=odom_age_s,
             )
             return
@@ -316,9 +328,9 @@ class DWALocalPlannerNode(Node):
                 rclpy.time.Time(),
                 timeout=Duration(seconds=0.02),
             )
-            base_from_cloud = self._tf_buffer.lookup_transform(
+            base_from_obstacle = self._tf_buffer.lookup_transform(
                 self._base_frame,
-                self._cloud_frame,
+                self._obstacle_frame,
                 rclpy.time.Time(),
                 timeout=Duration(seconds=0.02),
             )
@@ -327,7 +339,7 @@ class DWALocalPlannerNode(Node):
                 y=float(map_from_base.transform.translation.y),
                 yaw=_yaw_from_quaternion(map_from_base.transform.rotation),
             )
-            obstacle_points = self._obstacles_in_base(base_from_cloud)
+            obstacle_points = self._obstacles_in_base(base_from_obstacle)
             started_at = time.perf_counter()
             result = self._planner.plan(
                 reference_path=self._reference_path,
@@ -341,7 +353,7 @@ class DWALocalPlannerNode(Node):
             self._publish_stop(
                 "DWA_NO_FEASIBLE_PATH",
                 detail=str(exc),
-                cloud_age_s=cloud_age_s,
+                obstacle_age_s=obstacle_age_s,
                 odom_age_s=odom_age_s,
             )
             return
@@ -355,10 +367,10 @@ class DWALocalPlannerNode(Node):
         self._publish_status(
             result.status,
             stop_requested=False,
-            cloud_age_s=cloud_age_s,
-            cloud_header_age_s=(
-                now_s - self._cloud_header_stamp_s
-                if self._cloud_header_stamp_s > 0.0
+            obstacle_age_s=obstacle_age_s,
+            obstacle_header_age_s=(
+                now_s - self._obstacle_header_stamp_s
+                if self._obstacle_header_stamp_s > 0.0
                 else None
             ),
             odom_age_s=odom_age_s,
@@ -378,12 +390,16 @@ class DWALocalPlannerNode(Node):
         cos_yaw = math.cos(yaw)
         sin_yaw = math.sin(yaw)
         points: list[tuple[float, float]] = []
-        for cloud_x, cloud_y, _ in self._cloud_points or ():
+        for obstacle_x, obstacle_y in self._obstacle_points or ():
             base_x = (
-                float(translation.x) + cos_yaw * cloud_x - sin_yaw * cloud_y
+                float(translation.x)
+                + cos_yaw * obstacle_x
+                - sin_yaw * obstacle_y
             )
             base_y = (
-                float(translation.y) + sin_yaw * cloud_x + cos_yaw * cloud_y
+                float(translation.y)
+                + sin_yaw * obstacle_x
+                + cos_yaw * obstacle_y
             )
             if not (
                 self._obstacle_x_min_m <= base_x <= self._obstacle_x_max_m
@@ -406,35 +422,6 @@ class DWALocalPlannerNode(Node):
                 )
             )
         )
-
-
-def _downsample_cloud(
-    message: PointCloud2,
-    *,
-    z_min_m: float,
-    z_max_m: float,
-    x_min_m: float,
-    x_max_m: float,
-    y_half_width_m: float,
-    point_stride: int,
-    voxel_size_m: float,
-    max_points: int,
-) -> tuple[tuple[float, float, float], ...]:
-    return filter_and_downsample_obstacle_points(
-        point_cloud2.read_points(
-            message,
-            field_names=("x", "y", "z"),
-            skip_nans=True,
-        ),
-        z_min_m=z_min_m,
-        z_max_m=z_max_m,
-        x_min_m=x_min_m,
-        x_max_m=x_max_m,
-        y_half_width_m=y_half_width_m,
-        point_stride=point_stride,
-        voxel_size_m=voxel_size_m,
-        max_points=max_points,
-    )
 
 
 def _stamp_to_seconds(stamp) -> float:

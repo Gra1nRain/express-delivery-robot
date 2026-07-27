@@ -34,19 +34,16 @@ replanning:
   enabled: true
   plugin: dwa
   frequency_hz: 2.0
-  cloud_topic: /cloud_registered_body
-  cloud_qos_depth: 1
-  expected_cloud_frame: body
+  obstacle_source: costmap
+  costmap_topic: /avoidance/local_costmap
+  expected_obstacle_frame: body
+  costmap_occupancy_threshold: 50
   odom_topic: /odom
-  max_cloud_age_s: 2.0
+  max_obstacle_age_s: 0.50
   max_odom_age_s: 0.50
-  z_min_m: -0.25
-  z_max_m: 0.80
   obstacle_x_min_m: 0.05
   obstacle_x_max_m: 4.00
   obstacle_y_half_width_m: 2.50
-  cloud_point_stride: 4
-  cloud_voxel_size_m: 0.10
   max_obstacle_points: 2000
   min_speed_mps: 0.05
   max_speed_mps: 0.20
@@ -58,7 +55,7 @@ replanning:
   simulation_step_s: 0.20
   speed_sample_count: 4
   yaw_rate_sample_count: 11
-  obstacle_clearance_m: 0.55
+  obstacle_clearance_m: 0.35
   reference_lookahead_m: 1.50
   max_reference_deviation_m: 1.20
   reference_search_window_points: 160

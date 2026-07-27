@@ -11,6 +11,7 @@ from competition_safety.proximity_stop import (
     LocalGridConfig,
     ProximityStopConfig,
     evaluate_local_clearance,
+    laser_scan_points,
 )
 
 
@@ -73,6 +74,20 @@ class LocalClearanceTest(unittest.TestCase):
         self.assertIsNone(result.nearest_obstacle_distance_m)
         self.assertIn(100, result.costmap.data)
         self.assertTrue(any(math.isfinite(value) for value in result.scan_ranges_m))
+
+    def test_laser_scan_ranges_become_planar_obstacle_points(self) -> None:
+        points = laser_scan_points(
+            [math.inf, 1.0, float("nan"), 0.05, 3.5],
+            angle_min_rad=-math.pi / 2.0,
+            angle_increment_rad=math.pi / 4.0,
+            range_min_m=0.10,
+            range_max_m=3.0,
+        )
+
+        self.assertEqual(len(points), 1)
+        self.assertAlmostEqual(points[0][0], math.sqrt(0.5))
+        self.assertAlmostEqual(points[0][1], -math.sqrt(0.5))
+        self.assertEqual(points[0][2], 0.0)
 
 
 if __name__ == "__main__":

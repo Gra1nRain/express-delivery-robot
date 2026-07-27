@@ -12,6 +12,7 @@ from competition_planning.dwa_local_planner import (
     DWAPlanningError,
     DWAVelocity,
     filter_and_downsample_obstacle_points,
+    occupied_grid_cell_centers,
 )
 from competition_planning.semantic_planner import PathPoint
 
@@ -132,6 +133,29 @@ class DWALocalPlannerTest(unittest.TestCase):
         )
 
         self.assertEqual(points, (front_obstacle,))
+
+    def test_inflated_costmap_cells_become_dwa_obstacles(self) -> None:
+        points = occupied_grid_cell_centers(
+            [-1, 50, 100, -1, 49, 50],
+            width=3,
+            height=2,
+            resolution_m=0.10,
+            origin_x_m=-0.10,
+            origin_y_m=-0.20,
+            occupancy_threshold=50,
+            x_min_m=0.0,
+            x_max_m=1.0,
+            y_half_width_m=1.0,
+            max_points=10,
+        )
+
+        self.assertEqual(len(points), 3)
+        for actual, expected in zip(
+            points,
+            ((0.05, -0.15), (0.15, -0.15), (0.15, -0.05)),
+        ):
+            self.assertAlmostEqual(actual[0], expected[0])
+            self.assertAlmostEqual(actual[1], expected[1])
 
 
 if __name__ == "__main__":

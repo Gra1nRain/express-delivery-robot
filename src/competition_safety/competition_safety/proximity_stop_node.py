@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish a conservative stop request from a body-frame point cloud."""
+"""Publish a conservative stop request and inflated grid from a 2D scan."""
 
 from __future__ import annotations
 
@@ -14,8 +14,7 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
-from sensor_msgs.msg import LaserScan, PointCloud2
-from sensor_msgs_py import point_cloud2
+from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Bool, String
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -24,32 +23,37 @@ from competition_safety.proximity_stop import (
     LocalGridConfig,
     ProximityStopConfig,
     evaluate_local_clearance,
-    should_stop_for_points,
+    laser_scan_points,
 )
 
 
 class ProximityStopNode(Node):
     def __init__(self) -> None:
         super().__init__("proximity_stop")
-        self._cloud_topic = str(
-            self.declare_parameter("cloud_topic", "/cloud_registered_body").value
-        )
-        cloud_qos_reliability = str(
-            self.declare_parameter("cloud_qos_reliability", "best_effort").value
+        input_type = str(
+            self.declare_parameter("input_type", "laser_scan").value
         ).lower()
-        cloud_qos_depth = int(self.declare_parameter("cloud_qos_depth", 1).value)
-        if cloud_qos_reliability not in {"best_effort", "reliable"}:
+        if input_type != "laser_scan":
+            raise ValueError("input_type must be 'laser_scan'")
+        self._input_scan_topic = str(
+            self.declare_parameter("input_scan_topic", "/scan").value
+        )
+        scan_qos_reliability = str(
+            self.declare_parameter("scan_qos_reliability", "best_effort").value
+        ).lower()
+        scan_qos_depth = int(self.declare_parameter("scan_qos_depth", 1).value)
+        if scan_qos_reliability not in {"best_effort", "reliable"}:
             raise ValueError(
-                "cloud_qos_reliability must be 'best_effort' or 'reliable'"
+                "scan_qos_reliability must be 'best_effort' or 'reliable'"
             )
-        if cloud_qos_depth < 1:
-            raise ValueError("cloud_qos_depth must be at least 1")
-        cloud_qos = QoSProfile(
+        if scan_qos_depth < 1:
+            raise ValueError("scan_qos_depth must be at least 1")
+        scan_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
-            depth=cloud_qos_depth,
+            depth=scan_qos_depth,
             reliability=(
                 ReliabilityPolicy.BEST_EFFORT
-                if cloud_qos_reliability == "best_effort"
+                if scan_qos_reliability == "best_effort"
                 else ReliabilityPolicy.RELIABLE
             ),
             durability=DurabilityPolicy.VOLATILE,
@@ -57,9 +61,11 @@ class ProximityStopNode(Node):
         self._expected_frame_id = str(
             self.declare_parameter("expected_frame_id", "body").value
         )
-        self._max_cloud_age_s = float(
-            self.declare_parameter("max_cloud_age_s", 0.50).value
+        self._max_scan_age_s = float(
+            self.declare_parameter("max_scan_age_s", 0.25).value
         )
+        if self._max_scan_age_s <= 0.0:
+            raise ValueError("max_scan_age_s must be positive")
         self._config = ProximityStopConfig(
             x_min_m=float(self.declare_parameter("x_min_m", 0.25).value),
             stop_distance_m=float(
@@ -147,7 +153,7 @@ class ProximityStopNode(Node):
                     "/avoidance/scan",
                 ).value
             ),
-            cloud_qos,
+            scan_qos,
         )
         self._marker_publisher = self.create_publisher(
             MarkerArray,
@@ -160,26 +166,27 @@ class ProximityStopNode(Node):
             1,
         )
         self.create_subscription(
-            PointCloud2,
-            self._cloud_topic,
-            self._cloud_callback,
-            cloud_qos,
+            LaserScan,
+            self._input_scan_topic,
+            self._scan_callback,
+            scan_qos,
         )
         self.get_logger().info(
             "Proximity stop ready: "
-            f"cloud_topic={self._cloud_topic}, range=[{self._config.x_min_m:.2f}, "
+            f"scan_topic={self._input_scan_topic}, "
+            f"range=[{self._config.x_min_m:.2f}, "
             f"{self._config.stop_distance_m:.2f}], "
             f"half_angle={self._config.front_half_angle_rad:.3f}rad, "
             f"lateral_half_width={self._config.lateral_half_width_m:.2f}, "
             f"z=[{self._config.z_min_m:.2f}, {self._config.z_max_m:.2f}], "
             f"min_points={self._config.min_points}, "
-            f"qos={cloud_qos_reliability}/keep_last_{cloud_qos_depth}"
+            f"qos={scan_qos_reliability}/keep_last_{scan_qos_depth}"
         )
 
     def _now_s(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
 
-    def _cloud_callback(self, message: PointCloud2) -> None:
+    def _scan_callback(self, message: LaserScan) -> None:
         now_s = self._now_s()
         visualization_due = (
             now_s - self._last_visualization_s >= self._visualization_period_s
@@ -203,10 +210,10 @@ class ProximityStopNode(Node):
                 self._last_visualization_s = now_s
             return
 
-        cloud_stamp_s = _stamp_to_seconds(message.header.stamp)
-        age_s = now_s - cloud_stamp_s if cloud_stamp_s > 0.0 else None
-        if age_s is not None and age_s > self._max_cloud_age_s:
-            self._publish(True, "stale_cloud", 0, frame_id, age_s, None)
+        scan_stamp_s = _stamp_to_seconds(message.header.stamp)
+        age_s = now_s - scan_stamp_s if scan_stamp_s > 0.0 else None
+        if age_s is not None and age_s > self._max_scan_age_s:
+            self._publish(True, "stale_scan", 0, frame_id, age_s, None)
             if visualization_due:
                 result = evaluate_local_clearance(
                     [],
@@ -218,32 +225,26 @@ class ProximityStopNode(Node):
                     frame_id,
                     result,
                     True,
-                    "stale_cloud",
+                    "stale_scan",
                 )
                 self._last_visualization_s = now_s
             return
 
-        points = [
-            (float(point[0]), float(point[1]), float(point[2]))
-            for point in point_cloud2.read_points(
-                message,
-                field_names=("x", "y", "z"),
-                skip_nans=True,
-            )
-        ]
-        if visualization_due:
-            result = evaluate_local_clearance(
-                points,
-                self._config,
-                self._grid_config,
-            )
-            stop = result.stop
-            count = result.point_count
-            nearest_distance_m = result.nearest_obstacle_distance_m
-        else:
-            stop, count = should_stop_for_points(points, self._config)
-            nearest_distance_m = None
-            result = None
+        points = laser_scan_points(
+            message.ranges,
+            angle_min_rad=float(message.angle_min),
+            angle_increment_rad=float(message.angle_increment),
+            range_min_m=max(float(message.range_min), self._grid_config.scan_range_min_m),
+            range_max_m=min(float(message.range_max), self._grid_config.scan_range_max_m),
+        )
+        result = evaluate_local_clearance(
+            points,
+            self._config,
+            self._grid_config,
+        )
+        stop = result.stop
+        count = result.point_count
+        nearest_distance_m = result.nearest_obstacle_distance_m
         reason = "obstacle_in_stop_box" if stop else "clear"
         self._publish(
             stop,
@@ -253,7 +254,7 @@ class ProximityStopNode(Node):
             age_s,
             nearest_distance_m,
         )
-        if result is not None:
+        if visualization_due:
             self._publish_visualization(
                 message.header.stamp,
                 frame_id,
@@ -269,7 +270,7 @@ class ProximityStopNode(Node):
         reason: str,
         point_count: int,
         frame_id: str,
-        cloud_age_s: float | None,
+        scan_age_s: float | None,
         nearest_obstacle_distance_m: float | None,
     ) -> None:
         self._stop_publisher.publish(Bool(data=stop))
@@ -281,7 +282,7 @@ class ProximityStopNode(Node):
                         "reason": reason,
                         "point_count": point_count,
                         "frame_id": frame_id,
-                        "cloud_age_s": cloud_age_s,
+                        "scan_age_s": scan_age_s,
                         "nearest_obstacle_distance_m": nearest_obstacle_distance_m,
                     },
                     separators=(",", ":"),

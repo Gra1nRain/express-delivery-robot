@@ -80,6 +80,38 @@ class LocalClearanceResult:
     scan_ranges_m: tuple[float, ...]
 
 
+def laser_scan_points(
+    ranges_m: Iterable[float],
+    *,
+    angle_min_rad: float,
+    angle_increment_rad: float,
+    range_min_m: float,
+    range_max_m: float,
+) -> tuple[tuple[float, float, float], ...]:
+    """Convert valid planar scan bins into body-frame points."""
+
+    if angle_increment_rad <= 0.0:
+        raise ValueError("angle_increment_rad must be positive")
+    if range_min_m < 0.0 or range_max_m <= range_min_m:
+        raise ValueError("scan range limits are invalid")
+    points: list[tuple[float, float, float]] = []
+    for index, value in enumerate(ranges_m):
+        distance = float(value)
+        if not math.isfinite(distance):
+            continue
+        if not range_min_m <= distance <= range_max_m:
+            continue
+        angle = angle_min_rad + index * angle_increment_rad
+        points.append(
+            (
+                distance * math.cos(angle),
+                distance * math.sin(angle),
+                0.0,
+            )
+        )
+    return tuple(points)
+
+
 def count_points_in_stop_box(
     points: Iterable[tuple[float, float, float]],
     config: ProximityStopConfig,

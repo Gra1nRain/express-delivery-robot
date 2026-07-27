@@ -8,7 +8,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class Day5OnlineReplanningTopologyTest(unittest.TestCase):
-    def test_live_body_cloud_drives_dwa_local_trajectory(self) -> None:
+    def test_inflated_2d_costmap_drives_dwa_local_trajectory(self) -> None:
         planning = yaml.safe_load(
             (REPO_ROOT / "config" / "planning" / "planning_params.yaml").read_text(
                 encoding="utf-8"
@@ -66,17 +66,19 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             runtime_turning_radius,
             control["motion"]["ranger_driver_min_turn_radius_m"],
         )
+        self.assertEqual(replanning["obstacle_source"], "costmap")
         self.assertEqual(
-            replanning["cloud_topic"],
-            "/cloud_registered_body",
+            replanning["costmap_topic"],
+            safety["proximity_stop"]["costmap_topic"],
         )
-        self.assertEqual(
-            replanning["cloud_topic"],
-            safety["proximity_stop"]["cloud_topic"],
-        )
-        self.assertEqual(replanning["cloud_qos_depth"], 1)
-        self.assertEqual(replanning["expected_cloud_frame"], "body")
-        self.assertGreater(replanning["obstacle_clearance_m"], 0.45)
+        self.assertEqual(replanning["costmap_topic"], "/avoidance/local_costmap")
+        self.assertEqual(replanning["expected_obstacle_frame"], "body")
+        self.assertEqual(replanning["costmap_occupancy_threshold"], 50)
+        self.assertGreaterEqual(replanning["obstacle_clearance_m"], 0.30)
+        self.assertLess(replanning["obstacle_clearance_m"], 0.45)
+        self.assertEqual(safety["proximity_stop"]["input_type"], "laser_scan")
+        self.assertEqual(safety["proximity_stop"]["input_scan_topic"], "/scan")
+        self.assertEqual(safety["livox_scan_projection"]["output_topic"], "/scan")
         self.assertGreater(replanning["prediction_horizon_s"], 0.0)
         self.assertEqual(
             replanning["local_trajectory_topic"],
@@ -90,7 +92,8 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertIn('executable="dwa_local_planner_node"', launch_text)
         self.assertNotIn('executable="local_replanner_node"', launch_text)
         self.assertIn("start_local_replanner", launch_text)
-        self.assertIn("PointCloud2", dwa_node)
+        self.assertIn("OccupancyGrid", dwa_node)
+        self.assertNotIn("PointCloud2", dwa_node)
         self.assertIn("DWALocalPlanner", dwa_node)
         self.assertIn("local_stop_request_topic", dwa_node)
         dwa_launch = launch_text.split(

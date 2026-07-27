@@ -57,13 +57,9 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         )
 
         publish_config = fast_lio_config["/**"]["ros__parameters"]["publish"]
-        self.assertGreaterEqual(
-            fast_lio_config["/**"]["ros__parameters"]["point_filter_num"],
-            10,
-            "Dense obstacle scenes must not reduce FAST-LIO output below control rate.",
-        )
         preprocess_config = fast_lio_config["/**"]["ros__parameters"]["preprocess"]
         proximity_config = safety_config["proximity_stop"]
+        projection_config = safety_config["livox_scan_projection"]
         self.assertTrue(
             publish_config["scan_publish_en"],
             "FAST-LIO scan_publish_en is the master switch for point cloud outputs.",
@@ -73,8 +69,15 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
             "Day5 motion must expose body-frame FAST-LIO points for obstacle stop.",
         )
         self.assertIn("proximity_stop_node", launch_text)
+        self.assertIn("livox_custom_to_scan_node", launch_text)
         self.assertTrue(safety_config["safety"]["require_avoidance_source"])
         self.assertIn("proximity_stop", safety_config)
+        self.assertEqual(proximity_config["input_type"], "laser_scan")
+        self.assertEqual(proximity_config["input_scan_topic"], "/scan")
+        self.assertEqual(projection_config["input_topic"], "/livox/lidar")
+        self.assertEqual(projection_config["output_topic"], "/scan")
+        self.assertEqual(projection_config["output_frame"], "body")
+        self.assertLessEqual(projection_config["max_input_age_s"], 0.25)
         self.assertGreaterEqual(
             proximity_config["stop_distance_m"],
             preprocess_config["blind"] + 0.25,
@@ -85,29 +88,16 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
             0.45,
             "Proximity stop must cover the vehicle half-width plus clearance.",
         )
-        self.assertEqual(
-            proximity_config["cloud_qos_reliability"],
-            "best_effort",
-            "Dense sensor clouds must not backpressure FAST-LIO through reliable delivery.",
-        )
-        self.assertEqual(
-            proximity_config["cloud_qos_depth"],
-            1,
-            "Proximity safety must process the newest cloud instead of queued old clouds.",
-        )
-        self.assertGreaterEqual(
-            proximity_config["max_cloud_age_s"],
-            1.5,
-            "Day5 FAST-LIO body clouds have shown >1.4s header delay while still "
-            "arriving live; proximity freshness must not false-stop that stream.",
-        )
+        self.assertEqual(proximity_config["scan_qos_reliability"], "best_effort")
+        self.assertEqual(proximity_config["scan_qos_depth"], 1)
+        self.assertLessEqual(proximity_config["max_scan_age_s"], 0.25)
         self.assertEqual(
             proximity_config["costmap_topic"],
             "/avoidance/local_costmap",
         )
         self.assertEqual(proximity_config["scan_topic"], "/avoidance/scan")
         self.assertEqual(proximity_config["marker_topic"], "/avoidance/markers")
-        self.assertGreater(proximity_config["visualization_rate_hz"], 0.0)
+        self.assertGreaterEqual(proximity_config["visualization_rate_hz"], 5.0)
         self.assertGreaterEqual(
             proximity_config["grid_x_max_m"],
             proximity_config["stop_distance_m"],

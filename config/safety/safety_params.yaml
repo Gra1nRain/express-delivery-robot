@@ -23,18 +23,37 @@ safety:
   avoidance_timeout_s: 0.35
   on_fault: SAFE_HOLD
 
+livox_scan_projection:
+  input_topic: /livox/lidar
+  output_topic: /scan
+  expected_input_frame: livox_frame
+  output_frame: body
+  max_input_age_s: 0.25
+  point_stride: 1
+  scan_time_s: 0.10
+  min_height_m: -0.25
+  max_height_m: 0.80
+  angle_min_rad: -3.141592653589793
+  angle_max_rad: 3.141592653589793
+  angle_increment_rad: 0.008726646259972
+  range_min_m: 0.10
+  range_max_m: 6.00
+  sensor_to_body_xyz_m: [-0.011, -0.02329, 0.04412]
+  sensor_to_body_yaw_rad: 0.0
+
 proximity_stop:
-  cloud_topic: /cloud_registered_body
-  cloud_qos_reliability: best_effort
-  cloud_qos_depth: 1
+  input_type: laser_scan
+  input_scan_topic: /scan
+  scan_qos_reliability: best_effort
+  scan_qos_depth: 1
   stop_request_topic: /avoidance/stop_request
   status_topic: /avoidance/proximity_status
   costmap_topic: /avoidance/local_costmap
   scan_topic: /avoidance/scan
   marker_topic: /avoidance/markers
-  visualization_rate_hz: 2.0
+  visualization_rate_hz: 10.0
   expected_frame_id: body
-  max_cloud_age_s: 2.00
+  max_scan_age_s: 0.25
   x_min_m: 0.25
   stop_distance_m: 0.85
   front_half_angle_rad: 0.4363

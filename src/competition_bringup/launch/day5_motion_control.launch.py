@@ -57,6 +57,7 @@ def _launch_setup(context, *args, **kwargs):
         default=bool(replanning["enabled"]),
     )
     safety = safety_config["safety"]
+    livox_scan_projection = safety_config["livox_scan_projection"]
     proximity_stop = safety_config["proximity_stop"]
     bringup_pkg = get_package_share_directory("competition_bringup")
     mapping_launch = os.path.join(bringup_pkg, "launch", "day1_mapping.launch.py")
@@ -199,21 +200,22 @@ def _launch_setup(context, *args, **kwargs):
                     "map_frame": estimator["map_frame"],
                     "base_frame": tracking_base_frame,
                     "frequency_hz": replanning["frequency_hz"],
-                    "cloud_topic": replanning["cloud_topic"],
-                    "cloud_qos_depth": replanning["cloud_qos_depth"],
-                    "expected_cloud_frame": replanning["expected_cloud_frame"],
+                    "obstacle_source": replanning["obstacle_source"],
+                    "costmap_topic": replanning["costmap_topic"],
+                    "expected_obstacle_frame": replanning[
+                        "expected_obstacle_frame"
+                    ],
+                    "costmap_occupancy_threshold": replanning[
+                        "costmap_occupancy_threshold"
+                    ],
                     "odom_topic": replanning["odom_topic"],
-                    "max_cloud_age_s": replanning["max_cloud_age_s"],
+                    "max_obstacle_age_s": replanning["max_obstacle_age_s"],
                     "max_odom_age_s": replanning["max_odom_age_s"],
-                    "z_min_m": replanning["z_min_m"],
-                    "z_max_m": replanning["z_max_m"],
                     "obstacle_x_min_m": replanning["obstacle_x_min_m"],
                     "obstacle_x_max_m": replanning["obstacle_x_max_m"],
                     "obstacle_y_half_width_m": replanning[
                         "obstacle_y_half_width_m"
                     ],
-                    "cloud_point_stride": replanning["cloud_point_stride"],
-                    "cloud_voxel_size_m": replanning["cloud_voxel_size_m"],
                     "max_obstacle_points": replanning["max_obstacle_points"],
                     "min_speed_mps": replanning["min_speed_mps"],
                     "max_speed_mps": replanning["max_speed_mps"],
@@ -269,17 +271,26 @@ def _launch_setup(context, *args, **kwargs):
         ),
         Node(
             package="competition_safety",
+            executable="livox_custom_to_scan_node",
+            name="livox_custom_to_scan",
+            output="screen",
+            condition=IfCondition(LaunchConfiguration("start_proximity_stop")),
+            parameters=[livox_scan_projection],
+        ),
+        Node(
+            package="competition_safety",
             executable="proximity_stop_node",
             name="proximity_stop",
             output="screen",
             condition=IfCondition(LaunchConfiguration("start_proximity_stop")),
             parameters=[
                 {
-                    "cloud_topic": proximity_stop["cloud_topic"],
-                    "cloud_qos_reliability": proximity_stop[
-                        "cloud_qos_reliability"
+                    "input_type": proximity_stop["input_type"],
+                    "input_scan_topic": proximity_stop["input_scan_topic"],
+                    "scan_qos_reliability": proximity_stop[
+                        "scan_qos_reliability"
                     ],
-                    "cloud_qos_depth": proximity_stop["cloud_qos_depth"],
+                    "scan_qos_depth": proximity_stop["scan_qos_depth"],
                     "stop_request_topic": proximity_stop["stop_request_topic"],
                     "status_topic": proximity_stop["status_topic"],
                     "costmap_topic": proximity_stop["costmap_topic"],
@@ -289,7 +300,7 @@ def _launch_setup(context, *args, **kwargs):
                         "visualization_rate_hz"
                     ],
                     "expected_frame_id": proximity_stop["expected_frame_id"],
-                    "max_cloud_age_s": proximity_stop["max_cloud_age_s"],
+                    "max_scan_age_s": proximity_stop["max_scan_age_s"],
                     "x_min_m": proximity_stop["x_min_m"],
                     "stop_distance_m": proximity_stop["stop_distance_m"],
                     "front_half_angle_rad": proximity_stop["front_half_angle_rad"],
