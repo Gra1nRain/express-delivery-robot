@@ -71,6 +71,8 @@ class _Track:
     last_seen_s: float
     hits: int = 1
     moving_streak: int = 0
+    moving_direction_x: float = 0.0
+    moving_direction_y: float = 0.0
     static_streak: int = 0
     motion_state: str = "UNKNOWN"
 
@@ -197,6 +199,8 @@ class ObstacleTracker:
             )
         ):
             track.moving_streak = 0
+            track.moving_direction_x = 0.0
+            track.moving_direction_y = 0.0
             track.static_streak += 1
             if (
                 track.motion_state == "DYNAMIC"
@@ -207,17 +211,29 @@ class ObstacleTracker:
 
         speed = math.hypot(track.vx_mps, track.vy_mps)
         if speed >= self._config.moving_speed_mps:
-            track.moving_streak += 1
+            same_direction = (
+                track.moving_streak == 0
+                or track.vx_mps * track.moving_direction_x
+                + track.vy_mps * track.moving_direction_y
+                > 0.0
+            )
+            track.moving_streak = track.moving_streak + 1 if same_direction else 1
+            track.moving_direction_x = track.vx_mps
+            track.moving_direction_y = track.vy_mps
             track.static_streak = 0
             if track.moving_streak >= self._config.moving_confirmation_count:
                 track.motion_state = "DYNAMIC"
         elif speed <= self._config.static_speed_mps:
             track.static_streak += 1
             track.moving_streak = 0
+            track.moving_direction_x = 0.0
+            track.moving_direction_y = 0.0
             if track.static_streak >= self._config.static_confirmation_count:
                 track.motion_state = "STATIC"
         else:
             track.moving_streak = 0
+            track.moving_direction_x = 0.0
+            track.moving_direction_y = 0.0
             track.static_streak = 0
 
     def _snapshot(self, track: _Track, timestamp_s: float) -> TrackedObstacle:
