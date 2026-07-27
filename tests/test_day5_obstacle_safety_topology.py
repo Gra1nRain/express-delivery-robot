@@ -57,6 +57,11 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         )
 
         publish_config = fast_lio_config["/**"]["ros__parameters"]["publish"]
+        self.assertGreaterEqual(
+            fast_lio_config["/**"]["ros__parameters"]["point_filter_num"],
+            10,
+            "Dense obstacle scenes must not reduce FAST-LIO output below control rate.",
+        )
         preprocess_config = fast_lio_config["/**"]["ros__parameters"]["preprocess"]
         proximity_config = safety_config["proximity_stop"]
         self.assertTrue(
