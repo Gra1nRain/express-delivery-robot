@@ -77,6 +77,33 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
         self.assertIn("mapping_timer_hz must be positive", patch_text)
         self.assertRegex(config_text, r"(?m)^      timer_hz: 100$")
 
+    def test_fast_lio_separates_sensor_and_mapping_callbacks(self) -> None:
+        patch_text = (
+            REPO_ROOT
+            / "patches"
+            / "fast_lio_executor_callback_groups.patch"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "rclcpp::executors::MultiThreadedExecutor executor(",
+            patch_text,
+        )
+        self.assertIn("executor.add_node(node);", patch_text)
+        self.assertIn("executor.spin();", patch_text)
+        self.assertIn("lidar_callback_group_", patch_text)
+        self.assertIn("imu_callback_group_", patch_text)
+        self.assertIn("mapping_callback_group_", patch_text)
+        self.assertIn("lidar_options.callback_group", patch_text)
+        self.assertIn("imu_options.callback_group", patch_text)
+        self.assertIn(
+            "std::lock_guard<std::mutex> lock(mtx_buffer);",
+            patch_text,
+        )
+        self.assertNotIn(
+            "+    rclcpp::spin(std::make_shared<LaserMappingNode>());",
+            patch_text,
+        )
+
     def test_rebuild_is_scoped_guarded_and_does_not_use_python_adapter(self) -> None:
         rebuild_text = (
             REPO_ROOT / "scripts" / "rebuild_fast_lio_release.sh"
@@ -87,6 +114,7 @@ class FastLioFreshnessPatchTest(unittest.TestCase):
         self.assertIn("fast_lio_latest_lidar_qos.patch", rebuild_text)
         self.assertIn("fast_lio_latest_internal_buffer.patch", rebuild_text)
         self.assertIn("fast_lio_mapping_timer_rate.patch", rebuild_text)
+        self.assertIn("fast_lio_executor_callback_groups.patch", rebuild_text)
         self.assertIn("apply --reverse --check", rebuild_text)
         self.assertIn("apply --check", rebuild_text)
         self.assertIn("pgrep -f", rebuild_text)
