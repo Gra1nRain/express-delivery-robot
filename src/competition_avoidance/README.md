@@ -80,8 +80,9 @@ ros2 launch competition_avoidance vehicle_avoidance_bringup.launch.py \
 ## 已验证事实
 
 - LaserScan 转平面点、聚类、跟踪、CPA/TTC 风险和决策接口有 PC 单元测试。
-- C++ Live Scan 转换在实车连续 10 分钟无运动验收中保持 10 Hz，平均延迟
-  48 ms、最大延迟 81 ms，CPU 占用约 2%。
+- FAST-LIO 预处理锁作用域修复后，实车完整无运动链连续 25 分钟保持：
+  `/avoidance/scan` 10 Hz、平均延迟 51 ms、最大 84 ms，`/Odometry`
+  10 Hz、平均延迟 48 ms、最大 80 ms；C++ Live Scan 转换 CPU 占用约 2%。
 - 架构测试保证新增节点不拥有 `/cmd_vel` 或 `/planning/local_trajectory`。
 - Live Scan、里程计、TF 或时间戳异常时，模块持续发布停车请求。
 - `/odom` 的 `header.frame_id` 与运行配置不一致时，模块 fail-closed。
