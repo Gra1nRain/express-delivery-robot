@@ -48,7 +48,7 @@ class DWALocalPlannerNode(Node):
             self._map_frame,
         )
 
-        frequency_hz = float(self.declare_parameter("frequency_hz", 2.0).value)
+        frequency_hz = float(self.declare_parameter("frequency_hz", 1.0).value)
         if frequency_hz <= 0.0:
             raise ValueError("frequency_hz must be positive")
         self._planner = DWALocalPlanner(

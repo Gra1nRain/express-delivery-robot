@@ -120,6 +120,17 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertIn("parameterize_local_path", control_node)
         self.assertIn("replace_trajectory", control_node)
         self.assertIn("LOCAL_PLAN_STALE", control_node)
+        self.assertIn('"local_replanning_frequency_hz"', launch_text)
+        self.assertIn(
+            '"frequency_hz": local_replanning_frequency_hz',
+            dwa_launch,
+        )
+        self.assertIn(
+            'DeclareLaunchArgument(\n'
+            '                "local_replanning_frequency_hz",\n'
+            '                default_value="1.0"',
+            launch_text,
+        )
 
     def test_ranger_adapter_keeps_safety_before_final_cmd_vel(self) -> None:
         control = yaml.safe_load(

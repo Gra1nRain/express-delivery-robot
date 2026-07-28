@@ -56,6 +56,11 @@ def _launch_setup(context, *args, **kwargs):
         LaunchConfiguration("replanning_enabled").perform(context),
         default=bool(replanning["enabled"]),
     )
+    local_replanning_frequency_hz = float(
+        LaunchConfiguration("local_replanning_frequency_hz").perform(context)
+    )
+    if local_replanning_frequency_hz <= 0.0:
+        raise ValueError("local_replanning_frequency_hz must be positive")
     safety = safety_config["safety"]
     scan_projection = safety_config["pointcloud_to_laserscan"]
     scan_projection_parameters = {
@@ -204,7 +209,7 @@ def _launch_setup(context, *args, **kwargs):
                     "trajectory_file": LaunchConfiguration("trajectory_file"),
                     "map_frame": estimator["map_frame"],
                     "base_frame": tracking_base_frame,
-                    "frequency_hz": replanning["frequency_hz"],
+                    "frequency_hz": local_replanning_frequency_hz,
                     "obstacle_source": replanning["obstacle_source"],
                     "costmap_topic": replanning["costmap_topic"],
                     "expected_obstacle_frame": replanning[
@@ -526,6 +531,14 @@ def generate_launch_description():
                 description=(
                     "Override MPPI local-trajectory dependency; auto uses "
                     "planning_params.yaml replanning.enabled."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "local_replanning_frequency_hz",
+                default_value="1.0",
+                description=(
+                    "Runtime DWA update rate. Kept separate from the frozen "
+                    "global-trajectory provenance inputs."
                 ),
             ),
             DeclareLaunchArgument("start_map_server", default_value="true"),
