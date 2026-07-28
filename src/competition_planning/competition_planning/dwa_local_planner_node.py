@@ -135,6 +135,18 @@ class DWALocalPlannerNode(Node):
                         0.8,
                     ).value
                 ),
+                recovery_deviation_margin_m=float(
+                    self.declare_parameter(
+                        "recovery_deviation_margin_m",
+                        0.10,
+                    ).value
+                ),
+                recovery_min_improvement_m=float(
+                    self.declare_parameter(
+                        "recovery_min_improvement_m",
+                        0.10,
+                    ).value
+                ),
             )
         )
         obstacle_source = str(

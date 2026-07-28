@@ -273,6 +273,12 @@ def _launch_setup(context, *args, **kwargs):
                     "direction_switch_penalty": dwa_runtime[
                         "direction_switch_penalty"
                     ],
+                    "recovery_deviation_margin_m": dwa_runtime[
+                        "recovery_deviation_margin_m"
+                    ],
+                    "recovery_min_improvement_m": dwa_runtime[
+                        "recovery_min_improvement_m"
+                    ],
                     "local_trajectory_topic": replanning[
                         "local_trajectory_topic"
                     ],

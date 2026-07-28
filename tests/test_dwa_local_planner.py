@@ -2,6 +2,8 @@ import pathlib
 import sys
 import unittest
 
+import yaml
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_planning"))
@@ -21,6 +23,27 @@ def _straight_reference(length_m: float = 8.0) -> tuple[PathPoint, ...]:
     return tuple(
         PathPoint(index * 0.10, 0.0, 0.0)
         for index in range(round(length_m / 0.10) + 1)
+    )
+
+
+def _validation_reference() -> tuple[PathPoint, ...]:
+    artifact = yaml.safe_load(
+        (
+            REPO_ROOT
+            / "docs"
+            / "evidence"
+            / "day5"
+            / "debug_control_validation_trajectory.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    return tuple(
+        PathPoint(
+            x=float(point["x"]),
+            y=float(point["y"]),
+            yaw=float(point["yaw"]),
+            ref_id=point.get("ref_id"),
+        )
+        for point in artifact["points"]
     )
 
 
@@ -126,6 +149,97 @@ class DWALocalPlannerTest(unittest.TestCase):
             self.config.max_yaw_rate_radps,
         )
 
+    def test_recovery_arc_may_briefly_cross_deviation_limit_to_rejoin(self) -> None:
+        reference = _validation_reference()
+        planner = DWALocalPlanner(
+            DWAConfig(
+                min_turning_radius_m=0.60,
+                control_interval_s=1.0,
+                prediction_horizon_s=6.0,
+                simulation_step_s=0.20,
+                obstacle_clearance_m=0.04,
+                reference_lookahead_m=0.80,
+                max_reference_deviation_m=0.80,
+                reference_search_window_points=160,
+                progress_weight=3.0,
+                path_distance_weight=6.0,
+                recovery_deviation_margin_m=0.10,
+                recovery_min_improvement_m=0.10,
+            )
+        )
+        current_pose = PathPoint(
+            x=8.9992079679,
+            y=1.1412491596,
+            yaw=1.0962,
+        )
+        current_deviation = min(
+            ((point.x - current_pose.x) ** 2 + (point.y - current_pose.y) ** 2)
+            ** 0.5
+            for point in reference
+        )
+
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=current_pose,
+            current_velocity=DWAVelocity(0.106, -0.0182844),
+            obstacle_points_body=(),
+            previous_reference_index=94,
+            previous_selected_yaw_rate_radps=-0.06,
+        )
+
+        endpoint = result.path[-1]
+        endpoint_deviation = min(
+            ((point.x - endpoint.x) ** 2 + (point.y - endpoint.y) ** 2) ** 0.5
+            for point in reference
+        )
+        self.assertLess(
+            endpoint_deviation,
+            current_deviation
+            - 0.10,
+        )
+
+    def test_day5_tuning_does_not_turn_before_validation_curve(self) -> None:
+        runtime = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "planning"
+                / "dwa_runtime_params_day5.yaml"
+            ).read_text(encoding="utf-8")
+        )["dwa_runtime"]
+        reference = _validation_reference()
+        planner = DWALocalPlanner(
+            DWAConfig(
+                min_turning_radius_m=0.60,
+                control_interval_s=1.0 / runtime["frequency_hz"],
+                prediction_horizon_s=runtime["prediction_horizon_s"],
+                simulation_step_s=runtime["simulation_step_s"],
+                obstacle_clearance_m=runtime["obstacle_clearance_m"],
+                reference_lookahead_m=runtime["reference_lookahead_m"],
+                max_reference_deviation_m=runtime[
+                    "max_reference_deviation_m"
+                ],
+                reference_search_window_points=runtime[
+                    "reference_search_window_points"
+                ],
+                progress_weight=runtime["progress_weight"],
+                path_distance_weight=runtime["path_distance_weight"],
+            )
+        )
+
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=reference[86],
+            current_velocity=DWAVelocity(0.11, 0.0),
+            obstacle_points_body=(),
+            previous_reference_index=86,
+        )
+
+        self.assertLess(
+            abs(result.selected_velocity.yaw_rate_radps),
+            1e-9,
+        )
+
     def test_rejects_invalid_dynamic_window_configuration(self) -> None:
         with self.assertRaises(ValueError):
             DWAConfig(min_turning_radius_m=0.0)
@@ -135,6 +249,10 @@ class DWALocalPlannerTest(unittest.TestCase):
             DWAConfig(speed_sample_count=1)
         with self.assertRaises(ValueError):
             DWAConfig(direction_switch_penalty=-0.1)
+        with self.assertRaises(ValueError):
+            DWAConfig(recovery_deviation_margin_m=-0.1)
+        with self.assertRaises(ValueError):
+            DWAConfig(recovery_min_improvement_m=0.0)
 
     def test_obstacle_crop_runs_before_point_limit(self) -> None:
         irrelevant_points = tuple(

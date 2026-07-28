@@ -18,14 +18,16 @@ dwa_runtime:
   speed_sample_count: 4
   yaw_rate_sample_count: 11
   obstacle_clearance_m: 0.04
-  reference_lookahead_m: 1.50
+  reference_lookahead_m: 0.80
   max_reference_deviation_m: 0.80
   reference_search_window_points: 160
-  progress_weight: 5.0
-  path_distance_weight: 3.0
+  progress_weight: 3.0
+  path_distance_weight: 6.0
   goal_distance_weight: 1.0
   heading_weight: 0.3
   clearance_weight: 0.8
   speed_weight: 1.0
   yaw_rate_weight: 0.15
   direction_switch_penalty: 0.8
+  recovery_deviation_margin_m: 0.10
+  recovery_min_improvement_m: 0.10

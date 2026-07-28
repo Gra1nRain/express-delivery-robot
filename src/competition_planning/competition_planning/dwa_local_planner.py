@@ -45,6 +45,8 @@ class DWAConfig:
     speed_weight: float = 1.0
     yaw_rate_weight: float = 0.15
     direction_switch_penalty: float = 0.8
+    recovery_deviation_margin_m: float = 0.10
+    recovery_min_improvement_m: float = 0.10
 
     def __post_init__(self) -> None:
         positive = {
@@ -75,6 +77,10 @@ class DWAConfig:
             raise ValueError("reference_search_window_points must be at least 2")
         if self.direction_switch_penalty < 0.0:
             raise ValueError("direction_switch_penalty must be non-negative")
+        if self.recovery_deviation_margin_m < 0.0:
+            raise ValueError("recovery_deviation_margin_m must be non-negative")
+        if self.recovery_min_improvement_m <= 0.0:
+            raise ValueError("recovery_min_improvement_m must be positive")
 
 
 @dataclass(frozen=True)
@@ -206,6 +212,10 @@ class DWALocalPlanner:
             start_index + self._config.reference_search_window_points,
         )
         local_reference = reference_path[max(0, start_index - 3) : reference_end]
+        current_deviation = _distance_to_reference(
+            current_pose,
+            local_reference,
+        )
         reference_distances = _cumulative_distances(reference_path)
         obstacles = tuple(
             (float(x), float(y))
@@ -241,7 +251,30 @@ class DWALocalPlanner:
                 _distance_to_reference(point, local_reference)
                 for point in map_path[1:]
             )
-            if not deviations or max(deviations) > self._config.max_reference_deviation_m:
+            if not deviations:
+                continue
+            maximum_deviation = max(deviations)
+            recovery_candidate = (
+                current_deviation
+                >= (
+                    self._config.max_reference_deviation_m
+                    - self._config.recovery_deviation_margin_m
+                )
+                and maximum_deviation
+                <= (
+                    self._config.max_reference_deviation_m
+                    + self._config.recovery_deviation_margin_m
+                )
+                and deviations[-1]
+                <= (
+                    current_deviation
+                    - self._config.recovery_min_improvement_m
+                )
+            )
+            if (
+                maximum_deviation > self._config.max_reference_deviation_m
+                and not recovery_candidate
+            ):
                 continue
 
             endpoint = map_path[-1]

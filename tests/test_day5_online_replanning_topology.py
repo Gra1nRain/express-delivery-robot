@@ -142,6 +142,11 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             dwa_runtime["max_reference_deviation_m"],
             0.80,
         )
+        self.assertEqual(dwa_runtime["reference_lookahead_m"], 0.80)
+        self.assertEqual(dwa_runtime["progress_weight"], 3.0)
+        self.assertEqual(dwa_runtime["path_distance_weight"], 6.0)
+        self.assertEqual(dwa_runtime["recovery_deviation_margin_m"], 0.10)
+        self.assertEqual(dwa_runtime["recovery_min_improvement_m"], 0.10)
         self.assertGreater(
             dwa_runtime["path_distance_weight"],
             replanning["path_distance_weight"],
@@ -156,6 +161,14 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertIn('"dwa_runtime_params_file"', launch_text)
         self.assertIn(
             '"frequency_hz": dwa_runtime["frequency_hz"]',
+            dwa_launch,
+        )
+        self.assertIn(
+            '"recovery_deviation_margin_m": dwa_runtime[',
+            dwa_launch,
+        )
+        self.assertIn(
+            '"recovery_min_improvement_m": dwa_runtime[',
             dwa_launch,
         )
         self.assertIn(
