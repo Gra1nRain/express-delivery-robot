@@ -19,7 +19,7 @@ dwa_runtime:
   yaw_rate_sample_count: 11
   obstacle_clearance_m: 0.25
   reference_lookahead_m: 1.50
-  max_reference_deviation_m: 0.65
+  max_reference_deviation_m: 0.80
   reference_search_window_points: 160
   progress_weight: 5.0
   path_distance_weight: 3.0

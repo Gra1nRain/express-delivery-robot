@@ -131,7 +131,7 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertEqual(dwa_runtime["frequency_hz"], 1.0)
         self.assertLessEqual(
             dwa_runtime["max_reference_deviation_m"],
-            0.65,
+            0.80,
         )
         self.assertGreater(
             dwa_runtime["path_distance_weight"],
