@@ -21,6 +21,7 @@ class Day5ChassisCenterTrackingProfileTest(unittest.TestCase):
         estimator = control_config["state_estimator"]
 
         self.assertEqual(estimator["base_frame"], "body")
+        self.assertEqual(estimator["max_pose_prediction_s"], 3.0)
         self.assertNotIn("tracking_base_frame", estimator)
         self.assertNotIn("tracking_frame_transform", estimator)
 

@@ -46,7 +46,7 @@ state_estimator:
   base_frame: body
   pose_timeout_s: 0.20
   velocity_timeout_s: 0.20
-  max_pose_prediction_s: 2.00
+  max_pose_prediction_s: 3.00
   max_position_jump_m: 0.25
   max_heading_jump_deg: 20.0
 
