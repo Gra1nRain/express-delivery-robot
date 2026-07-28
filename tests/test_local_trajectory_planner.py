@@ -19,6 +19,7 @@ from competition_control.mppi_controller import (
 from competition_planning.local_trajectory_planner import (
     LocalReplanConfig,
     LocalTrajectoryPlanner,
+    occupied_grid_cell_centers,
 )
 from competition_planning.occupancy_grid_planner import OccupancyGridMap
 from competition_planning.semantic_planner import PathPoint
@@ -85,6 +86,100 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertEqual(result.rejoin_index, 50)
         self.assertEqual(result.path, self.reference[:51])
         self.assertLess(result.planning_grid_cell_count, 100 * 80)
+
+    def test_inflated_costmap_cells_are_bounded_and_downsampled(self) -> None:
+        points = occupied_grid_cell_centers(
+            (100, 100, 100, 100, 100, 100),
+            width=3,
+            height=2,
+            resolution_m=0.10,
+            origin_x_m=0.0,
+            origin_y_m=-0.10,
+            occupancy_threshold=50,
+            x_min_m=0.05,
+            x_max_m=0.25,
+            y_half_width_m=0.10,
+            max_points=2,
+        )
+
+        self.assertEqual(len(points), 2)
+        self.assertTrue(all(0.05 <= x <= 0.25 for x, _ in points))
+        self.assertTrue(all(abs(y) <= 0.10 for _, y in points))
+
+    def test_day5_runtime_horizon_can_replan_around_a_route_obstacle(self) -> None:
+        runtime = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "planning"
+                / "local_hybrid_astar_runtime_params_day5.yaml"
+            ).read_text(encoding="utf-8")
+        )["local_hybrid_astar_runtime"]
+        control = yaml.safe_load(
+            (
+                REPO_ROOT / "config" / "control" / "control_params.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        trajectory_data = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "docs"
+                / "evidence"
+                / "day5"
+                / "debug_control_validation_to_drop_pass_trajectory.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        reference = tuple(
+            PathPoint(
+                x=float(point["x"]),
+                y=float(point["y"]),
+                yaw=float(point["yaw"]),
+                ref_id=point.get("ref_id"),
+            )
+            for point in trajectory_data["points"]
+        )
+        planner = LocalTrajectoryPlanner(
+            OccupancyGridMap.from_yaml(REPO_ROOT / "maps" / "debug" / "map.yaml"),
+            LocalReplanConfig(
+                lookahead_distance_m=runtime["lookahead_distance_m"],
+                inflation_radius_m=runtime["inflation_radius_m"],
+                search_padding_m=runtime["search_padding_m"],
+                sample_spacing_m=runtime["sample_spacing_m"],
+                min_turning_radius_m=control["motion"]["min_turning_radius_m"],
+                step_length_m=runtime["step_length_m"],
+                curvature_bins=runtime["curvature_bins"],
+                heading_bins=runtime["heading_bins"],
+                goal_position_tolerance_m=runtime[
+                    "goal_position_tolerance_m"
+                ],
+                goal_heading_tolerance_rad=math.radians(
+                    runtime["goal_heading_tolerance_deg"]
+                ),
+                reference_deviation_weight=runtime[
+                    "reference_deviation_weight"
+                ],
+                max_expansions=runtime["max_expansions"],
+                reference_search_window_points=runtime[
+                    "reference_search_window_points"
+                ],
+            ),
+        )
+        obstacle_center = reference[14]
+        obstacles = tuple(
+            (obstacle_center.x + dx, obstacle_center.y + dy)
+            for dx in (-0.10, -0.05, 0.0, 0.05, 0.10)
+            for dy in (-0.15, -0.10, -0.05, 0.0, 0.05, 0.10, 0.15)
+        )
+
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=reference[0],
+            dynamic_obstacle_points=obstacles,
+        )
+
+        self.assertEqual(result.status, "REPLANNED")
+        self.assertTrue(result.path_is_navigable)
+        self.assertEqual(result.dynamic_obstacle_count, len(obstacles))
 
     def test_clear_day5_turn_reference_is_kept_after_small_tracking_offset(self) -> None:
         trajectory_data = yaml.safe_load(

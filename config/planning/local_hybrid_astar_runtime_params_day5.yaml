@@ -1,0 +1,22 @@
+local_hybrid_astar_runtime:
+  plugin: reference_aware_hybrid_astar
+  frequency_hz: 1.0
+  costmap_occupancy_threshold: 50
+  max_obstacle_age_s: 2.0
+  max_odom_age_s: 0.50
+  obstacle_x_min_m: 0.05
+  obstacle_x_max_m: 4.00
+  obstacle_y_half_width_m: 2.50
+  max_obstacle_points: 2000
+  inflation_radius_m: 0.04
+  lookahead_distance_m: 3.00
+  search_padding_m: 1.50
+  sample_spacing_m: 0.10
+  step_length_m: 0.20
+  curvature_bins: 9
+  heading_bins: 72
+  goal_position_tolerance_m: 0.15
+  goal_heading_tolerance_deg: 8.0
+  reference_deviation_weight: 2.0
+  max_expansions: 250000
+  reference_search_window_points: 160

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ROS adapter from the live body costmap to a reference-aware local path."""
+"""ROS adapter from the live inflated costmap to local Hybrid A*."""
 
 from __future__ import annotations
 
@@ -9,17 +9,24 @@ from pathlib import Path as FilePath
 import time
 
 from geometry_msgs.msg import PoseStamped
-from nav_msgs.msg import OccupancyGrid, Path
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
 import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node
-from std_msgs.msg import String
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
+from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformException, TransformListener
 import yaml
 
 from competition_planning.local_trajectory_planner import (
     LocalReplanConfig,
     LocalTrajectoryPlanner,
+    occupied_grid_cell_centers,
 )
 from competition_planning.occupancy_grid_planner import (
     GridPlanningError,
@@ -29,6 +36,8 @@ from competition_planning.semantic_planner import PathPoint
 
 
 class LocalReplannerNode(Node):
+    """Preserve the current ROS safety contract around local Hybrid A*."""
+
     def __init__(self) -> None:
         super().__init__("local_replanner")
         self._map_frame = str(self.declare_parameter("map_frame", "map").value)
@@ -37,23 +46,26 @@ class LocalReplannerNode(Node):
         map_file = str(self.declare_parameter("map_file", "").value)
         if not trajectory_file or not map_file:
             raise ValueError("trajectory_file and map_file parameters are required")
-        self._reference_path = _load_reference_path(trajectory_file, self._map_frame)
+        self._reference_path = _load_reference_path(
+            trajectory_file,
+            self._map_frame,
+        )
         static_map = OccupancyGridMap.from_yaml(map_file)
         self._config = LocalReplanConfig(
             lookahead_distance_m=float(
-                self.declare_parameter("lookahead_distance_m", 5.0).value
+                self.declare_parameter("lookahead_distance_m", 3.00).value
             ),
             inflation_radius_m=float(
-                self.declare_parameter("inflation_radius_m", 0.45).value
+                self.declare_parameter("inflation_radius_m", 0.04).value
             ),
             search_padding_m=float(
-                self.declare_parameter("search_padding_m", 3.0).value
+                self.declare_parameter("search_padding_m", 1.5).value
             ),
             sample_spacing_m=float(
                 self.declare_parameter("sample_spacing_m", 0.10).value
             ),
             min_turning_radius_m=float(
-                self.declare_parameter("min_turning_radius_m", 0.81).value
+                self.declare_parameter("min_turning_radius_m", 0.60).value
             ),
             step_length_m=float(
                 self.declare_parameter("step_length_m", 0.20).value
@@ -61,11 +73,11 @@ class LocalReplannerNode(Node):
             curvature_bins=int(self.declare_parameter("curvature_bins", 9).value),
             heading_bins=int(self.declare_parameter("heading_bins", 72).value),
             goal_position_tolerance_m=float(
-                self.declare_parameter("goal_position_tolerance_m", 0.25).value
+                self.declare_parameter("goal_position_tolerance_m", 0.15).value
             ),
             goal_heading_tolerance_rad=math.radians(
                 float(
-                    self.declare_parameter("goal_heading_tolerance_deg", 15.0).value
+                    self.declare_parameter("goal_heading_tolerance_deg", 8.0).value
                 )
             ),
             reference_deviation_weight=float(
@@ -75,22 +87,64 @@ class LocalReplannerNode(Node):
                 self.declare_parameter("max_expansions", 250_000).value
             ),
             reference_search_window_points=int(
-                self.declare_parameter("reference_search_window_points", 120).value
+                self.declare_parameter(
+                    "reference_search_window_points",
+                    160,
+                ).value
             ),
         )
         self._planner = LocalTrajectoryPlanner(static_map, self._config)
-        self._max_costmap_age_s = float(
-            self.declare_parameter("max_costmap_age_s", 0.75).value
+
+        obstacle_source = str(
+            self.declare_parameter("obstacle_source", "costmap").value
+        ).lower()
+        if obstacle_source != "costmap":
+            raise ValueError("obstacle_source must be 'costmap'")
+        self._expected_obstacle_frame = str(
+            self.declare_parameter("expected_obstacle_frame", "body").value
         )
-        if self._max_costmap_age_s <= 0.0:
-            raise ValueError("max_costmap_age_s must be positive")
+        self._max_obstacle_age_s = float(
+            self.declare_parameter("max_obstacle_age_s", 2.0).value
+        )
+        self._max_odom_age_s = float(
+            self.declare_parameter("max_odom_age_s", 0.50).value
+        )
+        self._obstacle_x_min_m = float(
+            self.declare_parameter("obstacle_x_min_m", 0.05).value
+        )
+        self._obstacle_x_max_m = float(
+            self.declare_parameter("obstacle_x_max_m", 4.0).value
+        )
+        self._obstacle_y_half_width_m = float(
+            self.declare_parameter("obstacle_y_half_width_m", 2.5).value
+        )
+        self._costmap_occupancy_threshold = int(
+            self.declare_parameter("costmap_occupancy_threshold", 50).value
+        )
+        self._max_obstacle_points = int(
+            self.declare_parameter("max_obstacle_points", 2000).value
+        )
+        if self._max_obstacle_age_s <= 0.0 or self._max_odom_age_s <= 0.0:
+            raise ValueError("sensor age limits must be positive")
+        if (
+            self._obstacle_x_max_m <= self._obstacle_x_min_m
+            or self._obstacle_y_half_width_m <= 0.0
+        ):
+            raise ValueError("obstacle bounds are invalid")
+        if not 0 <= self._costmap_occupancy_threshold <= 100:
+            raise ValueError("costmap_occupancy_threshold must be in [0, 100]")
+        if self._max_obstacle_points < 1:
+            raise ValueError("max_obstacle_points must be positive")
 
         self._tf_buffer = Buffer(cache_time=Duration(seconds=5.0))
         self._tf_listener = TransformListener(self._tf_buffer, self)
         self._obstacle_points_map: tuple[tuple[float, float], ...] | None = None
-        self._costmap_stamp_s = 0.0
-        self._costmap_frame = ""
+        self._obstacle_frame = ""
+        self._obstacle_received_s = 0.0
+        self._obstacle_header_stamp_s = 0.0
+        self._odom_received_s = 0.0
         self._previous_reference_index = 0
+
         self._path_publisher = self.create_publisher(
             Path,
             str(
@@ -100,6 +154,16 @@ class LocalReplannerNode(Node):
                 ).value
             ),
             1,
+        )
+        self._stop_publisher = self.create_publisher(
+            Bool,
+            str(
+                self.declare_parameter(
+                    "local_stop_request_topic",
+                    "/planning/local_stop_request",
+                ).value
+            ),
+            10,
         )
         self._status_publisher = self.create_publisher(
             String,
@@ -111,95 +175,158 @@ class LocalReplannerNode(Node):
             ),
             10,
         )
+        costmap_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        costmap_topic = str(
+            self.declare_parameter(
+                "costmap_topic",
+                "/avoidance/local_costmap",
+            ).value
+        )
         self.create_subscription(
             OccupancyGrid,
-            str(
-                self.declare_parameter(
-                    "costmap_topic",
-                    "/avoidance/local_costmap",
-                ).value
-            ),
+            costmap_topic,
             self._costmap_callback,
-            1,
+            costmap_qos,
         )
-        frequency_hz = float(self.declare_parameter("frequency_hz", 2.0).value)
+        self.create_subscription(
+            Odometry,
+            str(self.declare_parameter("odom_topic", "/odom").value),
+            self._odom_callback,
+            20,
+        )
+        frequency_hz = float(self.declare_parameter("frequency_hz", 1.0).value)
         if frequency_hz <= 0.0:
             raise ValueError("frequency_hz must be positive")
         self.create_timer(1.0 / frequency_hz, self._planning_cycle)
+        self._stop_publisher.publish(Bool(data=True))
         self.get_logger().info(
-            "Local replanner ready: "
+            "Local Hybrid A* ready: "
+            f"inflated_costmap={costmap_topic}, "
             f"lookahead={self._config.lookahead_distance_m:.2f}m, "
             f"inflation={self._config.inflation_radius_m:.2f}m, "
-            f"reference_weight={self._config.reference_deviation_weight:.2f}"
+            f"frequency={frequency_hz:.2f}Hz"
         )
 
+    def _now_s(self) -> float:
+        return self.get_clock().now().nanoseconds / 1e9
+
     def _costmap_callback(self, message: OccupancyGrid) -> None:
-        received_at_s = self.get_clock().now().nanoseconds / 1e9
-        if not message.header.frame_id:
-            self._publish_status("INVALID_COSTMAP_FRAME")
+        received_s = self._now_s()
+        if (
+            self._expected_obstacle_frame
+            and message.header.frame_id != self._expected_obstacle_frame
+        ):
+            self._obstacle_points_map = None
+            self._publish_stop(
+                "COSTMAP_FRAME_MISMATCH",
+                detail=(
+                    f"{message.header.frame_id}->{self._expected_obstacle_frame}"
+                ),
+            )
             return
+        origin_yaw = _yaw_from_quaternion(message.info.origin.orientation)
+        if abs(origin_yaw) > 1e-6:
+            self._obstacle_points_map = None
+            self._publish_stop(
+                "COSTMAP_ORIGIN_ROTATED",
+                detail=f"yaw={origin_yaw:.6f}",
+            )
+            return
+
         try:
-            transform = self._tf_buffer.lookup_transform(
+            map_from_obstacle = self._tf_buffer.lookup_transform(
                 self._map_frame,
                 message.header.frame_id,
                 rclpy.time.Time(),
                 timeout=Duration(seconds=0.02),
             )
-        except TransformException as exc:
-            self._publish_status("COSTMAP_TF_UNAVAILABLE", detail=str(exc))
+            obstacle_points = occupied_grid_cell_centers(
+                message.data,
+                width=int(message.info.width),
+                height=int(message.info.height),
+                resolution_m=float(message.info.resolution),
+                origin_x_m=float(message.info.origin.position.x),
+                origin_y_m=float(message.info.origin.position.y),
+                occupancy_threshold=self._costmap_occupancy_threshold,
+                x_min_m=self._obstacle_x_min_m,
+                x_max_m=self._obstacle_x_max_m,
+                y_half_width_m=self._obstacle_y_half_width_m,
+                max_points=self._max_obstacle_points,
+            )
+        except (TransformException, ValueError) as exc:
+            self._obstacle_points_map = None
+            self._publish_stop("COSTMAP_REJECTED", detail=str(exc))
             return
 
-        local_yaw = _yaw_from_quaternion(message.info.origin.orientation)
-        transform_yaw = _yaw_from_quaternion(transform.transform.rotation)
-        origin_x = float(message.info.origin.position.x)
-        origin_y = float(message.info.origin.position.y)
-        resolution = float(message.info.resolution)
-        width = int(message.info.width)
-        points: list[tuple[float, float]] = []
-        for index, value in enumerate(message.data):
-            if value < 100:
-                continue
-            row, col = divmod(index, width)
-            grid_x = (col + 0.5) * resolution
-            grid_y = (row + 0.5) * resolution
-            frame_x = origin_x + math.cos(local_yaw) * grid_x - math.sin(local_yaw) * grid_y
-            frame_y = origin_y + math.sin(local_yaw) * grid_x + math.cos(local_yaw) * grid_y
-            map_x = (
-                float(transform.transform.translation.x)
-                + math.cos(transform_yaw) * frame_x
-                - math.sin(transform_yaw) * frame_y
+        translation = map_from_obstacle.transform.translation
+        transform_yaw = _yaw_from_quaternion(
+            map_from_obstacle.transform.rotation
+        )
+        cos_yaw = math.cos(transform_yaw)
+        sin_yaw = math.sin(transform_yaw)
+        self._obstacle_points_map = tuple(
+            (
+                float(translation.x)
+                + cos_yaw * obstacle_x
+                - sin_yaw * obstacle_y,
+                float(translation.y)
+                + sin_yaw * obstacle_x
+                + cos_yaw * obstacle_y,
             )
-            map_y = (
-                float(transform.transform.translation.y)
-                + math.sin(transform_yaw) * frame_x
-                + math.cos(transform_yaw) * frame_y
-            )
-            points.append((map_x, map_y))
-        self._obstacle_points_map = tuple(points)
-        self._costmap_stamp_s = received_at_s
-        self._costmap_frame = message.header.frame_id
+            for obstacle_x, obstacle_y in obstacle_points
+        )
+        self._obstacle_frame = message.header.frame_id
+        self._obstacle_received_s = received_s
+        self._obstacle_header_stamp_s = _stamp_to_seconds(message.header.stamp)
+
+    def _odom_callback(self, message: Odometry) -> None:
+        del message
+        self._odom_received_s = self._now_s()
 
     def _planning_cycle(self) -> None:
         now = self.get_clock().now()
         now_s = now.nanoseconds / 1e9
-        if self._obstacle_points_map is None or self._costmap_stamp_s <= 0.0:
-            self._publish_status("WAITING_FOR_COSTMAP")
+        if self._obstacle_points_map is None or self._obstacle_received_s <= 0.0:
+            self._publish_stop("WAITING_FOR_COSTMAP")
             return
-        age_s = now_s - self._costmap_stamp_s
-        if age_s > self._max_costmap_age_s:
-            self._publish_status("COSTMAP_STALE", costmap_age_s=age_s)
+        obstacle_age_s = now_s - self._obstacle_received_s
+        if obstacle_age_s > self._max_obstacle_age_s:
+            self._publish_stop(
+                "COSTMAP_STALE",
+                obstacle_age_s=obstacle_age_s,
+            )
             return
+        if self._odom_received_s <= 0.0:
+            self._publish_stop(
+                "WAITING_FOR_ODOMETRY",
+                obstacle_age_s=obstacle_age_s,
+            )
+            return
+        odom_age_s = now_s - self._odom_received_s
+        if odom_age_s > self._max_odom_age_s:
+            self._publish_stop(
+                "ODOMETRY_STALE",
+                obstacle_age_s=obstacle_age_s,
+                odom_age_s=odom_age_s,
+            )
+            return
+
         try:
-            transform = self._tf_buffer.lookup_transform(
+            map_from_base = self._tf_buffer.lookup_transform(
                 self._map_frame,
                 self._base_frame,
                 rclpy.time.Time(),
                 timeout=Duration(seconds=0.02),
             )
             current_pose = PathPoint(
-                x=float(transform.transform.translation.x),
-                y=float(transform.transform.translation.y),
-                yaw=_yaw_from_quaternion(transform.transform.rotation),
+                x=float(map_from_base.transform.translation.x),
+                y=float(map_from_base.transform.translation.y),
+                yaw=_yaw_from_quaternion(map_from_base.transform.rotation),
             )
             started_at = time.perf_counter()
             result = self._planner.plan(
@@ -210,7 +337,12 @@ class LocalReplannerNode(Node):
             )
             planning_time_ms = (time.perf_counter() - started_at) * 1000.0
         except (TransformException, GridPlanningError, ValueError) as exc:
-            self._publish_status("PLAN_FAILED", detail=str(exc), costmap_age_s=age_s)
+            self._publish_stop(
+                "HYBRID_ASTAR_NO_FEASIBLE_PATH",
+                detail=str(exc),
+                obstacle_age_s=obstacle_age_s,
+                odom_age_s=odom_age_s,
+            )
             return
 
         self._previous_reference_index = result.reference_start_index
@@ -218,25 +350,41 @@ class LocalReplannerNode(Node):
         self._path_publisher.publish(
             _path_message(result.path, self._map_frame, publish_now.to_msg())
         )
+        self._stop_publisher.publish(Bool(data=False))
         self._publish_status(
             result.status,
-            costmap_age_s=age_s,
+            stop_requested=False,
+            obstacle_age_s=obstacle_age_s,
+            obstacle_header_age_s=(
+                now_s - self._obstacle_header_stamp_s
+                if self._obstacle_header_stamp_s > 0.0
+                else None
+            ),
+            odom_age_s=odom_age_s,
             planning_time_ms=planning_time_ms,
+            obstacle_count=result.dynamic_obstacle_count,
+            path_point_count=len(result.path),
             reference_start_index=result.reference_start_index,
             rejoin_index=result.rejoin_index,
-            dynamic_obstacle_count=result.dynamic_obstacle_count,
-            path_point_count=len(result.path),
             planning_grid_cell_count=result.planning_grid_cell_count,
         )
 
+    def _publish_stop(self, status: str, **fields: object) -> None:
+        self._stop_publisher.publish(Bool(data=True))
+        self._publish_status(status, stop_requested=True, **fields)
+
     def _publish_status(self, status: str, **fields: object) -> None:
-        payload = {
-            "status": status,
-            "costmap_frame": self._costmap_frame,
-            **fields,
-        }
         self._status_publisher.publish(
-            String(data=json.dumps(payload, separators=(",", ":")))
+            String(
+                data=json.dumps(
+                    {
+                        "status": status,
+                        "costmap_frame": self._obstacle_frame,
+                        **fields,
+                    },
+                    separators=(",", ":"),
+                )
+            )
         )
 
 
@@ -285,9 +433,23 @@ def _path_message(
 
 def _yaw_from_quaternion(quaternion) -> float:
     return math.atan2(
-        2.0 * (float(quaternion.w) * float(quaternion.z) + float(quaternion.x) * float(quaternion.y)),
-        1.0 - 2.0 * (float(quaternion.y) ** 2 + float(quaternion.z) ** 2),
+        2.0
+        * (
+            float(quaternion.w) * float(quaternion.z)
+            + float(quaternion.x) * float(quaternion.y)
+        ),
+        1.0
+        - 2.0
+        * (
+            float(quaternion.y) ** 2
+            + float(quaternion.z) ** 2
+        ),
     )
+
+
+def _stamp_to_seconds(stamp) -> float:
+    return float(stamp.sec) + float(stamp.nanosec) / 1e9
+
 
 def main() -> None:
     rclpy.init()

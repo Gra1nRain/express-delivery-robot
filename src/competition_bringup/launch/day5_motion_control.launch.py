@@ -38,9 +38,13 @@ def _launch_setup(context, *args, **kwargs):
     planning_config = _load_yaml(
         LaunchConfiguration("planning_params_file").perform(context)
     )
-    dwa_runtime = _load_yaml(
-        LaunchConfiguration("dwa_runtime_params_file").perform(context)
-    )["dwa_runtime"]
+    local_runtime = _load_yaml(
+        LaunchConfiguration("local_planner_runtime_params_file").perform(context)
+    )["local_hybrid_astar_runtime"]
+    if local_runtime.get("plugin") != "reference_aware_hybrid_astar":
+        raise ValueError(
+            "local planner runtime plugin must be reference_aware_hybrid_astar"
+        )
     safety_config = _load_yaml(LaunchConfiguration("safety_params_file").perform(context))
     tracker = control_config["trajectory_tracker"]
     mppi = tracker["mppi"]
@@ -201,83 +205,60 @@ def _launch_setup(context, *args, **kwargs):
         ),
         Node(
             package="competition_planning",
-            executable="dwa_local_planner_node",
-            name="dwa_local_planner",
+            executable="local_replanner_node",
+            name="local_replanner",
             output="screen",
             condition=IfCondition(LaunchConfiguration("start_local_replanner")),
             parameters=[
                 {
                     "trajectory_file": LaunchConfiguration("trajectory_file"),
+                    "map_file": LaunchConfiguration("map_file"),
                     "map_frame": estimator["map_frame"],
                     "base_frame": tracking_base_frame,
-                    "frequency_hz": dwa_runtime["frequency_hz"],
+                    "frequency_hz": local_runtime["frequency_hz"],
                     "obstacle_source": replanning["obstacle_source"],
                     "costmap_topic": replanning["costmap_topic"],
                     "expected_obstacle_frame": replanning[
                         "expected_obstacle_frame"
                     ],
-                    "costmap_occupancy_threshold": dwa_runtime[
+                    "costmap_occupancy_threshold": local_runtime[
                         "costmap_occupancy_threshold"
                     ],
                     "odom_topic": replanning["odom_topic"],
-                    "max_obstacle_age_s": dwa_runtime["max_obstacle_age_s"],
-                    "max_odom_age_s": dwa_runtime["max_odom_age_s"],
-                    "obstacle_x_min_m": dwa_runtime["obstacle_x_min_m"],
-                    "obstacle_x_max_m": dwa_runtime["obstacle_x_max_m"],
-                    "obstacle_y_half_width_m": dwa_runtime[
+                    "max_obstacle_age_s": local_runtime["max_obstacle_age_s"],
+                    "max_odom_age_s": local_runtime["max_odom_age_s"],
+                    "obstacle_x_min_m": local_runtime["obstacle_x_min_m"],
+                    "obstacle_x_max_m": local_runtime["obstacle_x_max_m"],
+                    "obstacle_y_half_width_m": local_runtime[
                         "obstacle_y_half_width_m"
                     ],
-                    "max_obstacle_points": dwa_runtime["max_obstacle_points"],
-                    "min_speed_mps": dwa_runtime["min_speed_mps"],
-                    "max_speed_mps": dwa_runtime["max_speed_mps"],
-                    "max_acceleration_mps2": dwa_runtime[
-                        "max_acceleration_mps2"
+                    "max_obstacle_points": local_runtime[
+                        "max_obstacle_points"
                     ],
-                    "max_deceleration_mps2": dwa_runtime[
-                        "max_deceleration_mps2"
+                    "inflation_radius_m": local_runtime[
+                        "inflation_radius_m"
                     ],
-                    "max_yaw_rate_radps": dwa_runtime["max_yaw_rate_radps"],
-                    "max_yaw_acceleration_radps2": dwa_runtime[
-                        "max_yaw_acceleration_radps2"
+                    "lookahead_distance_m": local_runtime[
+                        "lookahead_distance_m"
                     ],
+                    "search_padding_m": local_runtime["search_padding_m"],
+                    "sample_spacing_m": local_runtime["sample_spacing_m"],
                     "min_turning_radius_m": motion["min_turning_radius_m"],
-                    "prediction_horizon_s": dwa_runtime["prediction_horizon_s"],
-                    "simulation_step_s": dwa_runtime["simulation_step_s"],
-                    "speed_sample_count": dwa_runtime["speed_sample_count"],
-                    "yaw_rate_sample_count": dwa_runtime[
-                        "yaw_rate_sample_count"
+                    "step_length_m": local_runtime["step_length_m"],
+                    "curvature_bins": local_runtime["curvature_bins"],
+                    "heading_bins": local_runtime["heading_bins"],
+                    "goal_position_tolerance_m": local_runtime[
+                        "goal_position_tolerance_m"
                     ],
-                    "obstacle_clearance_m": dwa_runtime[
-                        "obstacle_clearance_m"
+                    "goal_heading_tolerance_deg": local_runtime[
+                        "goal_heading_tolerance_deg"
                     ],
-                    "reference_lookahead_m": dwa_runtime[
-                        "reference_lookahead_m"
+                    "reference_deviation_weight": local_runtime[
+                        "reference_deviation_weight"
                     ],
-                    "max_reference_deviation_m": dwa_runtime[
-                        "max_reference_deviation_m"
-                    ],
-                    "reference_search_window_points": dwa_runtime[
+                    "max_expansions": local_runtime["max_expansions"],
+                    "reference_search_window_points": local_runtime[
                         "reference_search_window_points"
-                    ],
-                    "progress_weight": dwa_runtime["progress_weight"],
-                    "path_distance_weight": dwa_runtime[
-                        "path_distance_weight"
-                    ],
-                    "goal_distance_weight": dwa_runtime[
-                        "goal_distance_weight"
-                    ],
-                    "heading_weight": dwa_runtime["heading_weight"],
-                    "clearance_weight": dwa_runtime["clearance_weight"],
-                    "speed_weight": dwa_runtime["speed_weight"],
-                    "yaw_rate_weight": dwa_runtime["yaw_rate_weight"],
-                    "direction_switch_penalty": dwa_runtime[
-                        "direction_switch_penalty"
-                    ],
-                    "recovery_deviation_margin_m": dwa_runtime[
-                        "recovery_deviation_margin_m"
-                    ],
-                    "recovery_min_improvement_m": dwa_runtime[
-                        "recovery_min_improvement_m"
                     ],
                     "local_trajectory_topic": replanning[
                         "local_trajectory_topic"
@@ -544,15 +525,15 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument(
-                "dwa_runtime_params_file",
+                "local_planner_runtime_params_file",
                 default_value=os.path.join(
                     competition_ws,
                     "config",
                     "planning",
-                    "dwa_runtime_params_day5.yaml",
+                    "local_hybrid_astar_runtime_params_day5.yaml",
                 ),
                 description=(
-                    "Runtime-only DWA tuning kept separate from frozen "
+                    "Runtime-only local Hybrid A* tuning kept separate from frozen "
                     "global-trajectory provenance inputs."
                 ),
             ),
