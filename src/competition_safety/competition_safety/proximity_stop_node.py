@@ -182,11 +182,18 @@ class ProximityStopNode(Node):
             self._scan_callback,
             scan_qos,
         )
+        distance_stop_description = (
+            "disabled"
+            if self._config.stop_distance_m == 0.0
+            else (
+                f"[{self._config.x_min_m:.2f}, "
+                f"{self._config.stop_distance_m:.2f}]"
+            )
+        )
         self.get_logger().info(
             "Proximity stop ready: "
             f"scan_topic={self._input_scan_topic}, "
-            f"range=[{self._config.x_min_m:.2f}, "
-            f"{self._config.stop_distance_m:.2f}], "
+            f"distance_stop={distance_stop_description}, "
             f"half_angle={self._config.front_half_angle_rad:.3f}rad, "
             f"lateral_half_width={self._config.lateral_half_width_m:.2f}, "
             f"z=[{self._config.z_min_m:.2f}, {self._config.z_max_m:.2f}], "

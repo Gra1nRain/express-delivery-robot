@@ -160,6 +160,15 @@ class Day5RunScriptTest(unittest.TestCase):
         self.assertIn("cmd_vel_safe_stale = (", text)
         self.assertIn('"cmd_vel_safe_stale",', text)
 
+    def test_disabled_scan_stop_ignores_single_near_scan_return(self) -> None:
+        module = _load_policy_module()
+
+        self.assertIsNone(module.scan_stop_reason(0.2163, 0.0))
+        self.assertEqual(
+            module.scan_stop_reason(0.2163, 0.34),
+            "scan_min_under_0.34m",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

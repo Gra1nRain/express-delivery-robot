@@ -37,7 +37,11 @@ from competition_control.ranger_twist_adapter import (
     RangerMiniV3Geometry,
     adapt_yaw_rate_for_ranger_driver,
 )
-from day5_run_policy import load_route_metadata, resolve_watchdog_timeout_s
+from day5_run_policy import (
+    load_route_metadata,
+    resolve_watchdog_timeout_s,
+    scan_stop_reason,
+)
 
 try:
     from ranger_msgs.msg import SystemState
@@ -707,8 +711,12 @@ def run(args: argparse.Namespace) -> int:
                 ):
                     stop_reason = "proximity_stop_request"
                     break
-                if node.data.get("scan_min") is not None and float(node.data["scan_min"]) < args.scan_stop_m:
-                    stop_reason = f"scan_min_under_{args.scan_stop_m:.2f}m"
+                scan_reason = scan_stop_reason(
+                    node.data.get("scan_min"),
+                    args.scan_stop_m,
+                )
+                if scan_reason is not None:
+                    stop_reason = scan_reason
                     break
                 if abs(float(node.data.get("safe_cmd_x", 0.0))) > args.max_command_mps:
                     stop_reason = "safe_command_over_limit"
@@ -861,7 +869,12 @@ def main() -> int:
     parser.add_argument("--watchdog-duration-scale", type=float, default=2.5)
     parser.add_argument("--watchdog-margin-s", type=float, default=60.0)
     parser.add_argument("--sustained-error-s", type=float, default=4.0)
-    parser.add_argument("--scan-stop-m", type=float, default=0.34)
+    parser.add_argument(
+        "--scan-stop-m",
+        type=float,
+        default=0.0,
+        help="Raw-scan stop threshold; 0 disables distance-based termination.",
+    )
     parser.add_argument("--max-command-mps", type=float, default=0.23)
     parser.add_argument("--max-odom-mps", type=float, default=0.28)
     parser.add_argument("--max-lateral-error-m", type=float, default=0.45)

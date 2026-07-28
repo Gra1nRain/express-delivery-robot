@@ -56,3 +56,14 @@ def resolve_watchdog_timeout_s(
     if duration_scale <= 0.0 or margin_s < 0.0 or minimum_s <= 0.0:
         raise ValueError("invalid adaptive watchdog policy")
     return max(minimum_s, planned_duration_s * duration_scale + margin_s)
+
+
+def scan_stop_reason(
+    scan_min_m: float | None,
+    stop_threshold_m: float,
+) -> str | None:
+    if stop_threshold_m <= 0.0 or scan_min_m is None:
+        return None
+    if scan_min_m < stop_threshold_m:
+        return f"scan_min_under_{stop_threshold_m:.2f}m"
+    return None

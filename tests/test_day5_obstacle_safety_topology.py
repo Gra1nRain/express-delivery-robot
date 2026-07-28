@@ -103,15 +103,10 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
             projection_config["angle_max"],
             math.pi / 2.0,
         )
-        self.assertGreaterEqual(
+        self.assertEqual(
             proximity_config["stop_distance_m"],
-            preprocess_config["blind"] + 0.25,
-            "Proximity stop must look far enough beyond FAST-LIO's blind range.",
-        )
-        self.assertAlmostEqual(
-            proximity_config["stop_distance_m"],
-            preprocess_config["blind"]
-            + proximity_config["vehicle_width_m"] / 2.0,
+            0.0,
+            "Day5 collision geometry must come from the inflated costmap only.",
         )
         self.assertGreaterEqual(
             proximity_config["lateral_half_width_m"],

@@ -20,8 +20,12 @@ class ProximityStopConfig:
     def __post_init__(self) -> None:
         if self.x_min_m < 0.0:
             raise ValueError("x_min_m must be non-negative")
-        if self.stop_distance_m <= self.x_min_m:
-            raise ValueError("stop_distance_m must be greater than x_min_m")
+        if self.stop_distance_m < 0.0:
+            raise ValueError("stop_distance_m must be non-negative")
+        if 0.0 < self.stop_distance_m <= self.x_min_m:
+            raise ValueError(
+                "enabled stop_distance_m must be greater than x_min_m"
+            )
         if not (0.0 < self.front_half_angle_rad < math.pi / 2.0):
             raise ValueError("front_half_angle_rad must be in (0, pi/2)")
         if self.lateral_half_width_m <= 0.0:
@@ -234,6 +238,8 @@ def _point_is_in_stop_box(
     y: float,
     config: ProximityStopConfig,
 ) -> bool:
+    if config.stop_distance_m == 0.0:
+        return False
     range_xy = math.hypot(x, y)
     in_front_sector = (
         config.x_min_m <= range_xy <= config.stop_distance_m

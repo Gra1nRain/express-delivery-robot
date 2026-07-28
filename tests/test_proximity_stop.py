@@ -7,7 +7,9 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_safety"))
 
 from competition_safety.proximity_stop import (
+    LocalGridConfig,
     ProximityStopConfig,
+    evaluate_local_clearance,
     should_stop_for_points,
 )
 
@@ -73,6 +75,24 @@ class ProximityStopTest(unittest.TestCase):
 
         self.assertFalse(stop)
         self.assertEqual(count, 0)
+
+    def test_disabled_distance_stop_keeps_inflated_costmap_obstacles(self) -> None:
+        stop_config = ProximityStopConfig(
+            stop_distance_m=0.0,
+            min_points=1,
+        )
+        grid_config = LocalGridConfig(inflation_radius_m=0.25)
+
+        result = evaluate_local_clearance(
+            [(0.30, 0.00, 0.10)],
+            stop_config,
+            grid_config,
+        )
+
+        self.assertFalse(result.stop)
+        self.assertEqual(result.point_count, 0)
+        self.assertIn(100, result.costmap.data)
+        self.assertIn(50, result.costmap.data)
 
 
 if __name__ == "__main__":
