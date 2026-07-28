@@ -719,7 +719,17 @@ def run(args: argparse.Namespace) -> int:
                 if abs(float(node.data.get("odom_vx", 0.0))) > args.max_odom_mps:
                     stop_reason = "odom_velocity_over_limit"
                     break
-                if node.age("cmd_vel_safe") is None or node.age("cmd_vel_safe") > 0.6:
+                cmd_vel_safe_stale = (
+                    node.age("cmd_vel_safe") is None
+                    or node.age("cmd_vel_safe") > 0.6
+                )
+                if _sustained(
+                    bad_since,
+                    "cmd_vel_safe_stale",
+                    cmd_vel_safe_stale,
+                    now_s,
+                    args.sustained_error_s,
+                ):
                     stop_reason = "cmd_vel_safe_stale"
                     break
                 local_bad = any(

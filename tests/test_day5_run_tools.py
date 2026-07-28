@@ -152,6 +152,14 @@ class Day5RunScriptTest(unittest.TestCase):
         self.assertIn("proximity_blocked = bool(", text)
         self.assertIn('"proximity_stop",', text)
 
+    def test_relay_debounces_temporary_safe_command_staleness(self) -> None:
+        text = (
+            REPO_ROOT / "scripts" / "day5_full_route_relay.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("cmd_vel_safe_stale = (", text)
+        self.assertIn('"cmd_vel_safe_stale",', text)
+
 
 if __name__ == "__main__":
     unittest.main()
