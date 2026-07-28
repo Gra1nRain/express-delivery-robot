@@ -104,7 +104,7 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         )
         self.assertEqual(proximity_config["scan_topic"], "/avoidance/scan")
         self.assertEqual(proximity_config["marker_topic"], "/avoidance/markers")
-        self.assertGreaterEqual(proximity_config["visualization_rate_hz"], 5.0)
+        self.assertEqual(proximity_config["visualization_rate_hz"], 5.0)
         self.assertGreaterEqual(
             proximity_config["grid_x_max_m"],
             proximity_config["stop_distance_m"],

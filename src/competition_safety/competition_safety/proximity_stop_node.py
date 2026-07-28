@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 import json
 
 import rclpy
@@ -22,7 +23,9 @@ from competition_safety.proximity_stop import (
     LocalClearanceResult,
     LocalGridConfig,
     ProximityStopConfig,
+    advance_periodic_deadline,
     evaluate_local_clearance,
+    evaluate_fused_local_clearance,
     laser_scan_points,
 )
 
@@ -101,12 +104,15 @@ class ProximityStopNode(Node):
             ),
         )
         visualization_rate_hz = float(
-            self.declare_parameter("visualization_rate_hz", 2.0).value
+            self.declare_parameter("visualization_rate_hz", 5.0).value
         )
         if visualization_rate_hz <= 0.0:
             raise ValueError("visualization_rate_hz must be positive")
         self._visualization_period_s = 1.0 / visualization_rate_hz
-        self._last_visualization_s = -self._visualization_period_s
+        self._next_visualization_s: float | None = None
+        self._visualization_point_frames: deque[
+            tuple[tuple[float, float, float], ...]
+        ] = deque(maxlen=2)
         self._vehicle_length_m = float(
             self.declare_parameter("vehicle_length_m", 0.72).value
         )
@@ -180,6 +186,7 @@ class ProximityStopNode(Node):
             f"lateral_half_width={self._config.lateral_half_width_m:.2f}, "
             f"z=[{self._config.z_min_m:.2f}, {self._config.z_max_m:.2f}], "
             f"min_points={self._config.min_points}, "
+            f"obstacle_layer={visualization_rate_hz:.1f}Hz/two_frame_fusion, "
             f"qos={scan_qos_reliability}/keep_last_{scan_qos_depth}"
         )
 
@@ -188,11 +195,16 @@ class ProximityStopNode(Node):
 
     def _scan_callback(self, message: LaserScan) -> None:
         now_s = self._now_s()
-        visualization_due = (
-            now_s - self._last_visualization_s >= self._visualization_period_s
+        visualization_due, self._next_visualization_s = (
+            advance_periodic_deadline(
+                now_s=now_s,
+                next_deadline_s=self._next_visualization_s,
+                period_s=self._visualization_period_s,
+            )
         )
         frame_id = message.header.frame_id
         if self._expected_frame_id and frame_id != self._expected_frame_id:
+            self._visualization_point_frames.clear()
             self._publish(True, "frame_mismatch", 0, frame_id, None, None)
             if visualization_due:
                 result = evaluate_local_clearance(
@@ -207,12 +219,12 @@ class ProximityStopNode(Node):
                     True,
                     "frame_mismatch",
                 )
-                self._last_visualization_s = now_s
             return
 
         scan_stamp_s = _stamp_to_seconds(message.header.stamp)
         age_s = now_s - scan_stamp_s if scan_stamp_s > 0.0 else None
         if age_s is not None and age_s > self._max_scan_age_s:
+            self._visualization_point_frames.clear()
             self._publish(True, "stale_scan", 0, frame_id, age_s, None)
             if visualization_due:
                 result = evaluate_local_clearance(
@@ -227,7 +239,6 @@ class ProximityStopNode(Node):
                     True,
                     "stale_scan",
                 )
-                self._last_visualization_s = now_s
             return
 
         points = laser_scan_points(
@@ -237,6 +248,7 @@ class ProximityStopNode(Node):
             range_min_m=max(float(message.range_min), self._grid_config.scan_range_min_m),
             range_max_m=min(float(message.range_max), self._grid_config.scan_range_max_m),
         )
+        self._visualization_point_frames.append(points)
         result = evaluate_local_clearance(
             points,
             self._config,
@@ -255,14 +267,18 @@ class ProximityStopNode(Node):
             nearest_distance_m,
         )
         if visualization_due:
+            visualization_result = evaluate_fused_local_clearance(
+                self._visualization_point_frames,
+                self._config,
+                self._grid_config,
+            )
             self._publish_visualization(
                 message.header.stamp,
                 frame_id,
-                result,
+                visualization_result,
                 stop,
                 reason,
             )
-            self._last_visualization_s = now_s
 
     def _publish(
         self,

@@ -193,6 +193,42 @@ def evaluate_local_clearance(
     )
 
 
+def evaluate_fused_local_clearance(
+    point_frames: Iterable[Iterable[tuple[float, float, float]]],
+    stop_config: ProximityStopConfig,
+    grid_config: LocalGridConfig,
+) -> LocalClearanceResult:
+    """Build one local obstacle layer from consecutive planar scan frames."""
+
+    return evaluate_local_clearance(
+        (
+            point
+            for frame_points in point_frames
+            for point in frame_points
+        ),
+        stop_config,
+        grid_config,
+    )
+
+
+def advance_periodic_deadline(
+    *,
+    now_s: float,
+    next_deadline_s: float | None,
+    period_s: float,
+) -> tuple[bool, float]:
+    """Keep a fixed-rate phase when input callbacks arrive slightly early."""
+
+    if period_s <= 0.0:
+        raise ValueError("period_s must be positive")
+    if next_deadline_s is None:
+        return True, now_s + period_s
+    if now_s < next_deadline_s:
+        return False, next_deadline_s
+    elapsed_periods = math.floor((now_s - next_deadline_s) / period_s)
+    return True, next_deadline_s + (elapsed_periods + 1) * period_s
+
+
 def _point_is_in_stop_box(
     x: float,
     y: float,

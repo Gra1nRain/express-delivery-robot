@@ -10,7 +10,9 @@ sys.path.insert(0, str(REPO_ROOT / "src" / "competition_safety"))
 from competition_safety.proximity_stop import (
     LocalGridConfig,
     ProximityStopConfig,
+    advance_periodic_deadline,
     evaluate_local_clearance,
+    evaluate_fused_local_clearance,
     laser_scan_points,
 )
 
@@ -88,6 +90,43 @@ class LocalClearanceTest(unittest.TestCase):
         self.assertAlmostEqual(points[0][0], math.sqrt(0.5))
         self.assertAlmostEqual(points[0][1], -math.sqrt(0.5))
         self.assertEqual(points[0][2], 0.0)
+
+    def test_two_recent_scan_frames_are_fused_for_the_local_costmap(self) -> None:
+        result = evaluate_fused_local_clearance(
+            [
+                ((1.00, -0.60, 0.0),),
+                ((1.00, 0.60, 0.0),),
+            ],
+            self.stop_config,
+            self.grid_config,
+        )
+
+        self.assertEqual(result.costmap.data.count(100), 2)
+
+    def test_periodic_deadline_keeps_its_phase_after_an_early_scan(self) -> None:
+        due, deadline = advance_periodic_deadline(
+            now_s=10.0,
+            next_deadline_s=None,
+            period_s=0.20,
+        )
+        self.assertTrue(due)
+        self.assertAlmostEqual(deadline, 10.20)
+
+        due, deadline = advance_periodic_deadline(
+            now_s=10.19,
+            next_deadline_s=deadline,
+            period_s=0.20,
+        )
+        self.assertFalse(due)
+        self.assertAlmostEqual(deadline, 10.20)
+
+        due, deadline = advance_periodic_deadline(
+            now_s=10.29,
+            next_deadline_s=deadline,
+            period_s=0.20,
+        )
+        self.assertTrue(due)
+        self.assertAlmostEqual(deadline, 10.40)
 
 
 if __name__ == "__main__":
