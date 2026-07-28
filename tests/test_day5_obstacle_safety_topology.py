@@ -1,3 +1,4 @@
+import math
 import pathlib
 import unittest
 
@@ -94,6 +95,14 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         )
         self.assertEqual(projection_config["output_topic"], "/scan")
         self.assertEqual(projection_config["target_frame"], "body")
+        self.assertAlmostEqual(
+            projection_config["angle_min"],
+            -math.pi / 2.0,
+        )
+        self.assertAlmostEqual(
+            projection_config["angle_max"],
+            math.pi / 2.0,
+        )
         self.assertGreaterEqual(
             proximity_config["stop_distance_m"],
             preprocess_config["blind"] + 0.25,
