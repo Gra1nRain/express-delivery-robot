@@ -64,6 +64,11 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
             fast_lio_config["/**"]["ros__parameters"]["point_filter_num"],
             10,
         )
+        self.assertLessEqual(
+            preprocess_config["blind"],
+            0.20,
+            "Lowered Day5 lidar must retain near-field obstacle returns.",
+        )
         self.assertTrue(
             publish_config["scan_publish_en"],
             "FAST-LIO scan_publish_en is the master switch for point cloud outputs.",
