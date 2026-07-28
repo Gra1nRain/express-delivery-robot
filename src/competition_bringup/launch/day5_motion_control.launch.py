@@ -308,6 +308,7 @@ def _launch_setup(context, *args, **kwargs):
                     "visualization_rate_hz": proximity_stop[
                         "visualization_rate_hz"
                     ],
+                    "fusion_frame_count": proximity_stop["fusion_frame_count"],
                     "expected_frame_id": proximity_stop["expected_frame_id"],
                     "max_scan_age_s": proximity_stop["max_scan_age_s"],
                     "x_min_m": proximity_stop["x_min_m"],

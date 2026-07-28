@@ -108,11 +108,16 @@ class ProximityStopNode(Node):
         )
         if visualization_rate_hz <= 0.0:
             raise ValueError("visualization_rate_hz must be positive")
+        fusion_frame_count = int(
+            self.declare_parameter("fusion_frame_count", 10).value
+        )
+        if fusion_frame_count < 1:
+            raise ValueError("fusion_frame_count must be at least 1")
         self._visualization_period_s = 1.0 / visualization_rate_hz
         self._next_visualization_s: float | None = None
         self._visualization_point_frames: deque[
             tuple[tuple[float, float, float], ...]
-        ] = deque(maxlen=2)
+        ] = deque(maxlen=fusion_frame_count)
         self._vehicle_length_m = float(
             self.declare_parameter("vehicle_length_m", 0.72).value
         )
@@ -186,7 +191,8 @@ class ProximityStopNode(Node):
             f"lateral_half_width={self._config.lateral_half_width_m:.2f}, "
             f"z=[{self._config.z_min_m:.2f}, {self._config.z_max_m:.2f}], "
             f"min_points={self._config.min_points}, "
-            f"obstacle_layer={visualization_rate_hz:.1f}Hz/two_frame_fusion, "
+            f"obstacle_layer={visualization_rate_hz:.1f}Hz/"
+            f"{fusion_frame_count}_frame_fusion, "
             f"qos={scan_qos_reliability}/keep_last_{scan_qos_depth}"
         )
 

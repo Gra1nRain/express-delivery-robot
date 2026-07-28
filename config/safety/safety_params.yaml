@@ -51,6 +51,7 @@ proximity_stop:
   scan_topic: /avoidance/scan
   marker_topic: /avoidance/markers
   visualization_rate_hz: 5.0
+  fusion_frame_count: 10
   expected_frame_id: body
   max_scan_age_s: 0.25
   x_min_m: 0.25
