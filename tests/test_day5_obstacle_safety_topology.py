@@ -62,7 +62,7 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         projection_config = safety_config["pointcloud_to_laserscan"]
         self.assertEqual(
             fast_lio_config["/**"]["ros__parameters"]["point_filter_num"],
-            5,
+            10,
         )
         self.assertTrue(
             publish_config["scan_publish_en"],
@@ -71,6 +71,10 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         self.assertTrue(
             publish_config["scan_bodyframe_pub_en"],
             "Day5 motion must expose body-frame FAST-LIO points for obstacle stop.",
+        )
+        self.assertTrue(
+            publish_config["dense_publish_en"],
+            "Day5 obstacle projection needs the dense de-skewed body cloud.",
         )
         self.assertIn("proximity_stop_node", launch_text)
         self.assertIn('package="pointcloud_to_laserscan"', launch_text)
