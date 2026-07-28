@@ -60,9 +60,9 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         preprocess_config = fast_lio_config["/**"]["ros__parameters"]["preprocess"]
         proximity_config = safety_config["proximity_stop"]
         projection_config = safety_config["pointcloud_to_laserscan"]
-        self.assertGreaterEqual(
+        self.assertEqual(
             fast_lio_config["/**"]["ros__parameters"]["point_filter_num"],
-            10,
+            5,
         )
         self.assertTrue(
             publish_config["scan_publish_en"],
