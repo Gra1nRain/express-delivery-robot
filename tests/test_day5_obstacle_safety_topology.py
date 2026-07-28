@@ -108,6 +108,11 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
             preprocess_config["blind"] + 0.25,
             "Proximity stop must look far enough beyond FAST-LIO's blind range.",
         )
+        self.assertAlmostEqual(
+            proximity_config["stop_distance_m"],
+            preprocess_config["blind"]
+            + proximity_config["vehicle_width_m"] / 2.0,
+        )
         self.assertGreaterEqual(
             proximity_config["lateral_half_width_m"],
             0.45,
