@@ -115,7 +115,8 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         )
         self.assertEqual(proximity_config["scan_qos_reliability"], "best_effort")
         self.assertEqual(proximity_config["scan_qos_depth"], 1)
-        self.assertLessEqual(proximity_config["max_scan_age_s"], 0.25)
+        self.assertEqual(proximity_config["max_scan_age_s"], 2.0)
+        self.assertEqual(safety_config["safety"]["avoidance_timeout_s"], 2.0)
         self.assertEqual(
             proximity_config["costmap_topic"],
             "/avoidance/local_costmap",

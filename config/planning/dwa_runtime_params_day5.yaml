@@ -1,7 +1,7 @@
 dwa_runtime:
   frequency_hz: 1.0
   costmap_occupancy_threshold: 50
-  max_obstacle_age_s: 0.50
+  max_obstacle_age_s: 2.0
   max_odom_age_s: 0.50
   obstacle_x_min_m: 0.05
   obstacle_x_max_m: 4.00

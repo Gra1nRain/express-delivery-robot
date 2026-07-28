@@ -129,6 +129,7 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertIn("replace_trajectory", control_node)
         self.assertIn("LOCAL_PLAN_STALE", control_node)
         self.assertEqual(dwa_runtime["frequency_hz"], 1.0)
+        self.assertEqual(dwa_runtime["max_obstacle_age_s"], 2.0)
         self.assertGreaterEqual(
             safety["proximity_stop"]["grid_inflation_radius_m"],
             safety["proximity_stop"]["vehicle_width_m"] / 2.0,
