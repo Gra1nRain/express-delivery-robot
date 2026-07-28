@@ -17,7 +17,7 @@ dwa_runtime:
   simulation_step_s: 0.20
   speed_sample_count: 4
   yaw_rate_sample_count: 11
-  obstacle_clearance_m: 0.25
+  obstacle_clearance_m: 0.04
   reference_lookahead_m: 1.50
   max_reference_deviation_m: 0.80
   reference_search_window_points: 160

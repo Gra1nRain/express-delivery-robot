@@ -66,7 +66,7 @@ proximity_stop:
   grid_x_max_m: 5.50
   grid_y_min_m: -2.50
   grid_y_max_m: 2.50
-  grid_inflation_radius_m: 0.20
+  grid_inflation_radius_m: 0.25
   scan_bin_count: 360
   scan_range_min_m: 0.10
   scan_range_max_m: 6.00
