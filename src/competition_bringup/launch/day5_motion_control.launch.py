@@ -57,7 +57,12 @@ def _launch_setup(context, *args, **kwargs):
         default=bool(replanning["enabled"]),
     )
     safety = safety_config["safety"]
-    livox_scan_projection = safety_config["livox_scan_projection"]
+    scan_projection = safety_config["pointcloud_to_laserscan"]
+    scan_projection_parameters = {
+        key: value
+        for key, value in scan_projection.items()
+        if key not in {"input_topic", "output_topic"}
+    }
     proximity_stop = safety_config["proximity_stop"]
     bringup_pkg = get_package_share_directory("competition_bringup")
     mapping_launch = os.path.join(bringup_pkg, "launch", "day1_mapping.launch.py")
@@ -270,12 +275,16 @@ def _launch_setup(context, *args, **kwargs):
             ],
         ),
         Node(
-            package="competition_safety",
-            executable="livox_custom_to_scan_node",
-            name="livox_custom_to_scan",
+            package="pointcloud_to_laserscan",
+            executable="pointcloud_to_laserscan_node",
+            name="day5_pointcloud_to_laserscan",
             output="screen",
             condition=IfCondition(LaunchConfiguration("start_proximity_stop")),
-            parameters=[livox_scan_projection],
+            parameters=[scan_projection_parameters],
+            remappings=[
+                ("cloud_in", scan_projection["input_topic"]),
+                ("scan", scan_projection["output_topic"]),
+            ],
         ),
         Node(
             package="competition_safety",

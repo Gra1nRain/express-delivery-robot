@@ -19,7 +19,6 @@ setup(
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
-            "livox_custom_to_scan_node = competition_safety.livox_custom_to_scan_node:main",
             "proximity_stop_node = competition_safety.proximity_stop_node:main",
             "safety_node = competition_safety.safety_node:main",
         ],

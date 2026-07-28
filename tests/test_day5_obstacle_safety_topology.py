@@ -59,7 +59,11 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         publish_config = fast_lio_config["/**"]["ros__parameters"]["publish"]
         preprocess_config = fast_lio_config["/**"]["ros__parameters"]["preprocess"]
         proximity_config = safety_config["proximity_stop"]
-        projection_config = safety_config["livox_scan_projection"]
+        projection_config = safety_config["pointcloud_to_laserscan"]
+        self.assertGreaterEqual(
+            fast_lio_config["/**"]["ros__parameters"]["point_filter_num"],
+            10,
+        )
         self.assertTrue(
             publish_config["scan_publish_en"],
             "FAST-LIO scan_publish_en is the master switch for point cloud outputs.",
@@ -69,15 +73,18 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
             "Day5 motion must expose body-frame FAST-LIO points for obstacle stop.",
         )
         self.assertIn("proximity_stop_node", launch_text)
-        self.assertIn("livox_custom_to_scan_node", launch_text)
+        self.assertIn('package="pointcloud_to_laserscan"', launch_text)
+        self.assertIn('executable="pointcloud_to_laserscan_node"', launch_text)
         self.assertTrue(safety_config["safety"]["require_avoidance_source"])
         self.assertIn("proximity_stop", safety_config)
         self.assertEqual(proximity_config["input_type"], "laser_scan")
         self.assertEqual(proximity_config["input_scan_topic"], "/scan")
-        self.assertEqual(projection_config["input_topic"], "/livox/lidar")
+        self.assertEqual(
+            projection_config["input_topic"],
+            "/cloud_registered_body",
+        )
         self.assertEqual(projection_config["output_topic"], "/scan")
-        self.assertEqual(projection_config["output_frame"], "body")
-        self.assertLessEqual(projection_config["max_input_age_s"], 0.25)
+        self.assertEqual(projection_config["target_frame"], "body")
         self.assertGreaterEqual(
             proximity_config["stop_distance_m"],
             preprocess_config["blind"] + 0.25,

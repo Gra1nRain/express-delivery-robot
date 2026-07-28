@@ -78,7 +78,10 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertLess(replanning["obstacle_clearance_m"], 0.45)
         self.assertEqual(safety["proximity_stop"]["input_type"], "laser_scan")
         self.assertEqual(safety["proximity_stop"]["input_scan_topic"], "/scan")
-        self.assertEqual(safety["livox_scan_projection"]["output_topic"], "/scan")
+        self.assertEqual(
+            safety["pointcloud_to_laserscan"]["output_topic"],
+            "/scan",
+        )
         self.assertGreater(replanning["prediction_horizon_s"], 0.0)
         self.assertEqual(
             replanning["local_trajectory_topic"],
