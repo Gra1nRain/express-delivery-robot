@@ -24,6 +24,14 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        dwa_runtime = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "planning"
+                / "dwa_runtime_params_day5.yaml"
+            ).read_text(encoding="utf-8")
+        )["dwa_runtime"]
         launch_text = (
             REPO_ROOT
             / "src"
@@ -120,15 +128,30 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertIn("parameterize_local_path", control_node)
         self.assertIn("replace_trajectory", control_node)
         self.assertIn("LOCAL_PLAN_STALE", control_node)
-        self.assertIn('"local_replanning_frequency_hz"', launch_text)
+        self.assertEqual(dwa_runtime["frequency_hz"], 1.0)
+        self.assertLessEqual(
+            dwa_runtime["max_reference_deviation_m"],
+            0.65,
+        )
+        self.assertGreater(
+            dwa_runtime["path_distance_weight"],
+            replanning["path_distance_weight"],
+        )
+        self.assertGreater(dwa_runtime["direction_switch_penalty"], 0.0)
+        self.assertLessEqual(
+            control["trajectory_tracker"]["mppi"][
+                "curvature_noise_std_1pm"
+            ],
+            0.15,
+        )
+        self.assertIn('"dwa_runtime_params_file"', launch_text)
         self.assertIn(
-            '"frequency_hz": local_replanning_frequency_hz',
+            '"frequency_hz": dwa_runtime["frequency_hz"]',
             dwa_launch,
         )
         self.assertIn(
             'DeclareLaunchArgument(\n'
-            '                "local_replanning_frequency_hz",\n'
-            '                default_value="1.0"',
+            '                "dwa_runtime_params_file",',
             launch_text,
         )
 
@@ -182,13 +205,20 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
 
         for path in control_paths:
             with self.subTest(path=path.name):
-                motion = yaml.safe_load(
+                control = yaml.safe_load(
                     path.read_text(encoding="utf-8")
-                )["motion"]
+                )
+                motion = control["motion"]
                 self.assertEqual(motion["min_turning_radius_m"], 0.60)
                 self.assertGreater(
                     motion["min_turning_radius_m"],
                     motion["ranger_driver_min_turn_radius_m"],
+                )
+                self.assertLessEqual(
+                    control["trajectory_tracker"]["mppi"][
+                        "curvature_noise_std_1pm"
+                    ],
+                    0.15,
                 )
         for path in safety_paths:
             with self.subTest(path=path.name):

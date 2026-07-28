@@ -129,6 +129,12 @@ class DWALocalPlannerNode(Node):
                 yaw_rate_weight=float(
                     self.declare_parameter("yaw_rate_weight", 0.15).value
                 ),
+                direction_switch_penalty=float(
+                    self.declare_parameter(
+                        "direction_switch_penalty",
+                        0.8,
+                    ).value
+                ),
             )
         )
         obstacle_source = str(
@@ -181,6 +187,7 @@ class DWALocalPlannerNode(Node):
         self._velocity: DWAVelocity | None = None
         self._odom_received_s = 0.0
         self._previous_reference_index = 0
+        self._previous_selected_yaw_rate_radps: float | None = None
 
         self._path_publisher = self.create_publisher(
             Path,
@@ -347,6 +354,9 @@ class DWALocalPlannerNode(Node):
                 current_velocity=self._velocity,
                 obstacle_points_body=obstacle_points,
                 previous_reference_index=self._previous_reference_index,
+                previous_selected_yaw_rate_radps=(
+                    self._previous_selected_yaw_rate_radps
+                ),
             )
             planning_time_ms = (time.perf_counter() - started_at) * 1000.0
         except (TransformException, DWAPlanningError, ValueError) as exc:
@@ -359,6 +369,11 @@ class DWALocalPlannerNode(Node):
             return
 
         self._previous_reference_index = result.reference_start_index
+        self._previous_selected_yaw_rate_radps = (
+            result.selected_velocity.yaw_rate_radps
+            if result.status == "DWA_AVOIDING"
+            else None
+        )
         publish_now = self.get_clock().now()
         self._path_publisher.publish(
             _path_message(result.path, self._map_frame, publish_now.to_msg())

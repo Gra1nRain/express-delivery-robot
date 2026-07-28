@@ -44,6 +44,7 @@ class DWAConfig:
     clearance_weight: float = 0.8
     speed_weight: float = 1.0
     yaw_rate_weight: float = 0.15
+    direction_switch_penalty: float = 0.8
 
     def __post_init__(self) -> None:
         positive = {
@@ -72,6 +73,8 @@ class DWAConfig:
             raise ValueError("DWA requires at least 2 speed and 3 yaw-rate samples")
         if self.reference_search_window_points < 2:
             raise ValueError("reference_search_window_points must be at least 2")
+        if self.direction_switch_penalty < 0.0:
+            raise ValueError("direction_switch_penalty must be non-negative")
 
 
 @dataclass(frozen=True)
@@ -182,6 +185,7 @@ class DWALocalPlanner:
         current_velocity: DWAVelocity,
         obstacle_points_body: Iterable[tuple[float, float]],
         previous_reference_index: int = 0,
+        previous_selected_yaw_rate_radps: float | None = None,
     ) -> DWAPlan:
         if len(reference_path) < 2:
             raise ValueError("DWA requires at least two global reference points")
@@ -258,6 +262,14 @@ class DWALocalPlanner:
                 if clearance is None
                 else min(clearance, self._config.obstacle_clearance_m * 3.0)
             )
+            switches_direction = (
+                previous_selected_yaw_rate_radps is not None
+                and abs(previous_selected_yaw_rate_radps) > 1e-3
+                and abs(velocity.yaw_rate_radps) > 1e-3
+                and previous_selected_yaw_rate_radps
+                * velocity.yaw_rate_radps
+                < 0.0
+            )
             score = (
                 self._config.progress_weight * progress_m
                 - self._config.path_distance_weight
@@ -267,6 +279,8 @@ class DWALocalPlanner:
                 + self._config.clearance_weight * clearance_for_score
                 + self._config.speed_weight * velocity.linear_mps
                 - self._config.yaw_rate_weight * abs(velocity.yaw_rate_radps)
+                - self._config.direction_switch_penalty
+                * float(switches_direction)
             )
             if best is None or score > best[0]:
                 best = (score, map_path, velocity, clearance)

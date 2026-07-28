@@ -241,6 +241,39 @@ class MPPIControllerTest(unittest.TestCase):
         self.assertLess(command.target_index, 4)
         self.assertGreater(command.curvature_1pm, 0.80)
 
+    def test_replanning_keeps_command_speed_ramping_through_odom_deadband(self) -> None:
+        params = replace(
+            self.params,
+            speed_noise_std_mps=0.0,
+            curvature_noise_std_1pm=0.0,
+        )
+        controller = MPPIController(
+            _straight_trajectory(),
+            params,
+            random_seed=37,
+        )
+        local_trajectory = replace(
+            _straight_trajectory(),
+            points=tuple(
+                replace(point, v=0.20)
+                for point in _straight_trajectory().points
+            ),
+        )
+        state = VehicleState(
+            x=0.0,
+            y=0.0,
+            yaw=0.0,
+            linear_speed_mps=0.0,
+        )
+
+        speeds = []
+        for _ in range(4):
+            speeds.append(controller.compute_command(state).linear_x_mps)
+            controller.replace_trajectory(local_trajectory)
+
+        self.assertGreater(speeds[-1], speeds[0] + 0.02)
+        self.assertEqual(speeds, sorted(speeds))
+
 
 if __name__ == "__main__":
     unittest.main()

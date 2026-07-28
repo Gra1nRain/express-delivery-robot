@@ -72,6 +72,26 @@ class DWALocalPlannerTest(unittest.TestCase):
         )
         self.assertGreater(max(abs(point.y) for point in result.path), 0.20)
 
+    def test_previous_avoidance_direction_discourages_symmetric_side_switch(self) -> None:
+        obstacle = tuple(
+            (1.40 + dx, dy)
+            for dx in (-0.05, 0.0, 0.05)
+            for dy in (-0.05, 0.0, 0.05)
+        )
+        planner = DWALocalPlanner(
+            DWAConfig(direction_switch_penalty=0.8)
+        )
+
+        result = planner.plan(
+            reference_path=self.reference,
+            current_pose=self.current_pose,
+            current_velocity=self.cruise,
+            obstacle_points_body=obstacle,
+            previous_selected_yaw_rate_radps=0.15,
+        )
+
+        self.assertGreater(result.selected_velocity.yaw_rate_radps, 0.0)
+
     def test_close_wall_has_no_feasible_path_and_requests_hold_upstream(self) -> None:
         wall = tuple((0.45, -1.50 + index * 0.05) for index in range(61))
 
@@ -113,6 +133,8 @@ class DWALocalPlannerTest(unittest.TestCase):
             DWAConfig(min_speed_mps=0.2, max_speed_mps=0.1)
         with self.assertRaises(ValueError):
             DWAConfig(speed_sample_count=1)
+        with self.assertRaises(ValueError):
+            DWAConfig(direction_switch_penalty=-0.1)
 
     def test_obstacle_crop_runs_before_point_limit(self) -> None:
         irrelevant_points = tuple(

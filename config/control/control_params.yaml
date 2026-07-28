@@ -11,7 +11,7 @@ trajectory_tracker:
     iterations: 2
     temperature: 0.35
     speed_noise_std_mps: 0.05
-    curvature_noise_std_1pm: 0.25
+    curvature_noise_std_1pm: 0.15
     progress_search_window_points: 40
     max_progress_advance_points: 3
     lateral_feedback_gain_1pm_per_m: 1.5

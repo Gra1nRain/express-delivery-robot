@@ -118,6 +118,12 @@ class MPPIControlNode(Node):
             max_curvature_rate_1pmps=float(
                 self.declare_parameter("max_curvature_rate_1pmps", 0.80).value
             ),
+            command_speed_memory_limit_mps=float(
+                self.declare_parameter(
+                    "command_speed_memory_limit_mps",
+                    0.05,
+                ).value
+            ),
             goal_position_tolerance_m=float(
                 self.declare_parameter("goal_position_tolerance_m", 0.10).value
             ),
@@ -425,6 +431,9 @@ class MPPIControlNode(Node):
                 heading_error_rad=0.0,
                 status="INVALID_STATE",
             )
+
+        if command.status != "TRACKING":
+            self._controller.reset()
 
         command_message = TwistStamped()
         command_message.header.stamp = now.to_msg()

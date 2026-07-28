@@ -103,6 +103,7 @@ class MPPIParams:
     max_deceleration_mps2: float = 0.30
     min_turning_radius_m: float = 0.81
     max_curvature_rate_1pmps: float = 0.80
+    command_speed_memory_limit_mps: float = 0.05
     goal_position_tolerance_m: float = 0.10
     position_weight: float = 45.0
     heading_weight: float = 12.0
@@ -143,6 +144,8 @@ class MPPIController:
             raise ValueError("min_turning_radius_m must be positive")
         if params.control_dt_s <= 0.0:
             raise ValueError("control_dt_s must be positive")
+        if params.command_speed_memory_limit_mps < 0.0:
+            raise ValueError("command_speed_memory_limit_mps must be non-negative")
         self._trajectory = trajectory
         self._params = params
         self._rng = np.random.default_rng(random_seed)
@@ -161,11 +164,13 @@ class MPPIController:
             raise ValueError("trajectory distance and time must be strictly increasing")
         self._nominal = np.zeros((params.horizon_steps, 2), dtype=float)
         self._progress_index = 0
+        self._last_speed = 0.0
         self._last_curvature = 0.0
 
     def reset(self) -> None:
         self._nominal.fill(0.0)
         self._progress_index = 0
+        self._last_speed = 0.0
         self._last_curvature = 0.0
 
     def replace_trajectory(self, trajectory: ControlTrajectory) -> None:
@@ -208,6 +213,7 @@ class MPPIController:
             state.y - self._xy[-1, 1],
         )
         if nearest >= len(self._trajectory.points) - 2 and goal_distance <= self._params.goal_position_tolerance_m:
+            self._last_speed = 0.0
             return BodyCommand.hold(
                 target_index=len(self._trajectory.points) - 1,
                 lateral_error_m=lateral_error,
@@ -258,6 +264,7 @@ class MPPIController:
         )
         self._nominal[0, 1] = curvature
         yaw_rate = speed * curvature
+        self._last_speed = speed
         self._last_curvature = curvature
         self._nominal[:-1] = self._nominal[1:]
         self._nominal[-1] = self._nominal[-2]
@@ -375,7 +382,14 @@ class MPPIController:
         max_curvature = 1.0 / self._params.min_turning_radius_m
         bounded[:, :, 0] = np.clip(bounded[:, :, 0], 0.0, self._params.max_speed_mps)
         bounded[:, :, 1] = np.clip(bounded[:, :, 1], -max_curvature, max_curvature)
-        previous_speed = np.full(bounded.shape[0], max(0.0, current_speed))
+        remembered_speed = min(
+            self._last_speed,
+            self._params.command_speed_memory_limit_mps,
+        )
+        previous_speed = np.full(
+            bounded.shape[0],
+            max(0.0, current_speed, remembered_speed),
+        )
         previous_curvature = np.full(bounded.shape[0], self._last_curvature)
         accel_step = self._params.max_acceleration_mps2 * self._params.control_dt_s
         decel_step = self._params.max_deceleration_mps2 * self._params.control_dt_s

@@ -38,6 +38,9 @@ def _launch_setup(context, *args, **kwargs):
     planning_config = _load_yaml(
         LaunchConfiguration("planning_params_file").perform(context)
     )
+    dwa_runtime = _load_yaml(
+        LaunchConfiguration("dwa_runtime_params_file").perform(context)
+    )["dwa_runtime"]
     safety_config = _load_yaml(LaunchConfiguration("safety_params_file").perform(context))
     tracker = control_config["trajectory_tracker"]
     mppi = tracker["mppi"]
@@ -56,11 +59,6 @@ def _launch_setup(context, *args, **kwargs):
         LaunchConfiguration("replanning_enabled").perform(context),
         default=bool(replanning["enabled"]),
     )
-    local_replanning_frequency_hz = float(
-        LaunchConfiguration("local_replanning_frequency_hz").perform(context)
-    )
-    if local_replanning_frequency_hz <= 0.0:
-        raise ValueError("local_replanning_frequency_hz must be positive")
     safety = safety_config["safety"]
     scan_projection = safety_config["pointcloud_to_laserscan"]
     scan_projection_parameters = {
@@ -170,6 +168,9 @@ def _launch_setup(context, *args, **kwargs):
                     "max_deceleration_mps2": motion["max_deceleration_mps2"],
                     "min_turning_radius_m": motion["min_turning_radius_m"],
                     "max_curvature_rate_1pmps": motion["max_curvature_rate_1pmps"],
+                    "command_speed_memory_limit_mps": motion[
+                        "docking_speed_min_mps"
+                    ],
                     "pose_timeout_s": estimator["pose_timeout_s"],
                     "velocity_timeout_s": estimator["velocity_timeout_s"],
                     "max_pose_prediction_s": estimator["max_pose_prediction_s"],
@@ -209,66 +210,69 @@ def _launch_setup(context, *args, **kwargs):
                     "trajectory_file": LaunchConfiguration("trajectory_file"),
                     "map_frame": estimator["map_frame"],
                     "base_frame": tracking_base_frame,
-                    "frequency_hz": local_replanning_frequency_hz,
+                    "frequency_hz": dwa_runtime["frequency_hz"],
                     "obstacle_source": replanning["obstacle_source"],
                     "costmap_topic": replanning["costmap_topic"],
                     "expected_obstacle_frame": replanning[
                         "expected_obstacle_frame"
                     ],
-                    "costmap_occupancy_threshold": replanning[
+                    "costmap_occupancy_threshold": dwa_runtime[
                         "costmap_occupancy_threshold"
                     ],
                     "odom_topic": replanning["odom_topic"],
-                    "max_obstacle_age_s": replanning["max_obstacle_age_s"],
-                    "max_odom_age_s": replanning["max_odom_age_s"],
-                    "obstacle_x_min_m": replanning["obstacle_x_min_m"],
-                    "obstacle_x_max_m": replanning["obstacle_x_max_m"],
-                    "obstacle_y_half_width_m": replanning[
+                    "max_obstacle_age_s": dwa_runtime["max_obstacle_age_s"],
+                    "max_odom_age_s": dwa_runtime["max_odom_age_s"],
+                    "obstacle_x_min_m": dwa_runtime["obstacle_x_min_m"],
+                    "obstacle_x_max_m": dwa_runtime["obstacle_x_max_m"],
+                    "obstacle_y_half_width_m": dwa_runtime[
                         "obstacle_y_half_width_m"
                     ],
-                    "max_obstacle_points": replanning["max_obstacle_points"],
-                    "min_speed_mps": replanning["min_speed_mps"],
-                    "max_speed_mps": replanning["max_speed_mps"],
-                    "max_acceleration_mps2": replanning[
+                    "max_obstacle_points": dwa_runtime["max_obstacle_points"],
+                    "min_speed_mps": dwa_runtime["min_speed_mps"],
+                    "max_speed_mps": dwa_runtime["max_speed_mps"],
+                    "max_acceleration_mps2": dwa_runtime[
                         "max_acceleration_mps2"
                     ],
-                    "max_deceleration_mps2": replanning[
+                    "max_deceleration_mps2": dwa_runtime[
                         "max_deceleration_mps2"
                     ],
-                    "max_yaw_rate_radps": replanning["max_yaw_rate_radps"],
-                    "max_yaw_acceleration_radps2": replanning[
+                    "max_yaw_rate_radps": dwa_runtime["max_yaw_rate_radps"],
+                    "max_yaw_acceleration_radps2": dwa_runtime[
                         "max_yaw_acceleration_radps2"
                     ],
                     "min_turning_radius_m": motion["min_turning_radius_m"],
-                    "prediction_horizon_s": replanning["prediction_horizon_s"],
-                    "simulation_step_s": replanning["simulation_step_s"],
-                    "speed_sample_count": replanning["speed_sample_count"],
-                    "yaw_rate_sample_count": replanning[
+                    "prediction_horizon_s": dwa_runtime["prediction_horizon_s"],
+                    "simulation_step_s": dwa_runtime["simulation_step_s"],
+                    "speed_sample_count": dwa_runtime["speed_sample_count"],
+                    "yaw_rate_sample_count": dwa_runtime[
                         "yaw_rate_sample_count"
                     ],
-                    "obstacle_clearance_m": replanning[
+                    "obstacle_clearance_m": dwa_runtime[
                         "obstacle_clearance_m"
                     ],
-                    "reference_lookahead_m": replanning[
+                    "reference_lookahead_m": dwa_runtime[
                         "reference_lookahead_m"
                     ],
-                    "max_reference_deviation_m": replanning[
+                    "max_reference_deviation_m": dwa_runtime[
                         "max_reference_deviation_m"
                     ],
-                    "reference_search_window_points": replanning[
+                    "reference_search_window_points": dwa_runtime[
                         "reference_search_window_points"
                     ],
-                    "progress_weight": replanning["progress_weight"],
-                    "path_distance_weight": replanning[
+                    "progress_weight": dwa_runtime["progress_weight"],
+                    "path_distance_weight": dwa_runtime[
                         "path_distance_weight"
                     ],
-                    "goal_distance_weight": replanning[
+                    "goal_distance_weight": dwa_runtime[
                         "goal_distance_weight"
                     ],
-                    "heading_weight": replanning["heading_weight"],
-                    "clearance_weight": replanning["clearance_weight"],
-                    "speed_weight": replanning["speed_weight"],
-                    "yaw_rate_weight": replanning["yaw_rate_weight"],
+                    "heading_weight": dwa_runtime["heading_weight"],
+                    "clearance_weight": dwa_runtime["clearance_weight"],
+                    "speed_weight": dwa_runtime["speed_weight"],
+                    "yaw_rate_weight": dwa_runtime["yaw_rate_weight"],
+                    "direction_switch_penalty": dwa_runtime[
+                        "direction_switch_penalty"
+                    ],
                     "local_trajectory_topic": replanning[
                         "local_trajectory_topic"
                     ],
@@ -534,10 +538,15 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument(
-                "local_replanning_frequency_hz",
-                default_value="1.0",
+                "dwa_runtime_params_file",
+                default_value=os.path.join(
+                    competition_ws,
+                    "config",
+                    "planning",
+                    "dwa_runtime_params_day5.yaml",
+                ),
                 description=(
-                    "Runtime DWA update rate. Kept separate from the frozen "
+                    "Runtime-only DWA tuning kept separate from frozen "
                     "global-trajectory provenance inputs."
                 ),
             ),
