@@ -124,7 +124,7 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         self.assertEqual(proximity_config["scan_topic"], "/avoidance/scan")
         self.assertEqual(proximity_config["marker_topic"], "/avoidance/markers")
         self.assertEqual(proximity_config["visualization_rate_hz"], 5.0)
-        self.assertEqual(proximity_config["fusion_frame_count"], 10)
+        self.assertEqual(proximity_config["fusion_frame_count"], 1)
         self.assertIn(
             '"fusion_frame_count": proximity_stop["fusion_frame_count"]',
             launch_text,
