@@ -180,6 +180,7 @@ def _launch_setup(context, *args, **kwargs):
                     "max_pose_prediction_s": estimator["max_pose_prediction_s"],
                     "max_position_jump_m": estimator["max_position_jump_m"],
                     "max_heading_jump_deg": estimator["max_heading_jump_deg"],
+                    "initial_pose_settle_s": estimator["initial_pose_settle_s"],
                     "reference_path_topic": visualization[
                         "reference_path_topic"
                     ],

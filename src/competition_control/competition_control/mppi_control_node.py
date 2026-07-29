@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Any
 
 import rclpy
-from geometry_msgs.msg import PoseStamped, TwistStamped, Vector3Stamped
+from geometry_msgs.msg import (
+    PoseStamped,
+    PoseWithCovarianceStamped,
+    TwistStamped,
+    Vector3Stamped,
+)
 from nav_msgs.msg import Odometry, Path as NavPath
 from rclpy.duration import Duration
 from rclpy.node import Node
@@ -175,6 +180,12 @@ class MPPIControlNode(Node):
         self._max_pose_prediction_s = float(
             self.declare_parameter("max_pose_prediction_s", 0.0).value
         )
+        self._initial_pose_settle_s = float(
+            self.declare_parameter("initial_pose_settle_s", 0.5).value
+        )
+        if self._initial_pose_settle_s < 0.0:
+            raise ValueError("initial_pose_settle_s must be non-negative")
+        self._initial_pose_settle_until_s: float | None = None
 
         self._tf_buffer = Buffer(cache_time=Duration(seconds=5.0))
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -248,6 +259,12 @@ class MPPIControlNode(Node):
         if self._executed_path_max_points < 2:
             raise ValueError("executed_path_max_points must be at least 2")
         self._executed_poses: list[PoseStamped] = []
+        self.create_subscription(
+            PoseWithCovarianceStamped,
+            "/initialpose",
+            self._initialpose_callback,
+            10,
+        )
         self._reference_path_publisher.publish(
             _control_trajectory_path(trajectory, self.get_clock().now().to_msg())
         )
@@ -286,6 +303,36 @@ class MPPIControlNode(Node):
             yaw_rate_radps=float(message.twist.twist.angular.z),
         )
         self._latest_velocity_stamp_s = _stamp_to_seconds(message.header.stamp)
+
+    def _initialpose_callback(self, message: PoseWithCovarianceStamped) -> None:
+        frame_id = message.header.frame_id or self._map_frame
+        if frame_id != self._map_frame:
+            self.get_logger().warning(
+                f"Ignoring /initialpose in {frame_id}; expected {self._map_frame}"
+            )
+            return
+        pose = message.pose.pose
+        values = (
+            pose.position.x,
+            pose.position.y,
+            pose.position.z,
+            pose.orientation.x,
+            pose.orientation.y,
+            pose.orientation.z,
+            pose.orientation.w,
+        )
+        if not all(math.isfinite(float(value)) for value in values):
+            self.get_logger().warning("Ignoring non-finite /initialpose")
+            return
+
+        now_s = self.get_clock().now().nanoseconds / 1e9
+        self._initial_pose_settle_until_s = now_s + self._initial_pose_settle_s
+        self._controller.reset()
+        self._executed_poses.clear()
+        self.get_logger().info(
+            "Received /initialpose; holding zero command for "
+            f"{self._initial_pose_settle_s:.2f}s before resetting state continuity"
+        )
 
     def _local_trajectory_callback(self, message: NavPath) -> None:
         if message.header.frame_id != self._map_frame:
@@ -348,6 +395,11 @@ class MPPIControlNode(Node):
         pose_delay_s: float | None = None
         pose_prediction_s = 0.0
         try:
+            if self._initial_pose_settle_until_s is not None:
+                if now_s < self._initial_pose_settle_until_s:
+                    raise RuntimeError("initial_pose_settling")
+                self._state_estimator.reset()
+                self._initial_pose_settle_until_s = None
             transform = self._tf_buffer.lookup_transform(
                 self._map_frame,
                 self._base_frame,

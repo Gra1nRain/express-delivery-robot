@@ -100,6 +100,46 @@ class StateEstimatorTest(unittest.TestCase):
         self.assertIn("stale_velocity", stale.reasons)
         self.assertIn("pose_time_reversed", reversed_time.reasons)
 
+    def test_reset_accepts_a_new_relocalized_pose_as_the_continuity_baseline(
+        self,
+    ) -> None:
+        estimator = StateEstimator(StateEstimatorLimits())
+        initial = estimator.update(
+            StateObservation(
+                pose=Pose2D(0.0, 0.0, 0.0),
+                velocity=Velocity2D(0.0, 0.0),
+                pose_stamp_s=1.0,
+                velocity_stamp_s=1.0,
+            ),
+            now_s=1.0,
+        )
+        rejected_jump = estimator.update(
+            StateObservation(
+                pose=Pose2D(1.0, 0.5, 0.0),
+                velocity=Velocity2D(0.0, 0.0),
+                pose_stamp_s=1.1,
+                velocity_stamp_s=1.1,
+            ),
+            now_s=1.1,
+        )
+
+        estimator.reset()
+        reanchored = estimator.update(
+            StateObservation(
+                pose=Pose2D(1.0, 0.5, 0.0),
+                velocity=Velocity2D(0.0, 0.0),
+                pose_stamp_s=1.2,
+                velocity_stamp_s=1.2,
+            ),
+            now_s=1.2,
+        )
+
+        self.assertTrue(initial.valid)
+        self.assertFalse(rejected_jump.valid)
+        self.assertIn("position_jump", rejected_jump.reasons)
+        self.assertTrue(reanchored.valid)
+        self.assertEqual(reanchored.pose, Pose2D(1.0, 0.5, 0.0))
+
     def test_predicts_bounded_delayed_pose_to_current_time(self) -> None:
         observation = StateObservation(
             pose=Pose2D(1.0, 2.0, 0.0),
