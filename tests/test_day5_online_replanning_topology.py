@@ -85,6 +85,14 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertEqual(runtime["lookahead_distance_m"], 3.00)
         self.assertEqual(runtime["search_padding_m"], 1.50)
         self.assertEqual(runtime["reference_deviation_weight"], 2.0)
+        self.assertEqual(runtime["relaxed_segment_entry_ref"], "random_obstacle_entry")
+        self.assertEqual(runtime["relaxed_segment_exit_ref"], "random_obstacle_exit")
+        self.assertEqual(runtime["relaxed_activation_distance_m"], 1.0)
+        self.assertEqual(runtime["relaxed_reference_deviation_weight"], 0.5)
+        self.assertEqual(runtime["relaxed_corridor_half_width_m"], 0.85)
+        self.assertEqual(runtime["relaxed_step_length_m"], 0.30)
+        self.assertEqual(runtime["trajectory_switch_improvement_ratio"], 0.15)
+        self.assertEqual(safety["proximity_stop"]["grid_inflation_radius_m"], 0.30)
         self.assertEqual(runtime["planning_timeout_s"], 2.0)
         self.assertLessEqual(
             runtime["planning_timeout_s"],
@@ -109,6 +117,8 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             '"planning_timeout_s": local_runtime[',
             launch_text,
         )
+        self.assertIn('"relaxed_segment_entry_ref": local_runtime[', launch_text)
+        self.assertIn('"trajectory_switch_improvement_ratio": local_runtime[', launch_text)
         self.assertIn(
             'local_runtime.get("plugin") != "reference_aware_hybrid_astar"',
             launch_text,

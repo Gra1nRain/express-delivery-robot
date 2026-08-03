@@ -18,6 +18,13 @@ local_hybrid_astar_runtime:
   goal_position_tolerance_m: 0.15
   goal_heading_tolerance_deg: 8.0
   reference_deviation_weight: 2.0
+  relaxed_segment_entry_ref: random_obstacle_entry
+  relaxed_segment_exit_ref: random_obstacle_exit
+  relaxed_activation_distance_m: 1.0
+  relaxed_reference_deviation_weight: 0.5
+  relaxed_corridor_half_width_m: 0.85
+  relaxed_step_length_m: 0.30
+  trajectory_switch_improvement_ratio: 0.15
   max_expansions: 250000
   planning_timeout_s: 2.00
   reference_search_window_points: 160

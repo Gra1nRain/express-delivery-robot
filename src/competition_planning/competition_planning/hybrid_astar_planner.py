@@ -52,6 +52,7 @@ class HybridAStarPlanner:
         planning_timeout_s: float | None = None,
         reference_path: Sequence[PathPoint] = (),
         reference_deviation_weight: float = 0.0,
+        corridor_half_width_m: float | None = None,
     ) -> None:
         if min_turning_radius_m <= 0.0:
             raise GridPlanningError("hybrid_astar requires a positive min_turning_radius_m")
@@ -80,6 +81,11 @@ class HybridAStarPlanner:
         self._reference_xy = tuple((point.x, point.y) for point in reference_path)
         self._reference_deviation_weight = reference_deviation_weight
         self._reference_distance_sq_cache: dict[tuple[int, int], float] = {}
+        if corridor_half_width_m is not None and corridor_half_width_m <= 0.0:
+            raise GridPlanningError("corridor_half_width_m must be positive")
+        self._corridor_half_width_sq = (
+            None if corridor_half_width_m is None else corridor_half_width_m**2
+        )
         max_curvature = 1.0 / min_turning_radius_m
         if curvature_bins < 3 or curvature_bins % 2 == 0:
             raise GridPlanningError(
@@ -223,7 +229,13 @@ class HybridAStarPlanner:
     def _reference_deviation_cost(self, node: _Node) -> float:
         if not self._reference_xy or self._reference_deviation_weight <= 0.0:
             return 0.0
-        cell = self._map.world_to_cell(node.x, node.y)
+        return self._reference_deviation_weight * self._reference_distance_squared(
+            node.x,
+            node.y,
+        )
+
+    def _reference_distance_squared(self, x: float, y: float) -> float:
+        cell = self._map.world_to_cell(x, y)
         distance_squared = self._reference_distance_sq_cache.get(cell)
         if distance_squared is None:
             cell_x, cell_y = self._map.cell_to_world(cell)
@@ -232,7 +244,7 @@ class HybridAStarPlanner:
                 for x, y in self._reference_xy
             )
             self._reference_distance_sq_cache[cell] = distance_squared
-        return self._reference_deviation_weight * distance_squared
+        return distance_squared
 
     def _successor_curvatures(self, previous_index: int) -> range:
         return range(
@@ -345,7 +357,11 @@ class HybridAStarPlanner:
 
     def _point_is_navigable(self, x: float, y: float) -> bool:
         cell = self._map.world_to_cell(x, y)
-        return self._map.contains(cell) and not self._blocked[self._map.index(cell)]
+        if not self._map.contains(cell) or self._blocked[self._map.index(cell)]:
+            return False
+        return self._corridor_half_width_sq is None or (
+            self._reference_distance_squared(x, y) <= self._corridor_half_width_sq
+        )
 
     def _require_navigable(self, x: float, y: float, label: str) -> None:
         if not self._point_is_navigable(x, y):

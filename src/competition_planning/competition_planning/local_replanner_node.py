@@ -96,6 +96,36 @@ class LocalReplannerNode(Node):
                     160,
                 ).value
             ),
+            relaxed_segment_entry_ref=str(
+                self.declare_parameter("relaxed_segment_entry_ref", "").value
+            ),
+            relaxed_segment_exit_ref=str(
+                self.declare_parameter("relaxed_segment_exit_ref", "").value
+            ),
+            relaxed_activation_distance_m=float(
+                self.declare_parameter("relaxed_activation_distance_m", 0.0).value
+            ),
+            relaxed_reference_deviation_weight=float(
+                self.declare_parameter(
+                    "relaxed_reference_deviation_weight",
+                    0.5,
+                ).value
+            ),
+            relaxed_corridor_half_width_m=float(
+                self.declare_parameter(
+                    "relaxed_corridor_half_width_m",
+                    0.85,
+                ).value
+            ),
+            relaxed_step_length_m=float(
+                self.declare_parameter("relaxed_step_length_m", 0.30).value
+            ),
+            trajectory_switch_improvement_ratio=float(
+                self.declare_parameter(
+                    "trajectory_switch_improvement_ratio",
+                    0.15,
+                ).value
+            ),
         )
         self._planner = LocalTrajectoryPlanner(static_map, self._config)
 

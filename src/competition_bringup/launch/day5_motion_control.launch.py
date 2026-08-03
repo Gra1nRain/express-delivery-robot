@@ -257,6 +257,27 @@ def _launch_setup(context, *args, **kwargs):
                     "reference_deviation_weight": local_runtime[
                         "reference_deviation_weight"
                     ],
+                    "relaxed_segment_entry_ref": local_runtime[
+                        "relaxed_segment_entry_ref"
+                    ],
+                    "relaxed_segment_exit_ref": local_runtime[
+                        "relaxed_segment_exit_ref"
+                    ],
+                    "relaxed_activation_distance_m": local_runtime[
+                        "relaxed_activation_distance_m"
+                    ],
+                    "relaxed_reference_deviation_weight": local_runtime[
+                        "relaxed_reference_deviation_weight"
+                    ],
+                    "relaxed_corridor_half_width_m": local_runtime[
+                        "relaxed_corridor_half_width_m"
+                    ],
+                    "relaxed_step_length_m": local_runtime[
+                        "relaxed_step_length_m"
+                    ],
+                    "trajectory_switch_improvement_ratio": local_runtime[
+                        "trajectory_switch_improvement_ratio"
+                    ],
                     "max_expansions": local_runtime["max_expansions"],
                     "planning_timeout_s": local_runtime[
                         "planning_timeout_s"

@@ -27,6 +27,13 @@ class LocalReplanConfig:
     max_expansions: int = 250_000
     planning_timeout_s: float = 2.0
     reference_search_window_points: int = 120
+    relaxed_segment_entry_ref: str = ""
+    relaxed_segment_exit_ref: str = ""
+    relaxed_activation_distance_m: float = 0.0
+    relaxed_reference_deviation_weight: float = 0.5
+    relaxed_corridor_half_width_m: float = 0.85
+    relaxed_step_length_m: float = 0.30
+    trajectory_switch_improvement_ratio: float = 0.15
 
     def __post_init__(self) -> None:
         if self.lookahead_distance_m <= 0.0:
@@ -37,6 +44,18 @@ class LocalReplanConfig:
             raise ValueError("planning_timeout_s must be positive")
         if self.reference_search_window_points < 2:
             raise ValueError("reference_search_window_points must be at least 2")
+        if bool(self.relaxed_segment_entry_ref) != bool(self.relaxed_segment_exit_ref):
+            raise ValueError("relaxed segment entry and exit refs must be configured together")
+        if self.relaxed_activation_distance_m < 0.0:
+            raise ValueError("relaxed_activation_distance_m must be non-negative")
+        if self.relaxed_reference_deviation_weight < 0.0:
+            raise ValueError("relaxed_reference_deviation_weight must be non-negative")
+        if self.relaxed_corridor_half_width_m <= 0.0:
+            raise ValueError("relaxed_corridor_half_width_m must be positive")
+        if self.relaxed_step_length_m <= 0.0:
+            raise ValueError("relaxed_step_length_m must be positive")
+        if not 0.0 <= self.trajectory_switch_improvement_ratio < 1.0:
+            raise ValueError("trajectory_switch_improvement_ratio must be in [0, 1)")
 
 
 @dataclass(frozen=True)
@@ -60,6 +79,8 @@ class LocalTrajectoryPlanner:
     ) -> None:
         self._static_map = static_map
         self._config = config
+        self._held_relaxed_path: tuple[PathPoint, ...] = ()
+        self._held_rejoin_index: int | None = None
 
     def plan(
         self,
@@ -78,10 +99,21 @@ class LocalTrajectoryPlanner:
             previous_reference_index=previous_reference_index,
             search_window_points=self._config.reference_search_window_points,
         )
-        rejoin_index = _lookahead_index(
+        relaxed_span = _active_relaxed_segment(
             reference_path,
-            start_index,
-            self._config.lookahead_distance_m,
+            start_index=start_index,
+            entry_ref=self._config.relaxed_segment_entry_ref,
+            exit_ref=self._config.relaxed_segment_exit_ref,
+            activation_distance_m=self._config.relaxed_activation_distance_m,
+        )
+        rejoin_index = (
+            relaxed_span[1]
+            if relaxed_span is not None
+            else _lookahead_index(
+                reference_path,
+                start_index,
+                self._config.lookahead_distance_m,
+            )
         )
         if rejoin_index <= start_index:
             raise ValueError("global reference has no forward local replanning horizon")
@@ -101,7 +133,8 @@ class LocalTrajectoryPlanner:
             planning_map,
             dynamic_obstacle_points,
         )
-        planner = self._planner(live_map, local_reference)
+        relaxed = relaxed_span is not None
+        planner = self._planner(live_map, local_reference, relaxed=relaxed)
         rejoin_index = _select_navigable_rejoin_index(
             reference_path,
             planner,
@@ -109,8 +142,10 @@ class LocalTrajectoryPlanner:
             preferred_rejoin_index=rejoin_index,
         )
         local_reference = tuple(reference_path[start_index : rejoin_index + 1])
-        planner = self._planner(live_map, local_reference)
-        if planner.path_is_navigable(local_reference):
+        planner = self._planner(live_map, local_reference, relaxed=relaxed)
+        if not relaxed and planner.path_is_navigable(local_reference):
+            self._held_relaxed_path = ()
+            self._held_rejoin_index = None
             return LocalPlan(
                 path=local_reference,
                 reference_start_index=start_index,
@@ -132,20 +167,71 @@ class LocalTrajectoryPlanner:
                 local_reference[-1],
             )
         )
+        status = "REPLANNED"
+        if relaxed:
+            held_path = self._safe_held_path(
+                current_pose=current_pose,
+                planner=planner,
+                rejoin_index=rejoin_index,
+            )
+            if held_path and not _path_is_materially_better(
+                path,
+                held_path,
+                reference_path=local_reference,
+                reference_deviation_weight=(
+                    self._config.relaxed_reference_deviation_weight
+                ),
+                improvement_ratio=self._config.trajectory_switch_improvement_ratio,
+            ):
+                path = held_path
+                status = "RELAXED_HOLD"
+            else:
+                status = "RELAXED_REPLANNED"
+            self._held_relaxed_path = tuple(path)
+            self._held_rejoin_index = rejoin_index
+        else:
+            self._held_relaxed_path = ()
+            self._held_rejoin_index = None
         return LocalPlan(
             path=path,
             reference_start_index=start_index,
             rejoin_index=rejoin_index,
             dynamic_obstacle_count=obstacle_count,
-            status="REPLANNED",
+            status=status,
             path_is_navigable=planner.path_is_navigable(path),
             planning_grid_cell_count=live_map.width * live_map.height,
         )
+
+    def _safe_held_path(
+        self,
+        *,
+        current_pose: PathPoint,
+        planner: HybridAStarPlanner,
+        rejoin_index: int,
+    ) -> tuple[PathPoint, ...]:
+        if not self._held_relaxed_path or self._held_rejoin_index != rejoin_index:
+            return ()
+        nearest_index = min(
+            range(len(self._held_relaxed_path)),
+            key=lambda index: math.hypot(
+                self._held_relaxed_path[index].x - current_pose.x,
+                self._held_relaxed_path[index].y - current_pose.y,
+            ),
+        )
+        nearest = self._held_relaxed_path[nearest_index]
+        if math.hypot(nearest.x - current_pose.x, nearest.y - current_pose.y) > 0.50:
+            return ()
+        candidate = (current_pose, *self._held_relaxed_path[nearest_index + 1 :])
+        if len(candidate) < 2 or not planner.path_is_navigable(candidate):
+            return ()
+        return candidate
 
     def _planner(
         self,
         grid_map: OccupancyGridMap,
         reference_path: Sequence[PathPoint],
+        *,
+        relaxed: bool = False,
     ) -> HybridAStarPlanner:
         config = self._config
         return HybridAStarPlanner(
@@ -154,7 +240,9 @@ class LocalTrajectoryPlanner:
             search_padding_m=config.search_padding_m,
             sample_spacing_m=config.sample_spacing_m,
             min_turning_radius_m=config.min_turning_radius_m,
-            step_length_m=config.step_length_m,
+            step_length_m=(
+                config.relaxed_step_length_m if relaxed else config.step_length_m
+            ),
             curvature_bins=config.curvature_bins,
             heading_bins=config.heading_bins,
             goal_position_tolerance_m=config.goal_position_tolerance_m,
@@ -162,7 +250,14 @@ class LocalTrajectoryPlanner:
             max_expansions=config.max_expansions,
             planning_timeout_s=config.planning_timeout_s,
             reference_path=reference_path,
-            reference_deviation_weight=config.reference_deviation_weight,
+            reference_deviation_weight=(
+                config.relaxed_reference_deviation_weight
+                if relaxed
+                else config.reference_deviation_weight
+            ),
+            corridor_half_width_m=(
+                config.relaxed_corridor_half_width_m if relaxed else None
+            ),
         )
 
 
@@ -200,6 +295,88 @@ def _lookahead_index(
         if distance + 1e-9 >= lookahead_distance_m:
             return index
     return len(reference_path) - 1
+
+
+def _active_relaxed_segment(
+    reference_path: Sequence[PathPoint],
+    *,
+    start_index: int,
+    entry_ref: str,
+    exit_ref: str,
+    activation_distance_m: float,
+) -> tuple[int, int] | None:
+    if not entry_ref or not exit_ref:
+        return None
+
+    exit_search_start = 0
+    for entry_index, point in enumerate(reference_path):
+        if point.ref_id != entry_ref:
+            continue
+        exit_index = next(
+            (
+                index
+                for index in range(max(entry_index + 1, exit_search_start), len(reference_path))
+                if reference_path[index].ref_id == exit_ref
+            ),
+            None,
+        )
+        if exit_index is None:
+            return None
+        exit_search_start = exit_index + 1
+        if entry_index <= start_index < exit_index:
+            return entry_index, exit_index
+        if start_index < entry_index:
+            distance = sum(
+                math.hypot(
+                    reference_path[index].x - reference_path[index - 1].x,
+                    reference_path[index].y - reference_path[index - 1].y,
+                )
+                for index in range(start_index + 1, entry_index + 1)
+            )
+            if distance <= activation_distance_m + 1e-9:
+                return entry_index, exit_index
+    return None
+
+
+def _path_is_materially_better(
+    candidate: Sequence[PathPoint],
+    held: Sequence[PathPoint],
+    *,
+    reference_path: Sequence[PathPoint],
+    reference_deviation_weight: float,
+    improvement_ratio: float,
+) -> bool:
+    candidate_cost = _path_cost(
+        candidate,
+        reference_path=reference_path,
+        reference_deviation_weight=reference_deviation_weight,
+    )
+    held_cost = _path_cost(
+        held,
+        reference_path=reference_path,
+        reference_deviation_weight=reference_deviation_weight,
+    )
+    return candidate_cost < held_cost * (1.0 - improvement_ratio)
+
+
+def _path_cost(
+    path: Sequence[PathPoint],
+    *,
+    reference_path: Sequence[PathPoint],
+    reference_deviation_weight: float,
+) -> float:
+    cost = 0.0
+    reference_xy = tuple((point.x, point.y) for point in reference_path)
+    for previous, point in zip(path, path[1:]):
+        distance = math.hypot(point.x - previous.x, point.y - previous.y)
+        deviation_squared = min(
+            (point.x - x) ** 2 + (point.y - y) ** 2
+            for x, y in reference_xy
+        )
+        cost += distance * (
+            1.0 + reference_deviation_weight * deviation_squared
+        )
+    return cost
 
 
 def _select_navigable_rejoin_index(

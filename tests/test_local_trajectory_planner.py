@@ -1,3 +1,4 @@
+from dataclasses import replace
 import math
 import pathlib
 import sys
@@ -26,8 +27,7 @@ from competition_planning.semantic_planner import PathPoint
 from competition_planning.trajectory_parameterizer import parameterize_local_path
 
 
-def _empty_map() -> OccupancyGridMap:
-    width = 100
+def _empty_map(*, width: int = 100) -> OccupancyGridMap:
     height = 80
     return OccupancyGridMap(
         width=width,
@@ -51,6 +51,56 @@ def _table_points() -> tuple[tuple[float, float], ...]:
         (1.50 + x_index * 0.10, -0.40 + y_index * 0.10)
         for x_index in range(6)
         for y_index in range(9)
+    )
+
+
+def _relaxed_reference(*, repeated: bool = False) -> tuple[PathPoint, ...]:
+    markers = {
+        30: "random_obstacle_entry",
+        60: "random_obstacle_exit",
+    }
+    if repeated:
+        markers.update(
+            {
+                90: "random_obstacle_entry",
+                120: "random_obstacle_exit",
+            }
+        )
+    length = 140 if repeated else 80
+    return tuple(
+        PathPoint(
+            x=index * 0.10,
+            y=0.0,
+            yaw=0.0,
+            ref_id=markers.get(index),
+        )
+        for index in range(length + 1)
+    )
+
+
+def _relaxed_config(**changes: object) -> LocalReplanConfig:
+    return replace(
+        LocalReplanConfig(
+            lookahead_distance_m=3.0,
+            inflation_radius_m=0.10,
+            search_padding_m=1.5,
+            sample_spacing_m=0.10,
+            min_turning_radius_m=0.60,
+            step_length_m=0.20,
+            curvature_bins=9,
+            heading_bins=72,
+            goal_position_tolerance_m=0.15,
+            goal_heading_tolerance_rad=math.radians(8.0),
+            reference_deviation_weight=2.0,
+            max_expansions=250_000,
+            relaxed_segment_entry_ref="random_obstacle_entry",
+            relaxed_segment_exit_ref="random_obstacle_exit",
+            relaxed_activation_distance_m=1.0,
+            relaxed_reference_deviation_weight=0.5,
+            relaxed_corridor_half_width_m=0.85,
+            trajectory_switch_improvement_ratio=0.15,
+        ),
+        **changes,
     )
 
 
@@ -86,6 +136,101 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertEqual(result.rejoin_index, 50)
         self.assertEqual(result.path, self.reference[:51])
         self.assertLess(result.planning_grid_cell_count, 100 * 80)
+
+    def test_random_obstacle_segment_plans_to_exit_without_reusing_blue_line(self) -> None:
+        reference = _relaxed_reference()
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=reference[20],
+            dynamic_obstacle_points=(),
+            previous_reference_index=20,
+        )
+
+        self.assertEqual(result.status, "RELAXED_REPLANNED")
+        self.assertEqual(result.reference_start_index, 20)
+        self.assertEqual(result.rejoin_index, 60)
+        self.assertLess(
+            math.hypot(
+                result.path[-1].x - reference[60].x,
+                result.path[-1].y - reference[60].y,
+            ),
+            0.16,
+        )
+        self.assertNotEqual(result.path, reference[20:61])
+
+    def test_random_obstacle_segment_holds_an_equally_good_safe_path(self) -> None:
+        reference = _relaxed_reference()
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+        first = planner.plan(
+            reference_path=reference,
+            current_pose=reference[20],
+            dynamic_obstacle_points=(),
+            previous_reference_index=20,
+        )
+
+        advanced_pose = first.path[3]
+        second = planner.plan(
+            reference_path=reference,
+            current_pose=advanced_pose,
+            dynamic_obstacle_points=(),
+            previous_reference_index=20,
+        )
+
+        self.assertEqual(first.status, "RELAXED_REPLANNED")
+        self.assertEqual(second.status, "RELAXED_HOLD")
+        self.assertEqual(second.path, first.path[3:])
+
+    def test_random_obstacle_segment_replans_when_held_path_becomes_blocked(self) -> None:
+        reference = _relaxed_reference()
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+        first = planner.plan(
+            reference_path=reference,
+            current_pose=reference[20],
+            dynamic_obstacle_points=(),
+            previous_reference_index=20,
+        )
+
+        second = planner.plan(
+            reference_path=reference,
+            current_pose=reference[20],
+            dynamic_obstacle_points=((4.50, 0.0),),
+            previous_reference_index=20,
+        )
+
+        self.assertEqual(first.status, "RELAXED_REPLANNED")
+        self.assertEqual(second.status, "RELAXED_REPLANNED")
+        self.assertNotEqual(second.path, first.path)
+        self.assertGreater(max(abs(point.y) for point in second.path), 0.10)
+
+    def test_relaxed_policy_does_not_change_tracking_before_activation_window(self) -> None:
+        reference = _relaxed_reference()
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=reference[0],
+            dynamic_obstacle_points=(),
+        )
+
+        self.assertEqual(result.status, "REFERENCE_CLEAR")
+        self.assertEqual(result.path, reference[:31])
+
+    def test_relaxed_policy_applies_to_the_second_route_lap(self) -> None:
+        reference = _relaxed_reference(repeated=True)
+        planner = LocalTrajectoryPlanner(_empty_map(width=180), _relaxed_config())
+
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=reference[80],
+            dynamic_obstacle_points=(),
+            previous_reference_index=80,
+        )
+
+        self.assertEqual(result.status, "RELAXED_REPLANNED")
+        self.assertEqual(result.reference_start_index, 80)
+        self.assertEqual(result.rejoin_index, 120)
 
     def test_inflated_costmap_cells_are_bounded_and_downsampled(self) -> None:
         points = occupied_grid_cell_centers(
@@ -180,6 +325,140 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertEqual(result.status, "REPLANNED")
         self.assertTrue(result.path_is_navigable)
         self.assertEqual(result.dynamic_obstacle_count, len(obstacles))
+
+    def test_day5_random_obstacle_zone_uses_relaxed_checkpoint_policy(self) -> None:
+        runtime = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "planning"
+                / "local_hybrid_astar_runtime_params_day5.yaml"
+            ).read_text(encoding="utf-8")
+        )["local_hybrid_astar_runtime"]
+        control = yaml.safe_load(
+            (REPO_ROOT / "config" / "control" / "control_params.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        trajectory_data = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "docs"
+                / "evidence"
+                / "day5"
+                / "debug_control_validation_trajectory.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        reference = tuple(
+            PathPoint(
+                x=float(point["x"]),
+                y=float(point["y"]),
+                yaw=float(point["yaw"]),
+                ref_id=point.get("ref_id"),
+            )
+            for point in trajectory_data["points"]
+        )
+        entry_index = next(
+            index
+            for index, point in enumerate(reference)
+            if point.ref_id == runtime["relaxed_segment_entry_ref"]
+        )
+        exit_index = next(
+            index
+            for index in range(entry_index + 1, len(reference))
+            if reference[index].ref_id == runtime["relaxed_segment_exit_ref"]
+        )
+        start_index = entry_index
+        distance_to_entry = 0.0
+        while start_index > 0 and distance_to_entry < 0.90:
+            previous = reference[start_index - 1]
+            current = reference[start_index]
+            distance_to_entry += math.hypot(
+                current.x - previous.x,
+                current.y - previous.y,
+            )
+            start_index -= 1
+        obstacle_center = reference[(entry_index + exit_index) // 2]
+        obstacles = tuple(
+            (obstacle_center.x + dx, obstacle_center.y + dy)
+            for x_index in range(-6, 7)
+            for y_index in range(-6, 7)
+            if math.hypot(
+                (dx := x_index * 0.05),
+                (dy := y_index * 0.05),
+            )
+            <= 0.30 + 1e-9
+        )
+        planner = LocalTrajectoryPlanner(
+            OccupancyGridMap.from_yaml(REPO_ROOT / "maps" / "debug" / "map.yaml"),
+            LocalReplanConfig(
+                lookahead_distance_m=runtime["lookahead_distance_m"],
+                inflation_radius_m=runtime["inflation_radius_m"],
+                search_padding_m=runtime["search_padding_m"],
+                sample_spacing_m=runtime["sample_spacing_m"],
+                min_turning_radius_m=control["motion"]["min_turning_radius_m"],
+                step_length_m=runtime["step_length_m"],
+                curvature_bins=runtime["curvature_bins"],
+                heading_bins=runtime["heading_bins"],
+                goal_position_tolerance_m=runtime["goal_position_tolerance_m"],
+                goal_heading_tolerance_rad=math.radians(
+                    runtime["goal_heading_tolerance_deg"]
+                ),
+                reference_deviation_weight=runtime["reference_deviation_weight"],
+                max_expansions=runtime["max_expansions"],
+                planning_timeout_s=runtime["planning_timeout_s"],
+                reference_search_window_points=runtime[
+                    "reference_search_window_points"
+                ],
+                relaxed_segment_entry_ref=runtime["relaxed_segment_entry_ref"],
+                relaxed_segment_exit_ref=runtime["relaxed_segment_exit_ref"],
+                relaxed_activation_distance_m=runtime[
+                    "relaxed_activation_distance_m"
+                ],
+                relaxed_reference_deviation_weight=runtime[
+                    "relaxed_reference_deviation_weight"
+                ],
+                relaxed_corridor_half_width_m=runtime[
+                    "relaxed_corridor_half_width_m"
+                ],
+                relaxed_step_length_m=runtime["relaxed_step_length_m"],
+                trajectory_switch_improvement_ratio=runtime[
+                    "trajectory_switch_improvement_ratio"
+                ],
+            ),
+        )
+
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=reference[start_index],
+            dynamic_obstacle_points=obstacles,
+            previous_reference_index=start_index,
+        )
+
+        local_reference = reference[start_index : exit_index + 1]
+        self.assertEqual(result.status, "RELAXED_REPLANNED")
+        self.assertEqual(result.rejoin_index, exit_index)
+        self.assertTrue(result.path_is_navigable)
+        self.assertGreaterEqual(
+            min(
+                math.hypot(
+                    point.x - obstacle_center.x,
+                    point.y - obstacle_center.y,
+                )
+                for point in result.path
+            ),
+            0.34,
+        )
+        self.assertLessEqual(
+            max(
+                min(
+                    math.hypot(point.x - ref.x, point.y - ref.y)
+                    for ref in local_reference
+                )
+                for point in result.path
+            ),
+            0.86,
+        )
 
     def test_clear_day5_turn_reference_is_kept_after_small_tracking_offset(self) -> None:
         trajectory_data = yaml.safe_load(
