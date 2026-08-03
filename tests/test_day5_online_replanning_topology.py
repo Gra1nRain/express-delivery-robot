@@ -85,6 +85,11 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertEqual(runtime["lookahead_distance_m"], 3.00)
         self.assertEqual(runtime["search_padding_m"], 1.50)
         self.assertEqual(runtime["reference_deviation_weight"], 2.0)
+        self.assertEqual(runtime["planning_timeout_s"], 2.0)
+        self.assertLessEqual(
+            runtime["planning_timeout_s"],
+            replanning["local_trajectory_timeout_s"],
+        )
         self.assertEqual(runtime["reference_search_window_points"], 160)
         self.assertEqual(
             control["motion"]["min_turning_radius_m"],
@@ -101,6 +106,10 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         )
         self.assertIn('"local_planner_runtime_params_file"', launch_text)
         self.assertIn(
+            '"planning_timeout_s": local_runtime[',
+            launch_text,
+        )
+        self.assertIn(
             'local_runtime.get("plugin") != "reference_aware_hybrid_astar"',
             launch_text,
         )
@@ -109,6 +118,8 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertIn("LocalTrajectoryPlanner", local_node)
         self.assertIn("local_stop_request_topic", local_node)
         self.assertIn("HYBRID_ASTAR_NO_FEASIBLE_PATH", local_node)
+        self.assertIn("HYBRID_ASTAR_TIMEOUT", local_node)
+        self.assertIn("planning_timeout_s", local_node)
         self.assertIn("HybridAStarPlanner", local_algorithm)
         self.assertFalse(
             (

@@ -25,6 +25,7 @@ class LocalReplanConfig:
     goal_heading_tolerance_rad: float = math.radians(15.0)
     reference_deviation_weight: float = 2.0
     max_expansions: int = 250_000
+    planning_timeout_s: float = 2.0
     reference_search_window_points: int = 120
 
     def __post_init__(self) -> None:
@@ -32,6 +33,8 @@ class LocalReplanConfig:
             raise ValueError("lookahead_distance_m must be positive")
         if self.reference_deviation_weight < 0.0:
             raise ValueError("reference_deviation_weight must be non-negative")
+        if self.planning_timeout_s <= 0.0:
+            raise ValueError("planning_timeout_s must be positive")
         if self.reference_search_window_points < 2:
             raise ValueError("reference_search_window_points must be at least 2")
 
@@ -157,6 +160,7 @@ class LocalTrajectoryPlanner:
             goal_position_tolerance_m=config.goal_position_tolerance_m,
             goal_heading_tolerance_rad=config.goal_heading_tolerance_rad,
             max_expansions=config.max_expansions,
+            planning_timeout_s=config.planning_timeout_s,
             reference_path=reference_path,
             reference_deviation_weight=config.reference_deviation_weight,
         )

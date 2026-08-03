@@ -258,6 +258,9 @@ def _launch_setup(context, *args, **kwargs):
                         "reference_deviation_weight"
                     ],
                     "max_expansions": local_runtime["max_expansions"],
+                    "planning_timeout_s": local_runtime[
+                        "planning_timeout_s"
+                    ],
                     "reference_search_window_points": local_runtime[
                         "reference_search_window_points"
                     ],

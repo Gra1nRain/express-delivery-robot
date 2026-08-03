@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import heapq
 import math
+import time
 from typing import Sequence
 
 from competition_planning.occupancy_grid_planner import (
@@ -12,6 +13,10 @@ from competition_planning.occupancy_grid_planner import (
     OccupancyGridMap,
 )
 from competition_planning.semantic_planner import PathPoint
+
+
+class HybridAStarTimeout(GridPlanningError):
+    """Raised when a Hybrid A* search exceeds its wall-clock budget."""
 
 
 @dataclass(frozen=True)
@@ -44,6 +49,7 @@ class HybridAStarPlanner:
         goal_position_tolerance_m: float,
         goal_heading_tolerance_rad: float,
         max_expansions: int = 250_000,
+        planning_timeout_s: float | None = None,
         reference_path: Sequence[PathPoint] = (),
         reference_deviation_weight: float = 0.0,
     ) -> None:
@@ -66,6 +72,9 @@ class HybridAStarPlanner:
             goal_heading_tolerance_rad,
         )
         self._max_expansions = max(1, max_expansions)
+        if planning_timeout_s is not None and planning_timeout_s <= 0.0:
+            raise GridPlanningError("planning_timeout_s must be positive")
+        self._planning_timeout_s = planning_timeout_s
         if reference_deviation_weight < 0.0:
             raise GridPlanningError("reference_deviation_weight must be non-negative")
         self._reference_xy = tuple((point.x, point.y) for point in reference_path)
@@ -85,6 +94,11 @@ class HybridAStarPlanner:
         if len(waypoints) < 2:
             return tuple(waypoints)
 
+        deadline_s = (
+            None
+            if self._planning_timeout_s is None
+            else time.monotonic() + self._planning_timeout_s
+        )
         path: list[PathPoint] = []
         segment_start = waypoints[0]
         curvature_index = len(self._curvatures) // 2
@@ -93,6 +107,7 @@ class HybridAStarPlanner:
                 segment_start,
                 goal,
                 start_curvature_index=curvature_index,
+                deadline_s=deadline_s,
             )
             if path:
                 path.extend(segment[1:])
@@ -116,6 +131,7 @@ class HybridAStarPlanner:
         goal: PathPoint,
         *,
         start_curvature_index: int,
+        deadline_s: float | None,
     ) -> tuple[list[PathPoint], int]:
         self._require_navigable(start.x, start.y, "start")
         self._require_navigable(goal.x, goal.y, "goal")
@@ -136,7 +152,19 @@ class HybridAStarPlanner:
         closed: set[tuple[int, int, int, int]] = set()
         sequence = 0
 
-        for _ in range(self._max_expansions):
+        for expansion_index in range(self._max_expansions):
+            if (
+                deadline_s is not None
+                and expansion_index % 64 == 0
+                and time.monotonic() >= deadline_s
+            ):
+                timeout_s = self._planning_timeout_s
+                if timeout_s is None:
+                    raise AssertionError("deadline requires planning_timeout_s")
+                raise HybridAStarTimeout(
+                    "hybrid_astar search exceeded "
+                    f"{timeout_s:.3f} s"
+                )
             if not open_heap:
                 break
             _, _, current_key = heapq.heappop(open_heap)

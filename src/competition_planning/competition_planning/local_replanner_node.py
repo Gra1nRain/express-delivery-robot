@@ -23,6 +23,7 @@ from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformException, TransformListener
 import yaml
 
+from competition_planning.hybrid_astar_planner import HybridAStarTimeout
 from competition_planning.local_trajectory_planner import (
     LocalReplanConfig,
     LocalTrajectoryPlanner,
@@ -85,6 +86,9 @@ class LocalReplannerNode(Node):
             ),
             max_expansions=int(
                 self.declare_parameter("max_expansions", 250_000).value
+            ),
+            planning_timeout_s=float(
+                self.declare_parameter("planning_timeout_s", 2.0).value
             ),
             reference_search_window_points=int(
                 self.declare_parameter(
@@ -336,6 +340,15 @@ class LocalReplannerNode(Node):
                 previous_reference_index=self._previous_reference_index,
             )
             planning_time_ms = (time.perf_counter() - started_at) * 1000.0
+        except HybridAStarTimeout as exc:
+            self._publish_stop(
+                "HYBRID_ASTAR_TIMEOUT",
+                detail=str(exc),
+                obstacle_age_s=obstacle_age_s,
+                odom_age_s=odom_age_s,
+                planning_time_ms=(time.perf_counter() - started_at) * 1000.0,
+            )
+            return
         except (TransformException, GridPlanningError, ValueError) as exc:
             self._publish_stop(
                 "HYBRID_ASTAR_NO_FEASIBLE_PATH",

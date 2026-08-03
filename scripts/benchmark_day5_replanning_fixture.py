@@ -62,6 +62,7 @@ def config_from_mapping(
             if max_expansions is None
             else max_expansions
         ),
+        planning_timeout_s=float(replanning.get("planning_timeout_s", 2.0)),
         reference_search_window_points=int(
             replanning.get("reference_search_window_points", 120)
         ),

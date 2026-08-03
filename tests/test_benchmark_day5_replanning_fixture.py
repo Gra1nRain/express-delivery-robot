@@ -25,6 +25,7 @@ class BenchmarkDay5ReplanningFixtureTest(unittest.TestCase):
                 "goal_heading_tolerance_deg": 15.0,
                 "reference_deviation_weight": 2.0,
                 "max_expansions": 250_000,
+                "planning_timeout_s": 2.0,
                 "reference_search_window_points": 120,
             },
             max_expansions=20_000,
@@ -32,6 +33,7 @@ class BenchmarkDay5ReplanningFixtureTest(unittest.TestCase):
         )
 
         self.assertEqual(config.max_expansions, 20_000)
+        self.assertEqual(config.planning_timeout_s, 2.0)
         self.assertEqual(config.min_turning_radius_m, 0.60)
         self.assertEqual(config.sample_spacing_m, 0.10)
         self.assertEqual(config.step_length_m, 0.20)
