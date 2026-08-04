@@ -408,6 +408,53 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertEqual(result.reference_start_index, 80)
         self.assertEqual(result.rejoin_index, 120)
 
+    def test_relaxed_exit_extends_before_local_controller_reaches_goal(self) -> None:
+        reference = _relaxed_reference()
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=PathPoint(5.85, 0.0, 0.0),
+            dynamic_obstacle_points=(),
+            previous_reference_index=58,
+        )
+
+        self.assertEqual(result.status, "REFERENCE_CLEAR")
+        self.assertGreater(result.rejoin_index, 60)
+        self.assertGreater(len(result.path), 2)
+
+    def test_relaxed_approach_checkpoint_extends_before_goal_reached(self) -> None:
+        reference = tuple(
+            PathPoint(
+                x=index * 0.10,
+                y=0.0,
+                yaw=0.0,
+                ref_id={
+                    40: "random_obstacle_entry",
+                    70: "random_obstacle_exit",
+                }.get(index),
+            )
+            for index in range(91)
+        )
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+        first = planner.plan(
+            reference_path=reference,
+            current_pose=reference[20],
+            dynamic_obstacle_points=(),
+            previous_reference_index=20,
+        )
+
+        second = planner.plan(
+            reference_path=reference,
+            current_pose=PathPoint(4.85, 0.0, 0.0),
+            dynamic_obstacle_points=(),
+            previous_reference_index=48,
+        )
+
+        self.assertEqual(first.rejoin_index, 50)
+        self.assertEqual(second.rejoin_index, 70)
+        self.assertGreater(len(second.path), 2)
+
     def test_inflated_costmap_cells_are_bounded_and_downsampled(self) -> None:
         points = occupied_grid_cell_centers(
             (100, 100, 100, 100, 100, 100),

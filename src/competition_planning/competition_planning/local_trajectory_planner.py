@@ -113,6 +113,32 @@ class LocalTrajectoryPlanner:
             activation_distance_m=self._config.relaxed_activation_distance_m,
             planning_horizon_m=self._config.lookahead_distance_m,
         )
+        checkpoint_advance_distance_m = max(
+            self._config.relaxed_step_length_m,
+            2.0 * self._config.goal_position_tolerance_m,
+        )
+        held_rejoin_index = self._held_rejoin_index
+        if held_rejoin_index is not None and (
+            math.hypot(
+                reference_path[held_rejoin_index].x - current_pose.x,
+                reference_path[held_rejoin_index].y - current_pose.y,
+            )
+            <= checkpoint_advance_distance_m + 1e-9
+        ):
+            self._held_relaxed_path = ()
+            self._held_rejoin_index = None
+        if relaxed_span is not None:
+            segment_exit = reference_path[relaxed_span[1]]
+            if (
+                math.hypot(
+                    segment_exit.x - current_pose.x,
+                    segment_exit.y - current_pose.y,
+                )
+                <= checkpoint_advance_distance_m + 1e-9
+            ):
+                self._held_relaxed_path = ()
+                self._held_rejoin_index = None
+                relaxed_span = None
         rolling_rejoin_index = _lookahead_index(
             reference_path,
             start_index,
