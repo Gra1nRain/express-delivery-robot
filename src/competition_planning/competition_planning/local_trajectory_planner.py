@@ -171,6 +171,23 @@ class LocalTrajectoryPlanner:
         )
         local_reference = tuple(reference_path[start_index : rejoin_index + 1])
         planner = self._planner(live_map, local_reference, relaxed=relaxed)
+        if relaxed:
+            held_path = self._safe_held_path(
+                current_pose=current_pose,
+                planner=planner,
+                rejoin_index=rejoin_index,
+            )
+            if held_path:
+                self._held_relaxed_path = held_path
+                return LocalPlan(
+                    path=held_path,
+                    reference_start_index=start_index,
+                    rejoin_index=rejoin_index,
+                    dynamic_obstacle_count=obstacle_count,
+                    status="RELAXED_HOLD",
+                    path_is_navigable=True,
+                    planning_grid_cell_count=live_map.width * live_map.height,
+                )
         if not relaxed and planner.path_is_navigable(local_reference):
             self._held_relaxed_path = ()
             self._held_rejoin_index = None

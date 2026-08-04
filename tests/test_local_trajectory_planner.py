@@ -3,6 +3,7 @@ import math
 import pathlib
 import sys
 import unittest
+from unittest.mock import patch
 
 import yaml
 
@@ -187,12 +188,17 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         )
 
         advanced_pose = first.path[3]
-        second = planner.plan(
-            reference_path=reference,
-            current_pose=advanced_pose,
-            dynamic_obstacle_points=(),
-            previous_reference_index=20,
-        )
+        with patch(
+            "competition_planning.local_trajectory_planner."
+            "HybridAStarPlanner.plan",
+            side_effect=AssertionError("safe held path must skip fresh search"),
+        ):
+            second = planner.plan(
+                reference_path=reference,
+                current_pose=advanced_pose,
+                dynamic_obstacle_points=(),
+                previous_reference_index=20,
+            )
 
         self.assertEqual(first.status, "RELAXED_REPLANNED")
         self.assertEqual(second.status, "RELAXED_HOLD")
@@ -279,7 +285,8 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         )
 
         self.assertEqual(second.status, "RELAXED_HOLD")
-        self.assertEqual(second.path, first.path[held_index:])
+        self.assertEqual(second.path[0], angled_pose)
+        self.assertEqual(second.path[1:], first.path[held_index + 1 :])
         self.assertTrue(second.path_is_navigable)
 
         blocking_wall = tuple(
