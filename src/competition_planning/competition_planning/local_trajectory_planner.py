@@ -105,6 +105,7 @@ class LocalTrajectoryPlanner:
             entry_ref=self._config.relaxed_segment_entry_ref,
             exit_ref=self._config.relaxed_segment_exit_ref,
             activation_distance_m=self._config.relaxed_activation_distance_m,
+            planning_horizon_m=self._config.lookahead_distance_m,
         )
         rejoin_index = (
             relaxed_span[1]
@@ -304,7 +305,10 @@ def _active_relaxed_segment(
     entry_ref: str,
     exit_ref: str,
     activation_distance_m: float,
+    planning_horizon_m: float,
 ) -> tuple[int, int] | None:
+    """Activate once the local planning horizon reaches the approach window."""
+
     if not entry_ref or not exit_ref:
         return None
 
@@ -334,6 +338,8 @@ def _active_relaxed_segment(
                 for index in range(start_index + 1, entry_index + 1)
             )
             if distance <= activation_distance_m + 1e-9:
+                return entry_index, exit_index
+            if distance <= activation_distance_m + planning_horizon_m + 1e-9:
                 return entry_index, exit_index
     return None
 

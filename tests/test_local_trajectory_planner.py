@@ -206,7 +206,10 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
 
     def test_relaxed_policy_does_not_change_tracking_before_activation_window(self) -> None:
         reference = _relaxed_reference()
-        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+        planner = LocalTrajectoryPlanner(
+            _empty_map(),
+            _relaxed_config(lookahead_distance_m=1.0),
+        )
 
         result = planner.plan(
             reference_path=reference,
@@ -215,7 +218,40 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         )
 
         self.assertEqual(result.status, "REFERENCE_CLEAR")
-        self.assertEqual(result.path, reference[:31])
+        self.assertEqual(result.path, reference[:11])
+
+    def test_planning_horizon_activates_relaxed_approach_before_obstacle_zone(
+        self,
+    ) -> None:
+        reference = tuple(
+            PathPoint(
+                x=index * 0.10,
+                y=0.0,
+                yaw=0.0,
+                ref_id={
+                    37: "random_obstacle_entry",
+                    67: "random_obstacle_exit",
+                }.get(index),
+            )
+            for index in range(81)
+        )
+        obstacles = tuple(
+            (2.80 + x_index * 0.05, y_index * 0.05)
+            for x_index in range(-6, 7)
+            for y_index in range(-6, 7)
+            if math.hypot(x_index * 0.05, y_index * 0.05) <= 0.30 + 1e-9
+        )
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=reference[0],
+            dynamic_obstacle_points=obstacles,
+        )
+
+        self.assertEqual(result.status, "RELAXED_REPLANNED")
+        self.assertEqual(result.rejoin_index, 67)
+        self.assertTrue(result.path_is_navigable)
 
     def test_relaxed_policy_applies_to_the_second_route_lap(self) -> None:
         reference = _relaxed_reference(repeated=True)
