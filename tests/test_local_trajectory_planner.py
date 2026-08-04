@@ -22,7 +22,10 @@ from competition_planning.local_trajectory_planner import (
     LocalTrajectoryPlanner,
     occupied_grid_cell_centers,
 )
-from competition_planning.occupancy_grid_planner import OccupancyGridMap
+from competition_planning.occupancy_grid_planner import (
+    GridPlanningError,
+    OccupancyGridMap,
+)
 from competition_planning.semantic_planner import PathPoint
 from competition_planning.trajectory_parameterizer import parameterize_local_path
 
@@ -221,6 +224,63 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
             max(abs(point.curvature) for point in trajectory.points),
             1.0 / 0.60 + 1e-9,
         )
+
+    def test_relaxed_policy_holds_safe_path_when_replan_has_no_forward_solution(
+        self,
+    ) -> None:
+        reference = _relaxed_reference()
+        obstacles = tuple(
+            (2.25 + x_index * 0.05, -0.3875 + y_index * 0.05)
+            for x_index in range(-6, 7)
+            for y_index in range(-6, 7)
+            if math.hypot(x_index * 0.05, y_index * 0.05) <= 0.30 + 1e-9
+        )
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+        first = planner.plan(
+            reference_path=reference,
+            current_pose=reference[0],
+            dynamic_obstacle_points=obstacles,
+        )
+        held_index = 15
+        held_point = first.path[held_index]
+        angled_pose = PathPoint(
+            held_point.x,
+            held_point.y,
+            math.radians(-7.0),
+            held_point.ref_id,
+        )
+
+        with self.assertRaises(GridPlanningError):
+            LocalTrajectoryPlanner(_empty_map(), _relaxed_config()).plan(
+                reference_path=reference,
+                current_pose=angled_pose,
+                dynamic_obstacle_points=obstacles,
+                previous_reference_index=first.reference_start_index,
+            )
+
+        second = planner.plan(
+            reference_path=reference,
+            current_pose=angled_pose,
+            dynamic_obstacle_points=obstacles,
+            previous_reference_index=first.reference_start_index,
+        )
+
+        self.assertEqual(second.status, "RELAXED_HOLD")
+        self.assertEqual(second.path, first.path[held_index:])
+        self.assertTrue(second.path_is_navigable)
+
+        blocking_wall = tuple(
+            (1.80 + x_offset, y_index * 0.05)
+            for x_offset in (-0.05, 0.0, 0.05)
+            for y_index in range(-20, 21)
+        )
+        with self.assertRaises(GridPlanningError):
+            planner.plan(
+                reference_path=reference,
+                current_pose=angled_pose,
+                dynamic_obstacle_points=blocking_wall,
+                previous_reference_index=second.reference_start_index,
+            )
 
     def test_random_obstacle_segment_replans_when_held_path_becomes_blocked(self) -> None:
         reference = _relaxed_reference()
