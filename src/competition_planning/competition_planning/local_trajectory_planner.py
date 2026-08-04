@@ -40,6 +40,7 @@ class LocalReplanConfig:
     trajectory_switch_improvement_ratio: float = 0.15
     obstacle_clearance_distance_m: float = 0.0
     obstacle_clearance_weight: float = 0.0
+    search_heuristic_weight: float = 1.0
 
     def __post_init__(self) -> None:
         if self.lookahead_distance_m <= 0.0:
@@ -68,6 +69,8 @@ class LocalReplanConfig:
             raise ValueError("obstacle_clearance_distance_m must be non-negative")
         if self.obstacle_clearance_weight < 0.0:
             raise ValueError("obstacle_clearance_weight must be non-negative")
+        if self.search_heuristic_weight < 1.0:
+            raise ValueError("search_heuristic_weight must be at least 1.0")
 
 
 @dataclass(frozen=True)
@@ -471,6 +474,7 @@ class LocalTrajectoryPlanner:
             ),
             obstacle_clearance_distance_m=config.obstacle_clearance_distance_m,
             obstacle_clearance_weight=config.obstacle_clearance_weight,
+            search_heuristic_weight=config.search_heuristic_weight,
         )
 
 

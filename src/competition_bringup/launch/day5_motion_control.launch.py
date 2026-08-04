@@ -287,6 +287,9 @@ def _launch_setup(context, *args, **kwargs):
                     "obstacle_clearance_weight": local_runtime[
                         "obstacle_clearance_weight"
                     ],
+                    "search_heuristic_weight": local_runtime[
+                        "search_heuristic_weight"
+                    ],
                     "max_expansions": local_runtime["max_expansions"],
                     "planning_timeout_s": local_runtime[
                         "planning_timeout_s"

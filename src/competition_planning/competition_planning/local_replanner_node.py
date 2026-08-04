@@ -146,6 +146,12 @@ class LocalReplannerNode(Node):
                     0.0,
                 ).value
             ),
+            search_heuristic_weight=float(
+                self.declare_parameter(
+                    "search_heuristic_weight",
+                    1.0,
+                ).value
+            ),
         )
         self._planner = LocalTrajectoryPlanner(static_map, self._config)
 

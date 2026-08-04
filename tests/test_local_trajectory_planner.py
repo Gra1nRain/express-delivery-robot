@@ -746,6 +746,7 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
                     "obstacle_clearance_distance_m"
                 ],
                 obstacle_clearance_weight=runtime["obstacle_clearance_weight"],
+                search_heuristic_weight=runtime["search_heuristic_weight"],
             ),
         )
 

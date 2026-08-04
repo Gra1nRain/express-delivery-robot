@@ -95,6 +95,7 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertEqual(runtime["trajectory_switch_improvement_ratio"], 0.15)
         self.assertEqual(runtime["obstacle_clearance_distance_m"], 0.20)
         self.assertEqual(runtime["obstacle_clearance_weight"], 0.8)
+        self.assertEqual(runtime["search_heuristic_weight"], 1.2)
         self.assertEqual(safety["proximity_stop"]["grid_inflation_radius_m"], 0.30)
         self.assertEqual(runtime["planning_timeout_s"], 2.0)
         self.assertLessEqual(
@@ -131,6 +132,10 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         )
         self.assertIn(
             '"obstacle_clearance_weight": local_runtime[',
+            launch_text,
+        )
+        self.assertIn(
+            '"search_heuristic_weight": local_runtime[',
             launch_text,
         )
         self.assertIn('"trajectory_switch_improvement_ratio": local_runtime[', launch_text)

@@ -28,6 +28,7 @@ local_hybrid_astar_runtime:
   trajectory_switch_improvement_ratio: 0.15
   obstacle_clearance_distance_m: 0.20
   obstacle_clearance_weight: 0.8
+  search_heuristic_weight: 1.2
   max_expansions: 250000
   planning_timeout_s: 2.00
   reference_search_window_points: 160

@@ -59,6 +59,7 @@ class HybridAStarPlanner:
         corridor_half_width_m: float | None = None,
         obstacle_clearance_distance_m: float = 0.0,
         obstacle_clearance_weight: float = 0.0,
+        search_heuristic_weight: float = 1.0,
     ) -> None:
         if min_turning_radius_m <= 0.0:
             raise GridPlanningError("hybrid_astar requires a positive min_turning_radius_m")
@@ -96,8 +97,11 @@ class HybridAStarPlanner:
             raise GridPlanningError("obstacle_clearance_distance_m must be non-negative")
         if obstacle_clearance_weight < 0.0:
             raise GridPlanningError("obstacle_clearance_weight must be non-negative")
+        if search_heuristic_weight < 1.0:
+            raise GridPlanningError("search_heuristic_weight must be at least 1.0")
         self._obstacle_clearance_distance_m = obstacle_clearance_distance_m
         self._obstacle_clearance_weight = obstacle_clearance_weight
+        self._search_heuristic_weight = search_heuristic_weight
         self._obstacle_clearance_cost_by_cell: tuple[float, ...] | None = (
             None
             if obstacle_clearance_distance_m > 0.0 and obstacle_clearance_weight > 0.0
@@ -172,7 +176,11 @@ class HybridAStarPlanner:
         came_from: dict[tuple[int, int, int, int], tuple[int, int, int, int]] = {}
         g_score = {start_key: 0.0}
         open_heap: list[tuple[float, int, tuple[int, int, int, int]]] = [
-            (self._heuristic(start_node, goal), 0, start_key)
+            (
+                self._search_heuristic_weight * self._heuristic(start_node, goal),
+                0,
+                start_key,
+            )
         ]
         closed: set[tuple[int, int, int, int]] = set()
         sequence = 0
@@ -241,7 +249,10 @@ class HybridAStarPlanner:
                 came_from[successor_key] = current_key
                 g_score[successor_key] = tentative
                 sequence += 1
-                priority = tentative + self._heuristic(successor, goal)
+                priority = tentative + self._search_heuristic_weight * self._heuristic(
+                    successor,
+                    goal,
+                )
                 heapq.heappush(open_heap, (priority, sequence, successor_key))
 
         raise GridPlanningError(
