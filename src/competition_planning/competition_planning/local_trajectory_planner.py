@@ -36,6 +36,7 @@ class LocalReplanConfig:
     relaxed_reference_deviation_weight: float = 0.5
     relaxed_corridor_half_width_m: float = 0.85
     relaxed_step_length_m: float = 0.30
+    relaxed_goal_heading_tolerance_rad: float = math.radians(20.0)
     trajectory_switch_improvement_ratio: float = 0.15
 
     def __post_init__(self) -> None:
@@ -57,6 +58,8 @@ class LocalReplanConfig:
             raise ValueError("relaxed_corridor_half_width_m must be positive")
         if self.relaxed_step_length_m <= 0.0:
             raise ValueError("relaxed_step_length_m must be positive")
+        if self.relaxed_goal_heading_tolerance_rad <= 0.0:
+            raise ValueError("relaxed_goal_heading_tolerance_rad must be positive")
         if not 0.0 <= self.trajectory_switch_improvement_ratio < 1.0:
             raise ValueError("trajectory_switch_improvement_ratio must be in [0, 1)")
 
@@ -340,7 +343,11 @@ class LocalTrajectoryPlanner:
             curvature_bins=config.curvature_bins,
             heading_bins=config.heading_bins,
             goal_position_tolerance_m=config.goal_position_tolerance_m,
-            goal_heading_tolerance_rad=config.goal_heading_tolerance_rad,
+            goal_heading_tolerance_rad=(
+                config.relaxed_goal_heading_tolerance_rad
+                if relaxed
+                else config.goal_heading_tolerance_rad
+            ),
             max_expansions=config.max_expansions,
             planning_timeout_s=config.planning_timeout_s,
             reference_path=reference_path,

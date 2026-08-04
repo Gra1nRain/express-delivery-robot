@@ -91,6 +91,7 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertEqual(runtime["relaxed_reference_deviation_weight"], 0.5)
         self.assertEqual(runtime["relaxed_corridor_half_width_m"], 0.85)
         self.assertEqual(runtime["relaxed_step_length_m"], 0.30)
+        self.assertEqual(runtime["relaxed_goal_heading_tolerance_deg"], 20.0)
         self.assertEqual(runtime["trajectory_switch_improvement_ratio"], 0.15)
         self.assertEqual(safety["proximity_stop"]["grid_inflation_radius_m"], 0.30)
         self.assertEqual(runtime["planning_timeout_s"], 2.0)
@@ -118,6 +119,10 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             launch_text,
         )
         self.assertIn('"relaxed_segment_entry_ref": local_runtime[', launch_text)
+        self.assertIn(
+            '"relaxed_goal_heading_tolerance_deg": local_runtime[',
+            launch_text,
+        )
         self.assertIn('"trajectory_switch_improvement_ratio": local_runtime[', launch_text)
         self.assertIn(
             'local_runtime.get("plugin") != "reference_aware_hybrid_astar"',

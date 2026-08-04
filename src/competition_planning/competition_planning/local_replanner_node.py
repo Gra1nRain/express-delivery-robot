@@ -120,6 +120,14 @@ class LocalReplannerNode(Node):
             relaxed_step_length_m=float(
                 self.declare_parameter("relaxed_step_length_m", 0.30).value
             ),
+            relaxed_goal_heading_tolerance_rad=math.radians(
+                float(
+                    self.declare_parameter(
+                        "relaxed_goal_heading_tolerance_deg",
+                        20.0,
+                    ).value
+                )
+            ),
             trajectory_switch_improvement_ratio=float(
                 self.declare_parameter(
                     "trajectory_switch_improvement_ratio",

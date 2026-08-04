@@ -275,6 +275,9 @@ def _launch_setup(context, *args, **kwargs):
                     "relaxed_step_length_m": local_runtime[
                         "relaxed_step_length_m"
                     ],
+                    "relaxed_goal_heading_tolerance_deg": local_runtime[
+                        "relaxed_goal_heading_tolerance_deg"
+                    ],
                     "trajectory_switch_improvement_ratio": local_runtime[
                         "trajectory_switch_improvement_ratio"
                     ],

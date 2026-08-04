@@ -102,6 +102,7 @@ def _relaxed_config(**changes: object) -> LocalReplanConfig:
             relaxed_activation_distance_m=1.0,
             relaxed_reference_deviation_weight=0.5,
             relaxed_corridor_half_width_m=0.85,
+            relaxed_goal_heading_tolerance_rad=math.radians(20.0),
             trajectory_switch_improvement_ratio=0.15,
         ),
         **changes,
@@ -176,6 +177,25 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
             0.16,
         )
         self.assertNotEqual(result.path, reference[20:61])
+
+    def test_random_obstacle_segment_uses_relaxed_heading_tolerance(self) -> None:
+        config = _relaxed_config(
+            goal_heading_tolerance_rad=math.radians(8.0),
+            relaxed_goal_heading_tolerance_rad=math.radians(20.0),
+        )
+        planner = LocalTrajectoryPlanner(_empty_map(), config)
+
+        strict = planner._planner(_empty_map(), self.reference, relaxed=False)
+        relaxed = planner._planner(_empty_map(), self.reference, relaxed=True)
+
+        self.assertAlmostEqual(
+            strict._goal_heading_tolerance_rad,
+            math.radians(8.0),
+        )
+        self.assertAlmostEqual(
+            relaxed._goal_heading_tolerance_rad,
+            math.radians(20.0),
+        )
 
     def test_random_obstacle_segment_holds_an_equally_good_safe_path(self) -> None:
         reference = _relaxed_reference()
@@ -578,6 +598,9 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
                     "relaxed_corridor_half_width_m"
                 ],
                 relaxed_step_length_m=runtime["relaxed_step_length_m"],
+                relaxed_goal_heading_tolerance_rad=math.radians(
+                    runtime["relaxed_goal_heading_tolerance_deg"]
+                ),
                 trajectory_switch_improvement_ratio=runtime[
                     "trajectory_switch_improvement_ratio"
                 ],
