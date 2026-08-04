@@ -93,6 +93,8 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertEqual(runtime["relaxed_step_length_m"], 0.30)
         self.assertEqual(runtime["relaxed_goal_heading_tolerance_deg"], 20.0)
         self.assertEqual(runtime["trajectory_switch_improvement_ratio"], 0.15)
+        self.assertEqual(runtime["obstacle_clearance_distance_m"], 0.20)
+        self.assertEqual(runtime["obstacle_clearance_weight"], 0.8)
         self.assertEqual(safety["proximity_stop"]["grid_inflation_radius_m"], 0.30)
         self.assertEqual(runtime["planning_timeout_s"], 2.0)
         self.assertLessEqual(
@@ -121,6 +123,14 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertIn('"relaxed_segment_entry_ref": local_runtime[', launch_text)
         self.assertIn(
             '"relaxed_goal_heading_tolerance_deg": local_runtime[',
+            launch_text,
+        )
+        self.assertIn(
+            '"obstacle_clearance_distance_m": local_runtime[',
+            launch_text,
+        )
+        self.assertIn(
+            '"obstacle_clearance_weight": local_runtime[',
             launch_text,
         )
         self.assertIn('"trajectory_switch_improvement_ratio": local_runtime[', launch_text)

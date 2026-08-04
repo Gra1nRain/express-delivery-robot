@@ -455,6 +455,97 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertEqual(second.rejoin_index, 70)
         self.assertGreater(len(second.path), 2)
 
+    def test_relaxed_path_rejoins_early_after_blockage_is_behind(self) -> None:
+        reference = _relaxed_reference()
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+        obstacle_center = reference[38]
+        obstacles = tuple(
+            (obstacle_center.x + dx, obstacle_center.y + dy)
+            for x_index in range(-5, 6)
+            for y_index in range(-5, 6)
+            if math.hypot(
+                (dx := x_index * 0.05),
+                (dy := y_index * 0.05),
+            )
+            <= 0.25 + 1e-9
+        )
+        first = planner.plan(
+            reference_path=reference,
+            current_pose=reference[25],
+            dynamic_obstacle_points=obstacles,
+            previous_reference_index=25,
+        )
+        self.assertEqual(first.rejoin_index, 60)
+        before_trigger = planner.plan(
+            reference_path=reference,
+            current_pose=reference[35],
+            dynamic_obstacle_points=(),
+            previous_reference_index=35,
+        )
+        self.assertNotEqual(before_trigger.status, "EARLY_REJOIN_REPLANNED")
+        self.assertEqual(before_trigger.rejoin_index, 60)
+        rejoin = planner.plan(
+            reference_path=reference,
+            current_pose=reference[45],
+            dynamic_obstacle_points=(),
+            previous_reference_index=45,
+        )
+
+        self.assertEqual(rejoin.status, "EARLY_REJOIN_REPLANNED")
+        self.assertLess(rejoin.rejoin_index, 60)
+        resumed = planner.plan(
+            reference_path=reference,
+            current_pose=rejoin.path[-1],
+            dynamic_obstacle_points=(),
+            previous_reference_index=rejoin.rejoin_index,
+        )
+        self.assertEqual(resumed.status, "REFERENCE_CLEAR")
+        self.assertGreater(resumed.rejoin_index, 60)
+
+    def test_soft_obstacle_edge_cost_increases_clearance(self) -> None:
+        reference = _relaxed_reference()
+        obstacle_center = reference[42]
+        obstacles = tuple(
+            (obstacle_center.x + dx, obstacle_center.y + dy)
+            for x_index in range(-5, 6)
+            for y_index in range(-5, 6)
+            if math.hypot(
+                (dx := x_index * 0.05),
+                (dy := y_index * 0.05),
+            )
+            <= 0.25 + 1e-9
+        )
+
+        def planned_clearance(weight: float) -> float:
+            planner = LocalTrajectoryPlanner(
+                _empty_map(),
+                _relaxed_config(
+                    obstacle_clearance_distance_m=0.20,
+                    obstacle_clearance_weight=weight,
+                ),
+            )
+            result = planner.plan(
+                reference_path=reference,
+                current_pose=reference[20],
+                dynamic_obstacle_points=obstacles,
+                previous_reference_index=20,
+            )
+            return min(
+                math.hypot(
+                    point.x - obstacle_center.x,
+                    point.y - obstacle_center.y,
+                )
+                for point in result.path
+            )
+
+        baseline_clearance = planned_clearance(0.0)
+        softened_clearance = planned_clearance(4.0)
+
+        self.assertGreaterEqual(
+            softened_clearance,
+            baseline_clearance + 0.06,
+        )
+
     def test_inflated_costmap_cells_are_bounded_and_downsampled(self) -> None:
         points = occupied_grid_cell_centers(
             (100, 100, 100, 100, 100, 100),
@@ -651,6 +742,10 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
                 trajectory_switch_improvement_ratio=runtime[
                     "trajectory_switch_improvement_ratio"
                 ],
+                obstacle_clearance_distance_m=runtime[
+                    "obstacle_clearance_distance_m"
+                ],
+                obstacle_clearance_weight=runtime["obstacle_clearance_weight"],
             ),
         )
 
@@ -673,7 +768,7 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
                 )
                 for point in result.path
             ),
-            0.34,
+            0.45,
         )
         self.assertLessEqual(
             max(

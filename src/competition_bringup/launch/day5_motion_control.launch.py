@@ -281,6 +281,12 @@ def _launch_setup(context, *args, **kwargs):
                     "trajectory_switch_improvement_ratio": local_runtime[
                         "trajectory_switch_improvement_ratio"
                     ],
+                    "obstacle_clearance_distance_m": local_runtime[
+                        "obstacle_clearance_distance_m"
+                    ],
+                    "obstacle_clearance_weight": local_runtime[
+                        "obstacle_clearance_weight"
+                    ],
                     "max_expansions": local_runtime["max_expansions"],
                     "planning_timeout_s": local_runtime[
                         "planning_timeout_s"

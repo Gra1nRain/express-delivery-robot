@@ -134,6 +134,18 @@ class LocalReplannerNode(Node):
                     0.15,
                 ).value
             ),
+            obstacle_clearance_distance_m=float(
+                self.declare_parameter(
+                    "obstacle_clearance_distance_m",
+                    0.0,
+                ).value
+            ),
+            obstacle_clearance_weight=float(
+                self.declare_parameter(
+                    "obstacle_clearance_weight",
+                    0.0,
+                ).value
+            ),
         )
         self._planner = LocalTrajectoryPlanner(static_map, self._config)
 

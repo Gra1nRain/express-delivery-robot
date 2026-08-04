@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 import heapq
 import math
@@ -13,6 +14,9 @@ from competition_planning.occupancy_grid_planner import (
     OccupancyGridMap,
 )
 from competition_planning.semantic_planner import PathPoint
+
+
+_MISSING_POINT_COST = object()
 
 
 class HybridAStarTimeout(GridPlanningError):
@@ -53,6 +57,8 @@ class HybridAStarPlanner:
         reference_path: Sequence[PathPoint] = (),
         reference_deviation_weight: float = 0.0,
         corridor_half_width_m: float | None = None,
+        obstacle_clearance_distance_m: float = 0.0,
+        obstacle_clearance_weight: float = 0.0,
     ) -> None:
         if min_turning_radius_m <= 0.0:
             raise GridPlanningError("hybrid_astar requires a positive min_turning_radius_m")
@@ -86,6 +92,19 @@ class HybridAStarPlanner:
         self._corridor_half_width_sq = (
             None if corridor_half_width_m is None else corridor_half_width_m**2
         )
+        if obstacle_clearance_distance_m < 0.0:
+            raise GridPlanningError("obstacle_clearance_distance_m must be non-negative")
+        if obstacle_clearance_weight < 0.0:
+            raise GridPlanningError("obstacle_clearance_weight must be non-negative")
+        self._obstacle_clearance_distance_m = obstacle_clearance_distance_m
+        self._obstacle_clearance_weight = obstacle_clearance_weight
+        self._obstacle_clearance_cost_by_cell: tuple[float, ...] | None = (
+            None
+            if obstacle_clearance_distance_m > 0.0 and obstacle_clearance_weight > 0.0
+            else ()
+        )
+        self._navigable_cell_cache: dict[tuple[int, int], bool] = {}
+        self._point_cost_cache: dict[tuple[int, int], float | None] = {}
         max_curvature = 1.0 / min_turning_radius_m
         if curvature_bins < 3 or curvature_bins % 2 == 0:
             raise GridPlanningError(
@@ -198,7 +217,11 @@ class HybridAStarPlanner:
                 )
                 if not self._inside_bounds(successor, bounds):
                     continue
-                if not self._motion_is_navigable(current, curvature_index):
+                motion_clearance_cost = self._motion_clearance_cost(
+                    current,
+                    curvature_index,
+                )
+                if motion_clearance_cost is None:
                     continue
                 successor_key = self._key(successor)
                 if successor_key in closed:
@@ -210,6 +233,7 @@ class HybridAStarPlanner:
                 tentative = g_score[current_key] + self._step_length_m * (
                     1.0 + 0.08 * curvature_fraction + 0.12 * steering_change
                     + self._reference_deviation_cost(successor)
+                    + motion_clearance_cost
                 )
                 if tentative >= g_score.get(successor_key, math.inf):
                     continue
@@ -246,6 +270,32 @@ class HybridAStarPlanner:
             self._reference_distance_sq_cache[cell] = distance_squared
         return distance_squared
 
+    def _obstacle_clearance_cost(self, cell: tuple[int, int]) -> float:
+        costs = self._obstacle_clearance_cost_by_cell
+        if costs is None:
+            distances = _clearance_distance_field(
+                self._blocked,
+                width=self._map.width,
+                height=self._map.height,
+                resolution=self._map.resolution,
+                max_distance_m=self._obstacle_clearance_distance_m,
+            )
+            costs = tuple(
+                self._obstacle_clearance_weight
+                * max(
+                    0.0,
+                    1.0 - clearance_m / self._obstacle_clearance_distance_m,
+                )
+                ** 2
+                for clearance_m in distances
+            )
+            self._obstacle_clearance_cost_by_cell = costs
+        if not costs:
+            return 0.0
+        if not self._map.contains(cell):
+            return self._obstacle_clearance_weight
+        return costs[self._map.index(cell)]
+
     def _successor_curvatures(self, previous_index: int) -> range:
         return range(
             max(0, previous_index - 1),
@@ -264,17 +314,24 @@ class HybridAStarPlanner:
             y = node.y - (math.cos(yaw) - math.cos(node.yaw)) / curvature
         return _Node(x=x, y=y, yaw=_wrap_angle(yaw), curvature_index=curvature_index)
 
-    def _motion_is_navigable(self, node: _Node, curvature_index: int) -> bool:
+    def _motion_clearance_cost(
+        self,
+        node: _Node,
+        curvature_index: int,
+    ) -> float | None:
         samples = max(2, math.ceil(self._step_length_m / (self._map.resolution * 0.5)))
+        clearance_cost = 0.0
         for index in range(1, samples + 1):
             point = self._advance(
                 node,
                 curvature_index,
                 self._step_length_m * index / samples,
             )
-            if not self._point_is_navigable(point.x, point.y):
-                return False
-        return True
+            point_cost = self._point_navigation_cost(point.x, point.y)
+            if point_cost is None:
+                return None
+            clearance_cost += point_cost
+        return clearance_cost / samples
 
     def _reconstruct(
         self,
@@ -357,11 +414,41 @@ class HybridAStarPlanner:
 
     def _point_is_navigable(self, x: float, y: float) -> bool:
         cell = self._map.world_to_cell(x, y)
-        if not self._map.contains(cell) or self._blocked[self._map.index(cell)]:
-            return False
-        return self._corridor_half_width_sq is None or (
-            self._reference_distance_squared(x, y) <= self._corridor_half_width_sq
+        return self._cell_is_navigable(cell, x=x, y=y)
+
+    def _point_navigation_cost(self, x: float, y: float) -> float | None:
+        cell = self._map.world_to_cell(x, y)
+        cached = self._point_cost_cache.get(cell, _MISSING_POINT_COST)
+        if cached is not _MISSING_POINT_COST:
+            return cached
+        cost = (
+            self._obstacle_clearance_cost(cell)
+            if self._cell_is_navigable(cell, x=x, y=y)
+            else None
         )
+        self._point_cost_cache[cell] = cost
+        return cost
+
+    def _cell_is_navigable(
+        self,
+        cell: tuple[int, int],
+        *,
+        x: float,
+        y: float,
+    ) -> bool:
+        cached = self._navigable_cell_cache.get(cell)
+        if cached is not None:
+            return cached
+        navigable = self._map.contains(cell) and not self._blocked[
+            self._map.index(cell)
+        ]
+        if navigable and self._corridor_half_width_sq is not None:
+            navigable = (
+                self._reference_distance_squared(x, y)
+                <= self._corridor_half_width_sq
+            )
+        self._navigable_cell_cache[cell] = navigable
+        return navigable
 
     def _require_navigable(self, x: float, y: float, label: str) -> None:
         if not self._point_is_navigable(x, y):
@@ -370,3 +457,51 @@ class HybridAStarPlanner:
 
 def _wrap_angle(value: float) -> float:
     return (value + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def _clearance_distance_field(
+    blocked: Sequence[bool],
+    *,
+    width: int,
+    height: int,
+    resolution: float,
+    max_distance_m: float,
+) -> tuple[float, ...]:
+    """Approximate distance to the inflated edge with a bounded 8-neighbor BFS."""
+
+    max_steps = max(1, int(math.ceil(max_distance_m / resolution)))
+    unknown = max_steps + 1
+    steps = [unknown] * len(blocked)
+    queue: deque[int] = deque()
+    for index, is_blocked in enumerate(blocked):
+        if is_blocked:
+            steps[index] = 0
+            queue.append(index)
+
+    while queue:
+        index = queue.popleft()
+        distance_steps = steps[index]
+        if distance_steps >= max_steps:
+            continue
+        row, col = divmod(index, width)
+        next_distance = distance_steps + 1
+        for row_delta in (-1, 0, 1):
+            neighbor_row = row + row_delta
+            if not 0 <= neighbor_row < height:
+                continue
+            for col_delta in (-1, 0, 1):
+                if row_delta == 0 and col_delta == 0:
+                    continue
+                neighbor_col = col + col_delta
+                if not 0 <= neighbor_col < width:
+                    continue
+                neighbor_index = neighbor_row * width + neighbor_col
+                if steps[neighbor_index] <= next_distance:
+                    continue
+                steps[neighbor_index] = next_distance
+                queue.append(neighbor_index)
+
+    return tuple(
+        min(max_distance_m, distance_steps * resolution)
+        for distance_steps in steps
+    )
