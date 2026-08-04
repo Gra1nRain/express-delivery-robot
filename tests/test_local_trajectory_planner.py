@@ -182,6 +182,46 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertEqual(second.status, "RELAXED_HOLD")
         self.assertEqual(second.path, first.path[3:])
 
+    def test_relaxed_hold_replans_when_pose_splice_breaks_turning_radius(self) -> None:
+        reference = _relaxed_reference()
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+        first = planner.plan(
+            reference_path=reference,
+            current_pose=reference[20],
+            dynamic_obstacle_points=(),
+            previous_reference_index=20,
+        )
+        held_point = first.path[3]
+        offset_pose = PathPoint(
+            held_point.x,
+            held_point.y + 0.05,
+            held_point.yaw,
+            held_point.ref_id,
+        )
+
+        second = planner.plan(
+            reference_path=reference,
+            current_pose=offset_pose,
+            dynamic_obstacle_points=(),
+            previous_reference_index=20,
+        )
+
+        self.assertEqual(second.status, "RELAXED_REPLANNED")
+        trajectory = parameterize_local_path(
+            second.path,
+            semantic_map={"frame_id": "map"},
+            optimizer_config={
+                "trajectory_optimizer": {
+                    "max_curvature_1pm": 1.0 / 0.60,
+                    "curvature_overshoot_tolerance_ratio": 0.0,
+                }
+            },
+        )
+        self.assertLessEqual(
+            max(abs(point.curvature) for point in trajectory.points),
+            1.0 / 0.60 + 1e-9,
+        )
+
     def test_random_obstacle_segment_replans_when_held_path_becomes_blocked(self) -> None:
         reference = _relaxed_reference()
         planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())

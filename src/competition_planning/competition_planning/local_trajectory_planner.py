@@ -223,7 +223,14 @@ class LocalTrajectoryPlanner:
         if math.hypot(nearest.x - current_pose.x, nearest.y - current_pose.y) > 0.50:
             return ()
         candidate = (current_pose, *self._held_relaxed_path[nearest_index + 1 :])
-        if len(candidate) < 2 or not planner.path_is_navigable(candidate):
+        if (
+            len(candidate) < 2
+            or not planner.path_is_navigable(candidate)
+            or not _splice_respects_turning_radius(
+                candidate,
+                min_turning_radius_m=self._config.min_turning_radius_m,
+            )
+        ):
             return ()
         return candidate
 
@@ -363,6 +370,29 @@ def _path_is_materially_better(
         reference_deviation_weight=reference_deviation_weight,
     )
     return candidate_cost < held_cost * (1.0 - improvement_ratio)
+
+
+def _splice_respects_turning_radius(
+    path: Sequence[PathPoint],
+    *,
+    min_turning_radius_m: float,
+) -> bool:
+    """Validate the only new bend introduced by prepending the current pose."""
+
+    if len(path) < 3:
+        return True
+    first, second, third = path[:3]
+    ab = math.hypot(second.x - first.x, second.y - first.y)
+    bc = math.hypot(third.x - second.x, third.y - second.y)
+    ca = math.hypot(first.x - third.x, first.y - third.y)
+    denominator = ab * bc * ca
+    if denominator <= 1e-12:
+        return True
+    cross = (second.x - first.x) * (third.y - first.y) - (
+        second.y - first.y
+    ) * (third.x - first.x)
+    curvature = 2.0 * cross / denominator
+    return abs(curvature) <= 1.0 / min_turning_radius_m + 1e-6
 
 
 def _path_cost(
