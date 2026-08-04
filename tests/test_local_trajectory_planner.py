@@ -140,8 +140,21 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertEqual(result.path, self.reference[:51])
         self.assertLess(result.planning_grid_cell_count, 100 * 80)
 
-    def test_random_obstacle_segment_plans_to_exit_without_reusing_blue_line(self) -> None:
-        reference = _relaxed_reference()
+    def test_random_obstacle_segment_uses_rolling_goal_without_reusing_blue_line(
+        self,
+    ) -> None:
+        reference = tuple(
+            PathPoint(
+                x=index * 0.10,
+                y=0.0,
+                yaw=0.0,
+                ref_id={
+                    40: "random_obstacle_entry",
+                    70: "random_obstacle_exit",
+                }.get(index),
+            )
+            for index in range(81)
+        )
         planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
 
         result = planner.plan(
@@ -153,11 +166,11 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
 
         self.assertEqual(result.status, "RELAXED_REPLANNED")
         self.assertEqual(result.reference_start_index, 20)
-        self.assertEqual(result.rejoin_index, 60)
+        self.assertEqual(result.rejoin_index, 50)
         self.assertLess(
             math.hypot(
-                result.path[-1].x - reference[60].x,
-                result.path[-1].y - reference[60].y,
+                result.path[-1].x - reference[50].x,
+                result.path[-1].y - reference[50].y,
             ),
             0.16,
         )

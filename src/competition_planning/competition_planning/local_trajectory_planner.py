@@ -110,15 +110,39 @@ class LocalTrajectoryPlanner:
             activation_distance_m=self._config.relaxed_activation_distance_m,
             planning_horizon_m=self._config.lookahead_distance_m,
         )
-        rejoin_index = (
-            relaxed_span[1]
-            if relaxed_span is not None
-            else _lookahead_index(
-                reference_path,
-                start_index,
-                self._config.lookahead_distance_m,
-            )
+        rolling_rejoin_index = _lookahead_index(
+            reference_path,
+            start_index,
+            self._config.lookahead_distance_m,
         )
+        if relaxed_span is None:
+            rejoin_index = rolling_rejoin_index
+        else:
+            segment_entry_index, segment_exit_index = relaxed_span
+            held_rejoin_index = self._held_rejoin_index
+            if (
+                held_rejoin_index is not None
+                and start_index < held_rejoin_index <= segment_exit_index
+            ):
+                rejoin_index = held_rejoin_index
+            else:
+                distance_to_entry_m = sum(
+                    math.hypot(
+                        reference_path[index].x - reference_path[index - 1].x,
+                        reference_path[index].y - reference_path[index - 1].y,
+                    )
+                    for index in range(start_index + 1, segment_entry_index + 1)
+                )
+                use_approach_checkpoint = (
+                    start_index < segment_entry_index < rolling_rejoin_index
+                    and distance_to_entry_m
+                    > self._config.relaxed_activation_distance_m + 1e-9
+                )
+                rejoin_index = (
+                    min(segment_exit_index, rolling_rejoin_index)
+                    if use_approach_checkpoint
+                    else segment_exit_index
+                )
         if rejoin_index <= start_index:
             raise ValueError("global reference has no forward local replanning horizon")
 
