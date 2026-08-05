@@ -504,6 +504,7 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
             _relaxed_reference(),
             relaxed=True,
             planning_timeout_s=_relaxed_config().relaxed_extension_timeout_s,
+            reduced_curvature_lattice=True,
         )
 
         self.assertEqual(len(strict._curvatures), 9)
@@ -543,6 +544,42 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
 
         self.assertEqual(result.status, "RELAXED_HOLD")
         self.assertEqual(result.rejoin_index, first.rejoin_index)
+        self.assertTrue(result.path_is_navigable)
+
+    def test_relaxed_blocked_exit_rejoins_after_stable_clear_run(self) -> None:
+        reference = tuple(
+            PathPoint(
+                x=index * 0.10,
+                y=0.0,
+                yaw=0.0,
+                ref_id={
+                    40: "random_obstacle_entry",
+                    70: "random_obstacle_exit",
+                }.get(index),
+            )
+            for index in range(101)
+        )
+        obstacles = tuple(
+            (6.30 + x_index * 0.05, y_index * 0.05)
+            for x_index in range(-6, 7)
+            for y_index in range(-6, 7)
+            if math.hypot(x_index * 0.05, y_index * 0.05) <= 0.30 + 1e-9
+        )
+        planner = LocalTrajectoryPlanner(
+            _empty_map(width=120),
+            _relaxed_config(),
+        )
+
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=PathPoint(3.90, 0.70, 0.10),
+            dynamic_obstacle_points=obstacles,
+            previous_reference_index=39,
+        )
+
+        self.assertEqual(result.status, "RELAXED_REPLANNED")
+        self.assertEqual(result.reference_start_index, 39)
+        self.assertEqual(result.rejoin_index, 79)
         self.assertTrue(result.path_is_navigable)
 
     def test_relaxed_approach_checkpoint_extends_before_goal_reached(self) -> None:
@@ -899,10 +936,10 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
             previous_reference_index=start_index,
         )
 
-        local_reference = reference[start_index : exit_index + 1]
         self.assertEqual(result.status, "RELAXED_REPLANNED")
-        self.assertEqual(result.rejoin_index, exit_index)
+        self.assertGreater(result.rejoin_index, exit_index)
         self.assertTrue(result.path_is_navigable)
+        local_reference = reference[start_index : result.rejoin_index + 1]
         self.assertGreaterEqual(
             min(
                 math.hypot(

@@ -236,6 +236,51 @@ class LocalTrajectoryPlanner:
             dynamic_obstacle_points,
         )
         relaxed = relaxed_span is not None
+        blocked_relaxed_rejoin = False
+        if relaxed:
+            stable_clear_distance_m = (
+                self._config.relaxed_activation_distance_m
+                + self._config.relaxed_step_length_m
+            )
+            selection_limit_index = _lookahead_index(
+                reference_path,
+                rejoin_index,
+                stable_clear_distance_m,
+            )
+            selection_reference = tuple(
+                reference_path[start_index : selection_limit_index + 1]
+            )
+            selection_planner = self._planner(
+                live_map,
+                selection_reference,
+                relaxed=True,
+            )
+            held_path_is_safe = (
+                bool(
+                    self._safe_held_path(
+                        current_pose=current_pose,
+                        planner=selection_planner,
+                        rejoin_index=held_rejoin_index,
+                    )
+                )
+                if held_rejoin_index is not None
+                else False
+            )
+            if not held_path_is_safe or advance_held_checkpoint:
+                dynamic_rejoin_index = _relaxed_rejoin_after_blockage(
+                    reference_path,
+                    selection_planner,
+                    start_index=start_index,
+                    nominal_rejoin_index=rejoin_index,
+                    maximum_rejoin_index=selection_limit_index,
+                    stable_clear_distance_m=stable_clear_distance_m,
+                )
+                if dynamic_rejoin_index != rejoin_index:
+                    rejoin_index = dynamic_rejoin_index
+                    local_reference = tuple(
+                        reference_path[start_index : rejoin_index + 1]
+                    )
+                    blocked_relaxed_rejoin = True
         extension_timeout_s = (
             self._config.relaxed_extension_timeout_s
             if (
@@ -250,6 +295,9 @@ class LocalTrajectoryPlanner:
             local_reference,
             relaxed=relaxed,
             planning_timeout_s=extension_timeout_s,
+            reduced_curvature_lattice=(
+                blocked_relaxed_rejoin or extension_timeout_s is not None
+            ),
         )
         selected_rejoin_index = _select_navigable_rejoin_index(
             reference_path,
@@ -274,6 +322,9 @@ class LocalTrajectoryPlanner:
                 local_reference,
                 relaxed=relaxed,
                 planning_timeout_s=extension_timeout_s,
+                reduced_curvature_lattice=(
+                    blocked_relaxed_rejoin or extension_timeout_s is not None
+                ),
             )
         fallback_rejoin_index = self._held_rejoin_index
         fallback_held_path = (
@@ -286,7 +337,12 @@ class LocalTrajectoryPlanner:
             else ()
         )
         if extension_timeout_s is not None and not fallback_held_path:
-            planner = self._planner(live_map, local_reference, relaxed=relaxed)
+            planner = self._planner(
+                live_map,
+                local_reference,
+                relaxed=relaxed,
+                reduced_curvature_lattice=blocked_relaxed_rejoin,
+            )
         transitioning_from_relaxed = False
         if relaxed and _relaxed_exit_is_ready(
             reference_path,
@@ -606,6 +662,7 @@ class LocalTrajectoryPlanner:
         *,
         relaxed: bool = False,
         planning_timeout_s: float | None = None,
+        reduced_curvature_lattice: bool = False,
     ) -> HybridAStarPlanner:
         config = self._config
         return HybridAStarPlanner(
@@ -619,7 +676,7 @@ class LocalTrajectoryPlanner:
             ),
             curvature_bins=(
                 config.relaxed_extension_curvature_bins
-                if relaxed and planning_timeout_s is not None
+                if relaxed and reduced_curvature_lattice
                 else config.curvature_bins
             ),
             heading_bins=config.heading_bins,
@@ -724,6 +781,44 @@ def _relaxed_exit_is_ready(
     return planner.path_is_navigable(
         reference_path[start_index : clear_end_index + 1]
     )
+
+
+def _relaxed_rejoin_after_blockage(
+    reference_path: Sequence[PathPoint],
+    planner: HybridAStarPlanner,
+    *,
+    start_index: int,
+    nominal_rejoin_index: int,
+    maximum_rejoin_index: int,
+    stable_clear_distance_m: float,
+) -> int:
+    """Move a blocked segment goal to the first stable clear route prefix."""
+
+    first_blocked_index = next(
+        (
+            index
+            for index in range(start_index + 1, nominal_rejoin_index + 1)
+            if not planner.path_is_navigable((reference_path[index],))
+        ),
+        None,
+    )
+    if first_blocked_index is None:
+        return nominal_rejoin_index
+
+    clear_distance_m = 0.0
+    for index in range(first_blocked_index + 1, maximum_rejoin_index + 1):
+        if not planner.path_is_navigable((reference_path[index],)):
+            clear_distance_m = 0.0
+            continue
+        previous = reference_path[index - 1]
+        current = reference_path[index]
+        clear_distance_m += math.hypot(
+            current.x - previous.x,
+            current.y - previous.y,
+        )
+        if clear_distance_m + 1e-9 >= stable_clear_distance_m:
+            return max(index, nominal_rejoin_index)
+    return nominal_rejoin_index
 
 
 def _active_relaxed_segment(
