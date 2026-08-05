@@ -166,6 +166,21 @@ rviz2 -d /home/agilex/competition_ws/install/competition_bringup/share/competiti
 
 在RViz中使用 `2D Pose Estimate` 发布初始位姿。可以反复调整；最后一次发布完成后等待1秒。
 
+## 终端8：启动被动行程诊断
+
+该终端只订阅状态并写入小型时间线，不发布控制消息，也不保存点云、Scan或代价图原始帧。
+
+```bash
+conda deactivate 2>/dev/null || true
+cd /home/agilex/competition_ws
+source scripts/car_source_env.sh
+
+/usr/bin/python3 scripts/day5_trip_diagnostics.py \
+  --output /tmp/day5_trip_trace.jsonl
+```
+
+保持终端8运行。测试结束后按 `Ctrl+C`，终端会显示保存路径。该文件位于 `/tmp`，重启后可以自动清理；它只用于定位每一次停顿来自规划、控制、安全链还是底盘命令链。
+
 ## 终端3：执行发车前总检查
 
 回到终端3，复制下面完整代码块：

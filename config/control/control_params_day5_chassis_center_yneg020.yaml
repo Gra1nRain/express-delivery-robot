@@ -17,6 +17,9 @@ trajectory_tracker:
     lateral_feedback_gain_1pm_per_m: 1.5
     heading_feedback_gain_1pm_per_rad: 1.0
     feedback_blend: 0.35
+    # Do not cold-start MPPI for the same 1 Hz RELAXED_HOLD geometry.
+    local_plan_reuse_position_tolerance_m: 0.05
+    local_plan_reuse_heading_tolerance_deg: 5.0
 
 motion:
   vehicle_model: ranger_mini_v3_hybrid_4ws

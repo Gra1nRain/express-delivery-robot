@@ -29,6 +29,7 @@ from competition_planning.artifact_provenance import (
 )
 from competition_planning.semantic_planner import PathPoint
 from competition_planning.trajectory_parameterizer import parameterize_local_path
+from competition_control.local_plan_continuity import local_paths_are_equivalent
 from competition_control.mppi_controller import (
     BodyCommand,
     ControlTrajectory,
@@ -88,6 +89,30 @@ class MPPIControlNode(Node):
             raise ValueError("local_trajectory_timeout_s must be positive")
         self._latest_local_plan_stamp_s: float | None = None
         self._local_plan_error: str | None = None
+        self._accepted_local_geometry: tuple[PathPoint, ...] | None = None
+        self._local_plan_update_mode = "waiting"
+        self._local_plan_reuse_count = 0
+        self._local_plan_replace_count = 0
+        self._local_plan_error_count = 0
+        self._local_plan_reuse_position_tolerance_m = float(
+            self.declare_parameter(
+                "local_plan_reuse_position_tolerance_m",
+                0.05,
+            ).value
+        )
+        self._local_plan_reuse_heading_tolerance_rad = math.radians(
+            float(
+                self.declare_parameter(
+                    "local_plan_reuse_heading_tolerance_deg",
+                    5.0,
+                ).value
+            )
+        )
+        if (
+            self._local_plan_reuse_position_tolerance_m < 0.0
+            or self._local_plan_reuse_heading_tolerance_rad < 0.0
+        ):
+            raise ValueError("local plan reuse tolerances must be non-negative")
         self._local_stop_requested = self._replanning_enabled
         self._control_period_s = 1.0 / float(
             self.declare_parameter("frequency_hz", 20.0).value
@@ -328,6 +353,8 @@ class MPPIControlNode(Node):
         now_s = self.get_clock().now().nanoseconds / 1e9
         self._initial_pose_settle_until_s = now_s + self._initial_pose_settle_s
         self._controller.reset()
+        self._accepted_local_geometry = None
+        self._local_plan_update_mode = "waiting"
         self._executed_poses.clear()
         self.get_logger().info(
             "Received /initialpose; holding zero command for "
@@ -339,6 +366,8 @@ class MPPIControlNode(Node):
             self._local_plan_error = (
                 f"frame_mismatch:{message.header.frame_id}->{self._map_frame}"
             )
+            self._local_plan_update_mode = "error"
+            self._local_plan_error_count += 1
             return
         try:
             geometry = tuple(
@@ -354,6 +383,19 @@ class MPPIControlNode(Node):
                 )
                 for pose in message.poses
             )
+            if self._accepted_local_geometry is not None and local_paths_are_equivalent(
+                self._accepted_local_geometry,
+                geometry,
+                position_tolerance_m=self._local_plan_reuse_position_tolerance_m,
+                heading_tolerance_rad=self._local_plan_reuse_heading_tolerance_rad,
+            ):
+                self._latest_local_plan_stamp_s = _stamp_to_seconds(
+                    message.header.stamp
+                )
+                self._local_plan_error = None
+                self._local_plan_update_mode = "reused"
+                self._local_plan_reuse_count += 1
+                return
             parameterized = parameterize_local_path(
                 geometry,
                 self._semantic_map,
@@ -379,9 +421,14 @@ class MPPIControlNode(Node):
             self._controller.replace_trajectory(trajectory)
         except (KeyError, TypeError, ValueError) as exc:
             self._local_plan_error = str(exc)
+            self._local_plan_update_mode = "error"
+            self._local_plan_error_count += 1
             return
+        self._accepted_local_geometry = geometry
         self._latest_local_plan_stamp_s = _stamp_to_seconds(message.header.stamp)
         self._local_plan_error = None
+        self._local_plan_update_mode = "replaced"
+        self._local_plan_replace_count += 1
 
     def _local_stop_callback(self, message: Bool) -> None:
         self._local_stop_requested = bool(message.data)
@@ -512,6 +559,10 @@ class MPPIControlNode(Node):
                         "pose_prediction_s": pose_prediction_s,
                         "local_plan_age_s": self._local_plan_age_s(now_s),
                         "local_plan_error": self._local_plan_error,
+                        "local_plan_update_mode": self._local_plan_update_mode,
+                        "local_plan_reuse_count": self._local_plan_reuse_count,
+                        "local_plan_replace_count": self._local_plan_replace_count,
+                        "local_plan_error_count": self._local_plan_error_count,
                     },
                     separators=(",", ":"),
                 )

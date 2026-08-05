@@ -198,6 +198,12 @@ def _launch_setup(context, *args, **kwargs):
                     "local_trajectory_timeout_s": replanning[
                         "local_trajectory_timeout_s"
                     ],
+                    "local_plan_reuse_position_tolerance_m": mppi[
+                        "local_plan_reuse_position_tolerance_m"
+                    ],
+                    "local_plan_reuse_heading_tolerance_deg": mppi[
+                        "local_plan_reuse_heading_tolerance_deg"
+                    ],
                     "local_stop_request_topic": replanning[
                         "local_stop_request_topic"
                     ],

@@ -1,3 +1,4 @@
+import math
 import pathlib
 import unittest
 
@@ -96,7 +97,51 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertEqual(runtime["obstacle_clearance_distance_m"], 0.20)
         self.assertEqual(runtime["obstacle_clearance_weight"], 0.8)
         self.assertEqual(runtime["search_heuristic_weight"], 1.2)
-        self.assertEqual(safety["proximity_stop"]["grid_inflation_radius_m"], 0.30)
+        self.assertEqual(
+            control["trajectory_tracker"]["mppi"][
+                "local_plan_reuse_position_tolerance_m"
+            ],
+            0.05,
+        )
+        self.assertEqual(
+            control["trajectory_tracker"]["mppi"][
+                "local_plan_reuse_heading_tolerance_deg"
+            ],
+            5.0,
+        )
+        alternate_control = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "control"
+                / "control_params_day5_chassis_center_yneg020.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            alternate_control["trajectory_tracker"]["mppi"][
+                "local_plan_reuse_position_tolerance_m"
+            ],
+            0.05,
+        )
+        self.assertEqual(
+            alternate_control["trajectory_tracker"]["mppi"][
+                "local_plan_reuse_heading_tolerance_deg"
+            ],
+            5.0,
+        )
+        self.assertEqual(safety["proximity_stop"]["grid_inflation_radius_m"], 0.44)
+        vehicle_corner_radius_m = math.hypot(
+            safety["proximity_stop"]["vehicle_length_m"] * 0.5,
+            safety["proximity_stop"]["vehicle_width_m"] * 0.5,
+        )
+        effective_hard_clearance_m = (
+            safety["proximity_stop"]["grid_inflation_radius_m"]
+            + runtime["inflation_radius_m"]
+        )
+        self.assertGreaterEqual(
+            effective_hard_clearance_m,
+            vehicle_corner_radius_m + 0.03,
+        )
         self.assertEqual(runtime["planning_timeout_s"], 2.0)
         self.assertLessEqual(
             runtime["planning_timeout_s"],
@@ -136,6 +181,14 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         )
         self.assertIn(
             '"search_heuristic_weight": local_runtime[',
+            launch_text,
+        )
+        self.assertIn(
+            '"local_plan_reuse_position_tolerance_m": mppi[',
+            launch_text,
+        )
+        self.assertIn(
+            '"local_plan_reuse_heading_tolerance_deg": mppi[',
             launch_text,
         )
         self.assertIn('"trajectory_switch_improvement_ratio": local_runtime[', launch_text)
