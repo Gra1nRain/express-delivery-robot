@@ -143,7 +143,7 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             effective_hard_clearance_m,
             vehicle_corner_radius_m + 0.03,
         )
-        self.assertEqual(runtime["planning_timeout_s"], 2.0)
+        self.assertEqual(runtime["planning_timeout_s"], 0.75)
         self.assertEqual(runtime["relaxed_extension_timeout_s"], 0.75)
         self.assertLess(
             runtime["relaxed_extension_timeout_s"],

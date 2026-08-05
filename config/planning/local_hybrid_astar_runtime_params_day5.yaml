@@ -31,6 +31,6 @@ local_hybrid_astar_runtime:
   obstacle_clearance_weight: 0.8
   search_heuristic_weight: 1.2
   max_expansions: 250000
-  planning_timeout_s: 2.00
+  planning_timeout_s: 0.75
   relaxed_extension_timeout_s: 0.75
   reference_search_window_points: 160

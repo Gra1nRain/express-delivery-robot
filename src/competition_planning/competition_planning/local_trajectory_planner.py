@@ -6,7 +6,10 @@ from dataclasses import dataclass
 import math
 from typing import Iterable, Sequence
 
-from competition_planning.hybrid_astar_planner import HybridAStarPlanner
+from competition_planning.hybrid_astar_planner import (
+    HybridAStarPlanner,
+    HybridAStarTimeout,
+)
 from competition_planning.occupancy_grid_planner import (
     GridPlanningError,
     OccupancyGridMap,
@@ -110,6 +113,8 @@ class LocalTrajectoryPlanner:
         self._config = config
         self._held_relaxed_path: tuple[PathPoint, ...] = ()
         self._held_rejoin_index: int | None = None
+        self._last_safe_path: tuple[PathPoint, ...] = ()
+        self._last_safe_rejoin_index: int | None = None
         self._pending_relaxed_span: tuple[int, int] | None = None
         self._completed_relaxed_span: tuple[int, int] | None = None
 
@@ -350,8 +355,14 @@ class LocalTrajectoryPlanner:
             start_index=start_index,
             segment_exit_index=relaxed_span[1],
             planner=planner,
-            position_tolerance_m=self._config.goal_position_tolerance_m,
-            heading_tolerance_rad=self._config.goal_heading_tolerance_rad,
+            position_tolerance_m=max(
+                self._config.goal_position_tolerance_m,
+                self._config.relaxed_step_length_m,
+            ),
+            heading_tolerance_rad=max(
+                self._config.goal_heading_tolerance_rad,
+                self._config.relaxed_goal_heading_tolerance_rad,
+            ),
             clear_distance_m=self._config.relaxed_activation_distance_m,
         ):
             transitioning_from_relaxed = True
@@ -409,6 +420,7 @@ class LocalTrajectoryPlanner:
                         )
                         if spliced_path:
                             self._held_relaxed_path = spliced_path
+                            self._remember_safe_path(spliced_path, rejoin_index)
                             return LocalPlan(
                                 path=spliced_path,
                                 reference_start_index=start_index,
@@ -421,6 +433,7 @@ class LocalTrajectoryPlanner:
                                 ),
                             )
                 self._held_relaxed_path = held_path
+                self._remember_safe_path(held_path, rejoin_index)
                 return LocalPlan(
                     path=held_path,
                     reference_start_index=start_index,
@@ -436,6 +449,7 @@ class LocalTrajectoryPlanner:
                 self._pending_relaxed_span = None
             self._held_relaxed_path = ()
             self._held_rejoin_index = None
+            self._remember_safe_path(local_reference, rejoin_index)
             return LocalPlan(
                 path=local_reference,
                 reference_start_index=start_index,
@@ -458,25 +472,42 @@ class LocalTrajectoryPlanner:
                     local_reference[-1],
                 )
             )
-        except GridPlanningError:
+        except GridPlanningError as exc:
             held_path = (
                 fallback_held_path
                 if relaxed or transitioning_from_relaxed
                 else ()
             )
+            held_rejoin_index = fallback_rejoin_index
+            held_status = "RELAXED_HOLD"
+            if not held_path:
+                held_path = self._safe_last_path(
+                    current_pose=current_pose,
+                    planner=planner,
+                )
+                held_rejoin_index = self._last_safe_rejoin_index
+                held_status = (
+                    "PLANNING_TIMEOUT_HOLD"
+                    if isinstance(exc, HybridAStarTimeout)
+                    else "SAFE_PATH_HOLD"
+                )
             if not held_path:
                 raise
             self._held_relaxed_path = held_path
+            self._remember_safe_path(
+                held_path,
+                held_rejoin_index if held_rejoin_index is not None else rejoin_index,
+            )
             return LocalPlan(
                 path=held_path,
                 reference_start_index=start_index,
                 rejoin_index=(
-                    fallback_rejoin_index
-                    if fallback_rejoin_index is not None
+                    held_rejoin_index
+                    if held_rejoin_index is not None
                     else rejoin_index
                 ),
                 dynamic_obstacle_count=obstacle_count,
-                status="RELAXED_HOLD",
+                status=held_status,
                 path_is_navigable=True,
                 planning_grid_cell_count=live_map.width * live_map.height,
             )
@@ -518,6 +549,7 @@ class LocalTrajectoryPlanner:
                 self._pending_relaxed_span = None
             self._held_relaxed_path = ()
             self._held_rejoin_index = None
+        self._remember_safe_path(path, rejoin_index)
         return LocalPlan(
             path=path,
             reference_start_index=start_index,
@@ -636,24 +668,68 @@ class LocalTrajectoryPlanner:
     ) -> tuple[PathPoint, ...]:
         """Return held geometry only while it remains collision-free."""
 
-        if not self._held_relaxed_path or self._held_rejoin_index != rejoin_index:
+        if self._held_rejoin_index != rejoin_index:
+            return ()
+        return self._safe_path_tail(
+            self._held_relaxed_path,
+            current_pose=current_pose,
+            planner=planner,
+        )
+
+    def _safe_last_path(
+        self,
+        *,
+        current_pose: PathPoint,
+        planner: HybridAStarPlanner,
+    ) -> tuple[PathPoint, ...]:
+        last_tail = self._safe_path_tail(
+            self._last_safe_path,
+            current_pose=current_pose,
+            planner=planner,
+        )
+        if not last_tail:
+            return ()
+        candidate = (current_pose, *last_tail[1:])
+        if not _splice_respects_turning_radius(
+            candidate,
+            min_turning_radius_m=self._config.min_turning_radius_m,
+        ):
+            return ()
+        return candidate
+
+    def _safe_path_tail(
+        self,
+        path: tuple[PathPoint, ...],
+        *,
+        current_pose: PathPoint,
+        planner: HybridAStarPlanner,
+    ) -> tuple[PathPoint, ...]:
+        if not path:
             return ()
         nearest_index = min(
-            range(len(self._held_relaxed_path)),
+            range(len(path)),
             key=lambda index: math.hypot(
-                self._held_relaxed_path[index].x - current_pose.x,
-                self._held_relaxed_path[index].y - current_pose.y,
+                path[index].x - current_pose.x,
+                path[index].y - current_pose.y,
             ),
         )
-        nearest = self._held_relaxed_path[nearest_index]
+        nearest = path[nearest_index]
         if math.hypot(nearest.x - current_pose.x, nearest.y - current_pose.y) > 0.50:
             return ()
-        held_tail = self._held_relaxed_path[nearest_index:]
+        held_tail = path[nearest_index:]
         if len(held_tail) < 2 or not planner.path_is_navigable(
             (current_pose, *held_tail)
         ):
             return ()
         return held_tail
+
+    def _remember_safe_path(
+        self,
+        path: Sequence[PathPoint],
+        rejoin_index: int,
+    ) -> None:
+        self._last_safe_path = tuple(path)
+        self._last_safe_rejoin_index = rejoin_index
 
     def _planner(
         self,

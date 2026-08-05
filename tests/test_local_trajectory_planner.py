@@ -455,6 +455,102 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertGreater(result.rejoin_index, 60)
         self.assertTrue(result.path_is_navigable)
 
+    def test_relaxed_exit_accepts_small_recovery_offset_on_clear_route(self) -> None:
+        reference = _relaxed_reference()
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+        planner._pending_relaxed_span = (30, 60)
+
+        with patch(
+            "competition_planning.local_trajectory_planner."
+            "HybridAStarPlanner.plan",
+            side_effect=AssertionError("clear exit must not invoke Hybrid A*"),
+        ):
+            result = planner.plan(
+                reference_path=reference,
+                current_pose=PathPoint(6.50, 0.20, 0.0),
+                dynamic_obstacle_points=(),
+                previous_reference_index=65,
+            )
+
+        self.assertEqual(result.status, "REFERENCE_CLEAR")
+        self.assertIsNone(planner._pending_relaxed_span)
+
+    def test_timeout_reuses_last_collision_free_trajectory(self) -> None:
+        reference = tuple(
+            PathPoint(
+                x=index * 0.40,
+                y=0.0,
+                yaw=0.0,
+                ref_id={5: "random_obstacle_entry", 10: "random_obstacle_exit"}.get(
+                    index
+                ),
+            )
+            for index in range(30)
+        )
+        planner = LocalTrajectoryPlanner(
+            _empty_map(width=140),
+            _relaxed_config(),
+        )
+        first = planner.plan(
+            reference_path=reference,
+            current_pose=reference[15],
+            dynamic_obstacle_points=(),
+            previous_reference_index=15,
+        )
+        planner._pending_relaxed_span = (5, 10)
+
+        with patch(
+            "competition_planning.local_trajectory_planner."
+            "HybridAStarPlanner.plan",
+            side_effect=HybridAStarTimeout("synthetic post-exit timeout"),
+        ):
+            second = planner.plan(
+                reference_path=reference,
+                current_pose=PathPoint(6.0, 0.35, 0.0),
+                dynamic_obstacle_points=(),
+                previous_reference_index=first.reference_start_index,
+            )
+
+        self.assertEqual(second.status, "PLANNING_TIMEOUT_HOLD")
+        self.assertEqual(second.path[0], PathPoint(6.0, 0.35, 0.0))
+        self.assertTrue(second.path_is_navigable)
+
+    def test_timeout_rejects_last_trajectory_blocked_by_new_obstacle(self) -> None:
+        reference = tuple(
+            PathPoint(
+                x=index * 0.40,
+                y=0.0,
+                yaw=0.0,
+                ref_id={5: "random_obstacle_entry", 10: "random_obstacle_exit"}.get(
+                    index
+                ),
+            )
+            for index in range(30)
+        )
+        planner = LocalTrajectoryPlanner(
+            _empty_map(width=140),
+            _relaxed_config(),
+        )
+        first = planner.plan(
+            reference_path=reference,
+            current_pose=reference[15],
+            dynamic_obstacle_points=(),
+            previous_reference_index=15,
+        )
+        planner._pending_relaxed_span = (5, 10)
+
+        with patch(
+            "competition_planning.local_trajectory_planner."
+            "HybridAStarPlanner.plan",
+            side_effect=HybridAStarTimeout("synthetic blocked hold timeout"),
+        ), self.assertRaises(HybridAStarTimeout):
+            planner.plan(
+                reference_path=reference,
+                current_pose=PathPoint(6.0, 0.35, 0.0),
+                dynamic_obstacle_points=((6.40, 0.0),),
+                previous_reference_index=first.reference_start_index,
+            )
+
     def test_relaxed_checkpoint_timeout_keeps_validated_safe_tail(self) -> None:
         reference = _relaxed_reference()
         planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
