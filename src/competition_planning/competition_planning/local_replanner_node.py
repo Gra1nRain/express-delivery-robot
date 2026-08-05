@@ -90,6 +90,12 @@ class LocalReplannerNode(Node):
             planning_timeout_s=float(
                 self.declare_parameter("planning_timeout_s", 2.0).value
             ),
+            relaxed_extension_timeout_s=float(
+                self.declare_parameter(
+                    "relaxed_extension_timeout_s",
+                    0.75,
+                ).value
+            ),
             reference_search_window_points=int(
                 self.declare_parameter(
                     "reference_search_window_points",
@@ -119,6 +125,12 @@ class LocalReplannerNode(Node):
             ),
             relaxed_step_length_m=float(
                 self.declare_parameter("relaxed_step_length_m", 0.30).value
+            ),
+            relaxed_extension_curvature_bins=int(
+                self.declare_parameter(
+                    "relaxed_extension_curvature_bins",
+                    7,
+                ).value
             ),
             relaxed_goal_heading_tolerance_rad=math.radians(
                 float(

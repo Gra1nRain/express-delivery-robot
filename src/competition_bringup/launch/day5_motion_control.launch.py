@@ -281,6 +281,9 @@ def _launch_setup(context, *args, **kwargs):
                     "relaxed_step_length_m": local_runtime[
                         "relaxed_step_length_m"
                     ],
+                    "relaxed_extension_curvature_bins": local_runtime[
+                        "relaxed_extension_curvature_bins"
+                    ],
                     "relaxed_goal_heading_tolerance_deg": local_runtime[
                         "relaxed_goal_heading_tolerance_deg"
                     ],
@@ -299,6 +302,9 @@ def _launch_setup(context, *args, **kwargs):
                     "max_expansions": local_runtime["max_expansions"],
                     "planning_timeout_s": local_runtime[
                         "planning_timeout_s"
+                    ],
+                    "relaxed_extension_timeout_s": local_runtime[
+                        "relaxed_extension_timeout_s"
                     ],
                     "reference_search_window_points": local_runtime[
                         "reference_search_window_points"

@@ -29,6 +29,7 @@ class LocalReplanConfig:
     reference_deviation_weight: float = 2.0
     max_expansions: int = 250_000
     planning_timeout_s: float = 2.0
+    relaxed_extension_timeout_s: float = 0.75
     reference_search_window_points: int = 120
     relaxed_segment_entry_ref: str = ""
     relaxed_segment_exit_ref: str = ""
@@ -36,6 +37,7 @@ class LocalReplanConfig:
     relaxed_reference_deviation_weight: float = 0.5
     relaxed_corridor_half_width_m: float = 0.85
     relaxed_step_length_m: float = 0.30
+    relaxed_extension_curvature_bins: int = 7
     relaxed_goal_heading_tolerance_rad: float = math.radians(20.0)
     trajectory_switch_improvement_ratio: float = 0.15
     obstacle_clearance_distance_m: float = 0.0
@@ -49,6 +51,11 @@ class LocalReplanConfig:
             raise ValueError("reference_deviation_weight must be non-negative")
         if self.planning_timeout_s <= 0.0:
             raise ValueError("planning_timeout_s must be positive")
+        if not 0.0 < self.relaxed_extension_timeout_s <= self.planning_timeout_s:
+            raise ValueError(
+                "relaxed_extension_timeout_s must be positive and no greater "
+                "than planning_timeout_s"
+            )
         if self.reference_search_window_points < 2:
             raise ValueError("reference_search_window_points must be at least 2")
         if bool(self.relaxed_segment_entry_ref) != bool(self.relaxed_segment_exit_ref):
@@ -61,6 +68,13 @@ class LocalReplanConfig:
             raise ValueError("relaxed_corridor_half_width_m must be positive")
         if self.relaxed_step_length_m <= 0.0:
             raise ValueError("relaxed_step_length_m must be positive")
+        if (
+            self.relaxed_extension_curvature_bins < 3
+            or self.relaxed_extension_curvature_bins % 2 == 0
+        ):
+            raise ValueError(
+                "relaxed_extension_curvature_bins must be an odd integer >= 3"
+            )
         if self.relaxed_goal_heading_tolerance_rad <= 0.0:
             raise ValueError("relaxed_goal_heading_tolerance_rad must be positive")
         if not 0.0 <= self.trajectory_switch_improvement_ratio < 1.0:
@@ -96,6 +110,8 @@ class LocalTrajectoryPlanner:
         self._config = config
         self._held_relaxed_path: tuple[PathPoint, ...] = ()
         self._held_rejoin_index: int | None = None
+        self._pending_relaxed_span: tuple[int, int] | None = None
+        self._completed_relaxed_span: tuple[int, int] | None = None
 
     def plan(
         self,
@@ -114,7 +130,7 @@ class LocalTrajectoryPlanner:
             previous_reference_index=previous_reference_index,
             search_window_points=self._config.reference_search_window_points,
         )
-        relaxed_span = _active_relaxed_segment(
+        detected_relaxed_span = _active_relaxed_segment(
             reference_path,
             start_index=start_index,
             entry_ref=self._config.relaxed_segment_entry_ref,
@@ -122,32 +138,34 @@ class LocalTrajectoryPlanner:
             activation_distance_m=self._config.relaxed_activation_distance_m,
             planning_horizon_m=self._config.lookahead_distance_m,
         )
+        if (
+            detected_relaxed_span is not None
+            and detected_relaxed_span == self._completed_relaxed_span
+            and math.hypot(
+                reference_path[detected_relaxed_span[1]].x - current_pose.x,
+                reference_path[detected_relaxed_span[1]].y - current_pose.y,
+            )
+            <= self._config.goal_position_tolerance_m + 1e-9
+        ):
+            detected_relaxed_span = None
+        if detected_relaxed_span is not None:
+            self._pending_relaxed_span = detected_relaxed_span
+            if detected_relaxed_span != self._completed_relaxed_span:
+                self._completed_relaxed_span = None
+        relaxed_span = detected_relaxed_span or self._pending_relaxed_span
         checkpoint_advance_distance_m = max(
+            self._config.relaxed_activation_distance_m,
             self._config.relaxed_step_length_m,
             2.0 * self._config.goal_position_tolerance_m,
         )
         held_rejoin_index = self._held_rejoin_index
-        if held_rejoin_index is not None and (
+        advance_held_checkpoint = held_rejoin_index is not None and (
             math.hypot(
                 reference_path[held_rejoin_index].x - current_pose.x,
                 reference_path[held_rejoin_index].y - current_pose.y,
             )
             <= checkpoint_advance_distance_m + 1e-9
-        ):
-            self._held_relaxed_path = ()
-            self._held_rejoin_index = None
-        if relaxed_span is not None:
-            segment_exit = reference_path[relaxed_span[1]]
-            if (
-                math.hypot(
-                    segment_exit.x - current_pose.x,
-                    segment_exit.y - current_pose.y,
-                )
-                <= checkpoint_advance_distance_m + 1e-9
-            ):
-                self._held_relaxed_path = ()
-                self._held_rejoin_index = None
-                relaxed_span = None
+        )
         rolling_rejoin_index = _lookahead_index(
             reference_path,
             start_index,
@@ -157,12 +175,30 @@ class LocalTrajectoryPlanner:
             rejoin_index = rolling_rejoin_index
         else:
             segment_entry_index, segment_exit_index = relaxed_span
+            segment_exit = reference_path[segment_exit_index]
+            advance_segment_exit = (
+                start_index >= segment_exit_index
+                or math.hypot(
+                    segment_exit.x - current_pose.x,
+                    segment_exit.y - current_pose.y,
+                )
+                <= checkpoint_advance_distance_m + 1e-9
+            )
             held_rejoin_index = self._held_rejoin_index
             if (
                 held_rejoin_index is not None
-                and start_index < held_rejoin_index <= segment_exit_index
+                and start_index < held_rejoin_index
+                and not advance_held_checkpoint
             ):
                 rejoin_index = held_rejoin_index
+            elif (
+                advance_held_checkpoint
+                and held_rejoin_index is not None
+                and held_rejoin_index < segment_exit_index
+            ):
+                rejoin_index = segment_exit_index
+            elif advance_held_checkpoint or advance_segment_exit:
+                rejoin_index = rolling_rejoin_index
             else:
                 distance_to_entry_m = sum(
                     math.hypot(
@@ -200,7 +236,21 @@ class LocalTrajectoryPlanner:
             dynamic_obstacle_points,
         )
         relaxed = relaxed_span is not None
-        planner = self._planner(live_map, local_reference, relaxed=relaxed)
+        extension_timeout_s = (
+            self._config.relaxed_extension_timeout_s
+            if (
+                relaxed
+                and held_rejoin_index is not None
+                and rejoin_index != held_rejoin_index
+            )
+            else None
+        )
+        planner = self._planner(
+            live_map,
+            local_reference,
+            relaxed=relaxed,
+            planning_timeout_s=extension_timeout_s,
+        )
         selected_rejoin_index = _select_navigable_rejoin_index(
             reference_path,
             planner,
@@ -210,12 +260,70 @@ class LocalTrajectoryPlanner:
         if selected_rejoin_index != rejoin_index:
             rejoin_index = selected_rejoin_index
             local_reference = tuple(reference_path[start_index : rejoin_index + 1])
-            planner = self._planner(live_map, local_reference, relaxed=relaxed)
-        if relaxed:
-            held_path = self._safe_held_path(
+            extension_timeout_s = (
+                self._config.relaxed_extension_timeout_s
+                if (
+                    relaxed
+                    and held_rejoin_index is not None
+                    and rejoin_index != held_rejoin_index
+                )
+                else None
+            )
+            planner = self._planner(
+                live_map,
+                local_reference,
+                relaxed=relaxed,
+                planning_timeout_s=extension_timeout_s,
+            )
+        fallback_rejoin_index = self._held_rejoin_index
+        fallback_held_path = (
+            self._safe_held_path(
                 current_pose=current_pose,
                 planner=planner,
-                rejoin_index=rejoin_index,
+                rejoin_index=fallback_rejoin_index,
+            )
+            if relaxed and fallback_rejoin_index is not None
+            else ()
+        )
+        if extension_timeout_s is not None and not fallback_held_path:
+            planner = self._planner(live_map, local_reference, relaxed=relaxed)
+        transitioning_from_relaxed = False
+        if relaxed and _relaxed_exit_is_ready(
+            reference_path,
+            current_pose=current_pose,
+            start_index=start_index,
+            segment_exit_index=relaxed_span[1],
+            planner=planner,
+            position_tolerance_m=self._config.goal_position_tolerance_m,
+            heading_tolerance_rad=self._config.goal_heading_tolerance_rad,
+            clear_distance_m=self._config.relaxed_activation_distance_m,
+        ):
+            transitioning_from_relaxed = True
+            relaxed = False
+            rejoin_index = rolling_rejoin_index
+            local_reference = tuple(reference_path[start_index : rejoin_index + 1])
+            planner = self._planner(live_map, local_reference, relaxed=False)
+            selected_rejoin_index = _select_navigable_rejoin_index(
+                reference_path,
+                planner,
+                start_index=start_index,
+                preferred_rejoin_index=rejoin_index,
+            )
+            if selected_rejoin_index != rejoin_index:
+                rejoin_index = selected_rejoin_index
+                local_reference = tuple(
+                    reference_path[start_index : rejoin_index + 1]
+                )
+                planner = self._planner(live_map, local_reference, relaxed=False)
+        if relaxed:
+            held_path = (
+                fallback_held_path
+                if fallback_rejoin_index == rejoin_index
+                else self._safe_held_path(
+                    current_pose=current_pose,
+                    planner=planner,
+                    rejoin_index=rejoin_index,
+                )
             )
             if held_path:
                 if relaxed_span is not None:
@@ -267,6 +375,9 @@ class LocalTrajectoryPlanner:
                     planning_grid_cell_count=live_map.width * live_map.height,
                 )
         if not relaxed and planner.path_is_navigable(local_reference):
+            if transitioning_from_relaxed:
+                self._completed_relaxed_span = relaxed_span
+                self._pending_relaxed_span = None
             self._held_relaxed_path = ()
             self._held_rejoin_index = None
             return LocalPlan(
@@ -293,12 +404,8 @@ class LocalTrajectoryPlanner:
             )
         except GridPlanningError:
             held_path = (
-                self._safe_held_tail(
-                    current_pose=current_pose,
-                    planner=planner,
-                    rejoin_index=rejoin_index,
-                )
-                if relaxed
+                fallback_held_path
+                if relaxed or transitioning_from_relaxed
                 else ()
             )
             if not held_path:
@@ -307,7 +414,11 @@ class LocalTrajectoryPlanner:
             return LocalPlan(
                 path=held_path,
                 reference_start_index=start_index,
-                rejoin_index=rejoin_index,
+                rejoin_index=(
+                    fallback_rejoin_index
+                    if fallback_rejoin_index is not None
+                    else rejoin_index
+                ),
                 dynamic_obstacle_count=obstacle_count,
                 status="RELAXED_HOLD",
                 path_is_navigable=True,
@@ -315,19 +426,29 @@ class LocalTrajectoryPlanner:
             )
         status = "REPLANNED"
         if relaxed:
-            held_path = self._safe_held_path(
-                current_pose=current_pose,
-                planner=planner,
-                rejoin_index=rejoin_index,
+            held_path = (
+                fallback_held_path
+                if fallback_rejoin_index == rejoin_index
+                else self._safe_held_path(
+                    current_pose=current_pose,
+                    planner=planner,
+                    rejoin_index=rejoin_index,
+                )
             )
-            if held_path and not _path_is_materially_better(
-                path,
-                held_path,
-                reference_path=local_reference,
-                reference_deviation_weight=(
-                    self._config.relaxed_reference_deviation_weight
-                ),
-                improvement_ratio=self._config.trajectory_switch_improvement_ratio,
+            if (
+                held_path
+                and fallback_rejoin_index == rejoin_index
+                and not _path_is_materially_better(
+                    path,
+                    held_path,
+                    reference_path=local_reference,
+                    reference_deviation_weight=(
+                        self._config.relaxed_reference_deviation_weight
+                    ),
+                    improvement_ratio=(
+                        self._config.trajectory_switch_improvement_ratio
+                    ),
+                )
             ):
                 path = held_path
                 status = "RELAXED_HOLD"
@@ -336,6 +457,9 @@ class LocalTrajectoryPlanner:
             self._held_relaxed_path = tuple(path)
             self._held_rejoin_index = rejoin_index
         else:
+            if transitioning_from_relaxed:
+                self._completed_relaxed_span = relaxed_span
+                self._pending_relaxed_span = None
             self._held_relaxed_path = ()
             self._held_rejoin_index = None
         return LocalPlan(
@@ -481,6 +605,7 @@ class LocalTrajectoryPlanner:
         reference_path: Sequence[PathPoint],
         *,
         relaxed: bool = False,
+        planning_timeout_s: float | None = None,
     ) -> HybridAStarPlanner:
         config = self._config
         return HybridAStarPlanner(
@@ -492,7 +617,11 @@ class LocalTrajectoryPlanner:
             step_length_m=(
                 config.relaxed_step_length_m if relaxed else config.step_length_m
             ),
-            curvature_bins=config.curvature_bins,
+            curvature_bins=(
+                config.relaxed_extension_curvature_bins
+                if relaxed and planning_timeout_s is not None
+                else config.curvature_bins
+            ),
             heading_bins=config.heading_bins,
             goal_position_tolerance_m=config.goal_position_tolerance_m,
             goal_heading_tolerance_rad=(
@@ -501,7 +630,11 @@ class LocalTrajectoryPlanner:
                 else config.goal_heading_tolerance_rad
             ),
             max_expansions=config.max_expansions,
-            planning_timeout_s=config.planning_timeout_s,
+            planning_timeout_s=(
+                config.planning_timeout_s
+                if planning_timeout_s is None
+                else planning_timeout_s
+            ),
             reference_path=reference_path,
             reference_deviation_weight=(
                 config.relaxed_reference_deviation_weight
@@ -551,6 +684,46 @@ def _lookahead_index(
         if distance + 1e-9 >= lookahead_distance_m:
             return index
     return len(reference_path) - 1
+
+
+def _relaxed_exit_is_ready(
+    reference_path: Sequence[PathPoint],
+    *,
+    current_pose: PathPoint,
+    start_index: int,
+    segment_exit_index: int,
+    planner: HybridAStarPlanner,
+    position_tolerance_m: float,
+    heading_tolerance_rad: float,
+    clear_distance_m: float,
+) -> bool:
+    """Leave relaxed routing only after pose recovery and a clear route prefix."""
+
+    segment_exit = reference_path[segment_exit_index]
+    if start_index < segment_exit_index and math.hypot(
+        segment_exit.x - current_pose.x,
+        segment_exit.y - current_pose.y,
+    ) > position_tolerance_m + 1e-9:
+        return False
+    nearest_reference = reference_path[start_index]
+    if math.hypot(
+        nearest_reference.x - current_pose.x,
+        nearest_reference.y - current_pose.y,
+    ) > position_tolerance_m + 1e-9:
+        return False
+    if (
+        abs(_wrap_angle(nearest_reference.yaw - current_pose.yaw))
+        > heading_tolerance_rad + 1e-9
+    ):
+        return False
+    clear_end_index = _lookahead_index(
+        reference_path,
+        start_index,
+        max(clear_distance_m, position_tolerance_m),
+    )
+    return planner.path_is_navigable(
+        reference_path[start_index : clear_end_index + 1]
+    )
 
 
 def _active_relaxed_segment(

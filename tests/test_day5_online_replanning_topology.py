@@ -92,6 +92,7 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertEqual(runtime["relaxed_reference_deviation_weight"], 0.5)
         self.assertEqual(runtime["relaxed_corridor_half_width_m"], 0.85)
         self.assertEqual(runtime["relaxed_step_length_m"], 0.30)
+        self.assertEqual(runtime["relaxed_extension_curvature_bins"], 7)
         self.assertEqual(runtime["relaxed_goal_heading_tolerance_deg"], 20.0)
         self.assertEqual(runtime["trajectory_switch_improvement_ratio"], 0.15)
         self.assertEqual(runtime["obstacle_clearance_distance_m"], 0.20)
@@ -143,6 +144,11 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             vehicle_corner_radius_m + 0.03,
         )
         self.assertEqual(runtime["planning_timeout_s"], 2.0)
+        self.assertEqual(runtime["relaxed_extension_timeout_s"], 0.75)
+        self.assertLess(
+            runtime["relaxed_extension_timeout_s"],
+            replanning["local_trajectory_timeout_s"],
+        )
         self.assertLessEqual(
             runtime["planning_timeout_s"],
             replanning["local_trajectory_timeout_s"],
@@ -166,9 +172,17 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             '"planning_timeout_s": local_runtime[',
             launch_text,
         )
+        self.assertIn(
+            '"relaxed_extension_timeout_s": local_runtime[',
+            launch_text,
+        )
         self.assertIn('"relaxed_segment_entry_ref": local_runtime[', launch_text)
         self.assertIn(
             '"relaxed_goal_heading_tolerance_deg": local_runtime[',
+            launch_text,
+        )
+        self.assertIn(
+            '"relaxed_extension_curvature_bins": local_runtime[',
             launch_text,
         )
         self.assertIn(
@@ -203,6 +217,8 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertIn("HYBRID_ASTAR_NO_FEASIBLE_PATH", local_node)
         self.assertIn("HYBRID_ASTAR_TIMEOUT", local_node)
         self.assertIn("planning_timeout_s", local_node)
+        self.assertIn("relaxed_extension_timeout_s", local_node)
+        self.assertIn("relaxed_extension_curvature_bins", local_node)
         self.assertIn("HybridAStarPlanner", local_algorithm)
         self.assertFalse(
             (

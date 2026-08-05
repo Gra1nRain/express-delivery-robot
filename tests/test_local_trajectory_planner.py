@@ -18,6 +18,7 @@ from competition_control.mppi_controller import (
     MPPIController,
     MPPIParams,
 )
+from competition_planning.hybrid_astar_planner import HybridAStarTimeout
 from competition_planning.local_trajectory_planner import (
     LocalReplanConfig,
     LocalTrajectoryPlanner,
@@ -422,6 +423,127 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertEqual(result.status, "REFERENCE_CLEAR")
         self.assertGreater(result.rejoin_index, 60)
         self.assertGreater(len(result.path), 2)
+
+    def test_relaxed_exit_waits_for_pose_alignment_and_clear_reference(self) -> None:
+        reference = _relaxed_reference()
+        obstacles = tuple(
+            (6.80 + x_index * 0.05, y_index * 0.05)
+            for x_index in range(-6, 7)
+            for y_index in range(-6, 7)
+            if math.hypot(x_index * 0.05, y_index * 0.05) <= 0.30 + 1e-9
+        )
+        planner = LocalTrajectoryPlanner(
+            _empty_map(),
+            _relaxed_config(planning_timeout_s=5.0),
+        )
+
+        approach = planner.plan(
+            reference_path=reference,
+            current_pose=reference[50],
+            dynamic_obstacle_points=obstacles,
+            previous_reference_index=50,
+        )
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=approach.path[9],
+            dynamic_obstacle_points=obstacles,
+            previous_reference_index=58,
+        )
+
+        self.assertGreater(approach.rejoin_index, 60)
+        self.assertTrue(result.status.startswith("RELAXED_"))
+        self.assertGreater(result.rejoin_index, 60)
+        self.assertTrue(result.path_is_navigable)
+
+    def test_relaxed_checkpoint_timeout_keeps_validated_safe_tail(self) -> None:
+        reference = _relaxed_reference()
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+        first = planner.plan(
+            reference_path=reference,
+            current_pose=reference[20],
+            dynamic_obstacle_points=(),
+            previous_reference_index=20,
+        )
+        obstacle_after_exit = tuple(
+            (6.80 + x_index * 0.05, y_index * 0.05)
+            for x_index in range(-6, 7)
+            for y_index in range(-6, 7)
+            if math.hypot(x_index * 0.05, y_index * 0.05) <= 0.30 + 1e-9
+        )
+        advanced_pose = first.path[-2]
+
+        with patch(
+            "competition_planning.local_trajectory_planner."
+            "HybridAStarPlanner.plan",
+            autospec=True,
+            side_effect=HybridAStarTimeout("synthetic extension timeout"),
+        ) as plan_mock:
+            second = planner.plan(
+                reference_path=reference,
+                current_pose=advanced_pose,
+                dynamic_obstacle_points=obstacle_after_exit,
+                previous_reference_index=first.reference_start_index,
+            )
+
+        self.assertEqual(second.status, "RELAXED_HOLD")
+        self.assertEqual(second.rejoin_index, first.rejoin_index)
+        self.assertEqual(second.path[0], advanced_pose)
+        self.assertTrue(second.path_is_navigable)
+        self.assertEqual(
+            plan_mock.call_args.args[0]._planning_timeout_s,
+            _relaxed_config().relaxed_extension_timeout_s,
+        )
+
+    def test_relaxed_extension_uses_smaller_curvature_lattice(self) -> None:
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+
+        strict = planner._planner(_empty_map(), _relaxed_reference(), relaxed=False)
+        relaxed = planner._planner(_empty_map(), _relaxed_reference(), relaxed=True)
+        extension = planner._planner(
+            _empty_map(),
+            _relaxed_reference(),
+            relaxed=True,
+            planning_timeout_s=_relaxed_config().relaxed_extension_timeout_s,
+        )
+
+        self.assertEqual(len(strict._curvatures), 9)
+        self.assertEqual(len(relaxed._curvatures), 9)
+        self.assertEqual(len(extension._curvatures), 7)
+
+    def test_relaxed_exit_transition_commits_only_after_strict_plan_succeeds(
+        self,
+    ) -> None:
+        reference = _relaxed_reference()
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+        first = planner.plan(
+            reference_path=reference,
+            current_pose=reference[20],
+            dynamic_obstacle_points=(),
+            previous_reference_index=20,
+        )
+        distant_obstacle = tuple(
+            (7.50 + x_index * 0.05, y_index * 0.05)
+            for x_index in range(-4, 5)
+            for y_index in range(-4, 5)
+            if math.hypot(x_index * 0.05, y_index * 0.05) <= 0.20 + 1e-9
+        )
+        advanced_pose = first.path[-2]
+
+        with patch(
+            "competition_planning.local_trajectory_planner."
+            "HybridAStarPlanner.plan",
+            side_effect=HybridAStarTimeout("synthetic strict transition timeout"),
+        ):
+            result = planner.plan(
+                reference_path=reference,
+                current_pose=advanced_pose,
+                dynamic_obstacle_points=distant_obstacle,
+                previous_reference_index=58,
+            )
+
+        self.assertEqual(result.status, "RELAXED_HOLD")
+        self.assertEqual(result.rejoin_index, first.rejoin_index)
+        self.assertTrue(result.path_is_navigable)
 
     def test_relaxed_approach_checkpoint_extends_before_goal_reached(self) -> None:
         reference = tuple(
