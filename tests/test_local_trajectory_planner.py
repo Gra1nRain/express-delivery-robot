@@ -476,23 +476,43 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
             previous_reference_index=25,
         )
         self.assertEqual(first.rejoin_index, 60)
-        before_trigger = planner.plan(
+        before_trigger_planner = LocalTrajectoryPlanner(
+            _empty_map(),
+            _relaxed_config(),
+        )
+        before_trigger_planner.plan(
+            reference_path=reference,
+            current_pose=reference[25],
+            dynamic_obstacle_points=obstacles,
+            previous_reference_index=25,
+        )
+        before_trigger = before_trigger_planner.plan(
             reference_path=reference,
             current_pose=reference[35],
             dynamic_obstacle_points=(),
             previous_reference_index=35,
         )
-        self.assertNotEqual(before_trigger.status, "EARLY_REJOIN_REPLANNED")
+        self.assertNotEqual(before_trigger.status, "EARLY_REJOIN_SPLICED")
         self.assertEqual(before_trigger.rejoin_index, 60)
-        rejoin = planner.plan(
-            reference_path=reference,
-            current_pose=reference[45],
-            dynamic_obstacle_points=(),
-            previous_reference_index=45,
-        )
+        advanced_pose = first.path[-15]
+        with patch(
+            "competition_planning.local_trajectory_planner."
+            "HybridAStarPlanner.plan",
+            side_effect=AssertionError(
+                "safe early rejoin must not run a blocking Hybrid A* search"
+            ),
+        ):
+            rejoin = planner.plan(
+                reference_path=reference,
+                current_pose=advanced_pose,
+                dynamic_obstacle_points=(),
+                previous_reference_index=45,
+            )
 
-        self.assertEqual(rejoin.status, "EARLY_REJOIN_REPLANNED")
-        self.assertLess(rejoin.rejoin_index, 60)
+        self.assertEqual(rejoin.status, "EARLY_REJOIN_SPLICED")
+        self.assertTrue(
+            any(reference[index] in rejoin.path for index in range(46, 60))
+        )
         resumed = planner.plan(
             reference_path=reference,
             current_pose=rejoin.path[-1],

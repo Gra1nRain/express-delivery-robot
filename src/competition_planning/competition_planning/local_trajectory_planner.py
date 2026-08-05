@@ -96,8 +96,6 @@ class LocalTrajectoryPlanner:
         self._config = config
         self._held_relaxed_path: tuple[PathPoint, ...] = ()
         self._held_rejoin_index: int | None = None
-        self._early_rejoin_exit_index: int | None = None
-        self._early_rejoin_path_active = False
 
     def plan(
         self,
@@ -138,18 +136,6 @@ class LocalTrajectoryPlanner:
         ):
             self._held_relaxed_path = ()
             self._held_rejoin_index = None
-            self._early_rejoin_path_active = False
-        early_rejoin_exit_index = self._early_rejoin_exit_index
-        if early_rejoin_exit_index is not None:
-            if start_index >= early_rejoin_exit_index:
-                self._early_rejoin_exit_index = None
-                self._early_rejoin_path_active = False
-            elif (
-                relaxed_span is not None
-                and relaxed_span[1] == early_rejoin_exit_index
-                and not self._early_rejoin_path_active
-            ):
-                relaxed_span = None
         if relaxed_span is not None:
             segment_exit = reference_path[relaxed_span[1]]
             if (
@@ -161,8 +147,6 @@ class LocalTrajectoryPlanner:
             ):
                 self._held_relaxed_path = ()
                 self._held_rejoin_index = None
-                self._early_rejoin_exit_index = None
-                self._early_rejoin_path_active = False
                 relaxed_span = None
         rolling_rejoin_index = _lookahead_index(
             reference_path,
@@ -227,66 +211,6 @@ class LocalTrajectoryPlanner:
             rejoin_index = selected_rejoin_index
             local_reference = tuple(reference_path[start_index : rejoin_index + 1])
             planner = self._planner(live_map, local_reference, relaxed=relaxed)
-        if (
-            relaxed
-            and relaxed_span is not None
-            and self._held_rejoin_index is not None
-            and self._early_rejoin_exit_index is None
-        ):
-            segment_entry_index, segment_exit_index = relaxed_span
-            distance_from_entry_m = sum(
-                math.hypot(
-                    reference_path[index].x - reference_path[index - 1].x,
-                    reference_path[index].y - reference_path[index - 1].y,
-                )
-                for index in range(segment_entry_index + 1, start_index + 1)
-            )
-            reference_is_clear = planner.path_is_navigable(local_reference)
-            if (
-                distance_from_entry_m
-                >= self._config.relaxed_activation_distance_m - 1e-9
-                and reference_is_clear
-            ):
-                early_rejoin_distance_m = max(
-                    self._config.relaxed_activation_distance_m,
-                    2.0 * self._config.min_turning_radius_m,
-                )
-                early_rejoin_index = min(
-                    segment_exit_index,
-                    _lookahead_index(
-                        reference_path,
-                        start_index,
-                        early_rejoin_distance_m,
-                    ),
-                )
-                early_reference = tuple(
-                    reference_path[start_index : early_rejoin_index + 1]
-                )
-                early_planner = self._planner(
-                    live_map,
-                    early_reference,
-                    relaxed=False,
-                )
-                try:
-                    early_path = early_planner.plan(
-                        (current_pose, early_reference[-1])
-                    )
-                except GridPlanningError:
-                    early_path = ()
-                if early_path and early_planner.path_is_navigable(early_path):
-                    self._held_relaxed_path = tuple(early_path)
-                    self._held_rejoin_index = early_rejoin_index
-                    self._early_rejoin_exit_index = segment_exit_index
-                    self._early_rejoin_path_active = True
-                    return LocalPlan(
-                        path=tuple(early_path),
-                        reference_start_index=start_index,
-                        rejoin_index=early_rejoin_index,
-                        dynamic_obstacle_count=obstacle_count,
-                        status="EARLY_REJOIN_REPLANNED",
-                        path_is_navigable=True,
-                        planning_grid_cell_count=live_map.width * live_map.height,
-                    )
         if relaxed:
             held_path = self._safe_held_path(
                 current_pose=current_pose,
@@ -294,6 +218,44 @@ class LocalTrajectoryPlanner:
                 rejoin_index=rejoin_index,
             )
             if held_path:
+                if relaxed_span is not None:
+                    segment_entry_index, segment_exit_index = relaxed_span
+                    distance_from_entry_m = sum(
+                        math.hypot(
+                            reference_path[index].x
+                            - reference_path[index - 1].x,
+                            reference_path[index].y
+                            - reference_path[index - 1].y,
+                        )
+                        for index in range(
+                            segment_entry_index + 1,
+                            start_index + 1,
+                        )
+                    )
+                    if (
+                        distance_from_entry_m
+                        >= self._config.relaxed_activation_distance_m - 1e-9
+                    ):
+                        spliced_path = self._splice_held_path_to_reference(
+                            held_path=held_path,
+                            planner=planner,
+                            reference_path=reference_path,
+                            start_index=start_index,
+                            segment_exit_index=segment_exit_index,
+                        )
+                        if spliced_path:
+                            self._held_relaxed_path = spliced_path
+                            return LocalPlan(
+                                path=spliced_path,
+                                reference_start_index=start_index,
+                                rejoin_index=rejoin_index,
+                                dynamic_obstacle_count=obstacle_count,
+                                status="EARLY_REJOIN_SPLICED",
+                                path_is_navigable=True,
+                                planning_grid_cell_count=(
+                                    live_map.width * live_map.height
+                                ),
+                            )
                 self._held_relaxed_path = held_path
                 return LocalPlan(
                     path=held_path,
@@ -385,6 +347,83 @@ class LocalTrajectoryPlanner:
             path_is_navigable=planner.path_is_navigable(path),
             planning_grid_cell_count=live_map.width * live_map.height,
         )
+
+    def _splice_held_path_to_reference(
+        self,
+        *,
+        held_path: tuple[PathPoint, ...],
+        planner: HybridAStarPlanner,
+        reference_path: Sequence[PathPoint],
+        start_index: int,
+        segment_exit_index: int,
+    ) -> tuple[PathPoint, ...]:
+        """Opportunistically join a safe held path to the clear reference."""
+
+        reference_start_index = start_index + 1
+        if len(held_path) < 2 or reference_start_index >= segment_exit_index:
+            return ()
+        maximum_join_distance_m = max(
+            self._config.relaxed_step_length_m,
+            2.0 * self._config.goal_position_tolerance_m,
+        )
+        reference_indexes = range(reference_start_index, segment_exit_index)
+        for held_index in range(1, len(held_path)):
+            held_point = held_path[held_index]
+            for reference_index in reference_indexes:
+                reference_point = reference_path[reference_index]
+                join_distance_m = math.hypot(
+                    reference_point.x - held_point.x,
+                    reference_point.y - held_point.y,
+                )
+                if join_distance_m > maximum_join_distance_m + 1e-9:
+                    continue
+                if (
+                    abs(_wrap_angle(reference_point.yaw - held_point.yaw))
+                    > self._config.relaxed_goal_heading_tolerance_rad + 1e-9
+                ):
+                    continue
+                next_reference = reference_path[reference_index + 1]
+                if not _splice_respects_turning_radius(
+                    (
+                        held_path[held_index - 1],
+                        held_point,
+                        reference_point,
+                    ),
+                    min_turning_radius_m=self._config.min_turning_radius_m,
+                ):
+                    continue
+                if not _splice_respects_turning_radius(
+                    (held_point, reference_point, next_reference),
+                    min_turning_radius_m=self._config.min_turning_radius_m,
+                ):
+                    continue
+                bridge_sample_count = max(
+                    1,
+                    math.ceil(join_distance_m / self._config.sample_spacing_m),
+                )
+                bridge = tuple(
+                    PathPoint(
+                        x=held_point.x
+                        + (reference_point.x - held_point.x)
+                        * sample_index
+                        / bridge_sample_count,
+                        y=held_point.y
+                        + (reference_point.y - held_point.y)
+                        * sample_index
+                        / bridge_sample_count,
+                        yaw=held_point.yaw,
+                    )
+                    for sample_index in range(1, bridge_sample_count + 1)
+                )
+                candidate = (
+                    *held_path[: held_index + 1],
+                    *reference_path[reference_index : segment_exit_index + 1],
+                )
+                if planner.path_is_navigable(bridge) and planner.path_is_navigable(
+                    candidate
+                ):
+                    return tuple(candidate)
+        return ()
 
     def _safe_held_path(
         self,
