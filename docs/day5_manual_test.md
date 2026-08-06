@@ -246,6 +246,7 @@ conda deactivate 2>/dev/null || true
 cd /home/agilex/competition_ws
 source scripts/car_source_env.sh
 
+set +e
 ros2 run competition_control ranger_twist_adapter_node --ros-args \
   -r __node:=ranger_twist_adapter \
   -p input_topic:=/cmd_vel_safe \
@@ -253,9 +254,13 @@ ros2 run competition_control ranger_twist_adapter_node --ros-args \
   -p wheelbase_m:=0.494 \
   -p track_width_m:=0.364 \
   -p driver_min_turn_radius_m:=0.47644
+
+adapter_rc=$?
+echo "ranger_twist_adapter 已退出，返回码：$adapter_rc"
+echo "终端7保持打开；请保留上方错误信息，不要连续重试。"
 ```
 
-注意：每一行末尾的反斜杠 `\` 都必须保留。终端7必须一直保持运行。
+注意：每一行末尾的反斜杠 `\` 都必须保留。发车期间终端7必须一直保持运行；节点异常退出或按 `Ctrl+C` 后，终端窗口仍会保留。
 
 发车后，在终端3检查：
 

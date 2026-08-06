@@ -62,6 +62,24 @@ class Day5RunPolicyTest(unittest.TestCase):
 
 
 class Day5RunScriptTest(unittest.TestCase):
+    def test_environment_loader_does_not_enable_interactive_shell_exit(self) -> None:
+        text = (REPO_ROOT / "scripts" / "car_source_env.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("set -eo pipefail", text)
+        self.assertIn("_car_source_env_restore_nounset", text)
+
+    def test_manual_adapter_command_preserves_terminal_on_exit(self) -> None:
+        text = (REPO_ROOT / "docs" / "day5_manual_test.md").read_text(
+            encoding="utf-8"
+        )
+        terminal_7 = text.split("## 终端7：", 1)[1].split("## 停车方法", 1)[0]
+
+        self.assertIn("set +e", terminal_7)
+        self.assertIn("adapter_rc=$?", terminal_7)
+        self.assertIn("终端7保持打开", terminal_7)
+
     def test_sequential_bringup_gates_livox_before_fast_lio_and_cloud(self) -> None:
         text = (
             REPO_ROOT / "scripts" / "day5_sequential_bringup.sh"
