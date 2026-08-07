@@ -4,6 +4,39 @@
 
 如果任一步的检查结果不符合文档，立即停止，不要继续运行发车命令。
 
+## 当前避障拓扑与启动方式
+
+当前唯一支持的避障链是：
+
+```text
+/cloud_registered_body
+  -> /day5_pointcloud_to_laserscan
+  -> /proximity_stop（二维Scan与紫色膨胀代价图）
+  -> /local_replanner（局部Hybrid A*）
+  -> /mppi_control
+  -> /competition_safety
+  -> /cmd_vel_safe
+```
+
+旧 `competition_avoidance` demo 已停用，不要运行：
+
+```bash
+ros2 launch competition_avoidance vehicle_avoidance_bringup.launch.py
+ros2 run competition_avoidance avoidance_manager_node
+ros2 run competition_avoidance adaptive_local_replanner_node
+```
+
+这些旧节点会与当前 `/proximity_stop`、`/local_replanner` 重复发布避障话题。
+
+日常测试推荐使用 `/home/agilex/agilex_ws/restart.sh`。它等价于按顺序执行本文的终端2、终端4、终端5和终端6，并且会在启动主控制栈前自动检查Livox和FAST-LIO点云新鲜度。
+
+两种启动方式只能选择一种：
+
+- **日常推荐**：终端1配置CAN，然后运行 `restart.sh`。
+- **故障定位备用**：不运行 `restart.sh`，改为手动执行终端2至终端6。
+
+禁止先运行 `restart.sh`，再重复执行终端2、终端4、终端5或终端6，否则会产生重复节点和重复发布者。
+
 ## 0. 测试前准备
 
 1. 小车上电，确认物理急停随时可按。
@@ -31,6 +64,39 @@ can state ERROR-ACTIVE
 ```
 
 如果显示 `state DOWN`、`can state STOPPED` 或没有 `can3`，不要继续。
+
+## 日常推荐：一键启动无运动主栈
+
+终端1检查通过后，在小车Ubuntu桌面新开终端，执行：
+
+```bash
+conda deactivate 2>/dev/null || true
+cd /home/agilex/agilex_ws
+
+bash restart.sh
+```
+
+该脚本会启动Livox、FAST-LIO、底盘驱动、地图、二维Scan、紫色膨胀代价图、局部Hybrid A*、MPPI、Safety和RViz，但不会启动 `ranger_twist_adapter`，因此不会向 `/cmd_vel` 发布运动命令。
+
+必须看到：
+
+```text
+DAY5_SENSORS_READY
+No chassis relay was enabled by this script.
+```
+
+然后确认RViz已经出现，使用 `2D Pose Estimate` 发布并校准初始位姿。初始位姿可以反复发布，以最后一次为准。
+
+使用一键启动后：
+
+1. **不要再执行下面的终端2、终端4、终端5和终端6。**
+2. 直接执行“终端8：启动被动行程诊断”。
+3. 再执行“终端3：执行发车前总检查”。
+4. 所有检查通过后，最后才允许执行终端7。
+
+下面的逐终端启动流程只用于 `restart.sh` 失败后的故障定位。失败时先保留 `restart.sh` 输出和 `/home/agilex/competition_ws/log/` 日志，不要紧接着盲目运行另一套启动流程。
+
+## 备用：逐终端手动启动
 
 ## 终端2：启动Livox雷达
 
