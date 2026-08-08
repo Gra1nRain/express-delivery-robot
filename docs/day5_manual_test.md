@@ -18,6 +18,14 @@
   -> /cmd_vel_safe
 ```
 
+### 当前冻结运行配置
+
+- 现场当前使用的完整手动流程是本文终端2至终端7；它与 `restart.sh` 使用同一组运行配置，但进程由操作员分终端管理。两种方式不能混用。
+- 终端5没有覆盖 `planning_params_file`、`local_planner_runtime_params_file`、`control_params_file` 或 `safety_params_file`，因此实际加载的分别是 `config/planning/planning_params.yaml`、`config/planning/local_hybrid_astar_runtime_params_day5.yaml`、`config/control/control_params.yaml` 和 `config/safety/safety_params.yaml`。
+- 当前局部规划算法由 `local_hybrid_astar_runtime_params_day5.yaml` 的 `plugin: reference_aware_hybrid_astar` 决定；launch 会强制校验该值。旧 DWA 节点不再启动。
+- `planning_params.yaml` 中 `replanning.plugin: dwa` 是冻结轨迹 source manifest 使用的遗留 provenance 字段，不参与当前运行时算法选择。不要只为改名编辑该文件，否则 `debug_control_validation_trajectory.yaml` 的 SHA-256 校验会失败。
+- 当前按实验室实车验收决定禁用距离 hard-stop，即 `safety_params.yaml` 保持 `stop_distance_m: 0.0`。二维 Scan、紫色膨胀代价图、避障输入新鲜度、局部规划失败/超时保持和 Safety 状态门仍然启用。
+
 旧 `competition_avoidance` demo 已停用，不要运行：
 
 ```bash
@@ -28,12 +36,12 @@ ros2 run competition_avoidance adaptive_local_replanner_node
 
 这些旧节点会与当前 `/proximity_stop`、`/local_replanner` 重复发布避障话题。
 
-日常测试推荐使用 `/home/agilex/agilex_ws/restart.sh`。它等价于按顺序执行本文的终端2、终端4、终端5和终端6，并且会在启动主控制栈前自动检查Livox和FAST-LIO点云新鲜度。
+一键模式可使用 `/home/agilex/agilex_ws/restart.sh`。它等价于按顺序执行本文的终端2、终端4、终端5和终端6，并且会在启动主控制栈前自动检查Livox和FAST-LIO点云新鲜度。现场当前也允许完整执行手动流程，以便逐终端观察输出。
 
 两种启动方式只能选择一种：
 
-- **日常推荐**：终端1配置CAN，然后运行 `restart.sh`。
-- **故障定位备用**：不运行 `restart.sh`，改为手动执行终端2至终端6。
+- **一键模式**：终端1配置CAN，然后运行 `restart.sh`。
+- **完整手动模式（现场当前使用）**：不运行 `restart.sh`，依次执行终端2至终端6。
 
 禁止先运行 `restart.sh`，再重复执行终端2、终端4、终端5或终端6，否则会产生重复节点和重复发布者。
 

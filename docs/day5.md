@@ -9,7 +9,7 @@
 - MPPI 使用 `yaw_rate=v*curvature` 的四轮四转曲率模型；输出半径小于 `0.81m` 会被 controller 和 safety 两层限制。
 - 状态连续性守卫会拒绝 TF/pose 超时、时间倒退、位置跳变和航向跳变；无效观测不会替换上一有效状态。
 - safety 节点从真实 `/system_state` 判断急停、错误码和 CAN 控制权，从 `/motion_state` 检测是否意外进入自旋/斜移模式。
-- 2026-07-22 碰撞复盘后，Day5 safety 默认要求 `/avoidance/stop_request` 有新鲜输入；`proximity_stop_node` 从 `/cloud_registered_body` 做近场基础停车门控。当前门控覆盖前方 `0.85m`、半角 `0.4363rad`，并额外覆盖 `0.45m` 横向半宽的车体前方矩形安全走廊，至少 3 个点触发停车。没有新鲜点云/避障输入时，safety 必须 `SAFE_HOLD/avoidance_stale`。
+- Day5 safety 默认要求 `/avoidance/stop_request` 有新鲜输入；`proximity_stop_node` 只使用最新 body-frame Scan 生成 `0.05m` 栅格和 `0.44m` 紫色膨胀代价图。按 2026-08-07 实验室实车验收决定，距离 hard-stop 已禁用（`stop_distance_m: 0.0`）；没有新鲜避障输入时仍必须 `SAFE_HOLD/avoidance_stale`，局部规划失败、轨迹过期和车辆状态无效也仍会阻止继续运动。
 - 2026-07-23 遥控直线观察显示 RViz 中 `body` 车体坐标未见明显横向偏差；因此 Day5 控制验收默认继续使用 `config/control/control_params.yaml` 的 `base_frame: body`。`control_params_day5_chassis_center_yneg020.yaml` 只保留为排查右偏的实验 profile，不能作为默认验收配置。
 - 2026-07-23 现场观察到车体贴近桌子时，静态地图显示的桌子距离仍很远；同一时刻车端 `/avoidance/proximity_status` 报 `stop=true`、`reason=obstacle_in_stop_box`、`cloud_age_s≈0.08`。当前结论是实时近场感知可信度高于静态地图距离；Day5 控制验收只允许在现场确认空旷的短段进行，不能用静态地图上的距离作为安全通过依据。
 - Hybrid A* 使用 9 个曲率档位并以零曲率穿越语义锚点；轨迹生成阶段硬拒绝超过 `0.80 1/m/s` 的曲率变化率。
@@ -17,8 +17,8 @@
 - 分段验证轨迹必须在规划阶段用 `--end-ref` 重新执行 jerk-limited 参数化；控制器不再支持运行时截断轨迹。
 - launch 默认 `start_base:=false` 且 `command_output_topic:=/cmd_vel_safe`，不具备默认实车运动效果。
 - 今天用于“丝滑控制/整链稳定性”验证的是 `debug_control_validation_route.yaml`，它使用 `pickup_pass/drop_pass` 安全通过点，不使用 `pickup_dock/drop_dock` 精停点。
-- 2026-07-22 已补入在线局部重规划的离线实现：`proximity_stop_node` 把最新 body 点云转换为 `/avoidance/local_costmap`，独立 `local_replanner_node` 合并静态地图和实时障碍，以当前位置为起点、总体轨迹前方 `5.0m` 为重合目标，使用带总体轨迹偏离代价的 Hybrid A* 生成局部几何路径；该路径继续复用 Day4 参数化后交给 MPPI。近场 hard-stop 只保留为规划失败、输入过期或来不及绕行时的最后保护。
-- 局部代价图、实时 Scan、原始 body 点云、总体轨迹、在线局部轨迹和实车轨迹已加入 `day5_motion_control.rviz`。在线避障仍是 P0 OPEN：目前只有合成障碍离线测试，没有完成车端构建、无运动 ROS 拓扑、真实货架绕行和连续整线实车验证。
+- 在线局部重规划已经部署：`proximity_stop_node` 把最新 body-frame Scan 转换为 `/avoidance/local_costmap`，`local_replanner_node` 使用 `reference_aware_hybrid_astar` 在 `3.0m` 滚动前视内生成局部几何路径，并在随机障碍赛段把总体轨迹偏离权重放宽到 `0.5`；MPPI 以 20Hz 跟踪该路径，并在局部规划瞬时超时时继续使用经碰撞检查的上一条安全轨迹。
+- 局部代价图、实时 Scan、原始 body 点云、总体轨迹、在线局部轨迹和实车轨迹已加入 `day5_motion_control.rviz`。当前实验室整圈避障已由现场操作员确认可跑通，并冻结为标签 `day5-avoidance-lab-ready-v1`；正式赛场和连续三次证据验收延后，不阻塞机械臂无运动联调阶段。
 
 ## 离线验证
 
@@ -29,7 +29,7 @@
 - 控制验证整线：`debug_control_validation_trajectory.yaml` 为 433 点、`43.196m`、`217.482s`，只在 `finish_park` 停车；`0.72m x 0.50m` 车体加 `0.20m` clearance 的静态地图 footprint sweep 检查通过，1298 个采样姿态、0 个碰撞；离线 MPPI+safety 闭环 4455 周期完成，最大横向误差 `0.047m`、0 次 `SAFE_HOLD`。
 - 在线局部重规划合成测试：无障碍时直接复用总体轨迹；`0.6m x 0.8m` 桌体横跨总体轨迹且周围存在足够自由空间时，生成前向、满足 `0.81m` 最小转弯半径的绕行路径，并在 `5.0m` 前视重合点附近回到总体轨迹。正式实现会先把约 134 万格的静态地图裁成当前局部窗口；debug 地图无障碍窗口约 9-12 万格，本机处理约 `0.4-0.6s`。开放合成地图使用 `0.45m` 膨胀时，绕桌搜索约 `0.8-0.9s`；这些是开发机基准，不是小车 CPU 的周期保证。
 - 如果静态地图与 `0.45m` 膨胀后的实时障碍之间没有满足车辆约束的自由空间，局部规划器会返回 `PLAN_FAILED`，MPPI 随后因局部轨迹过期进入 `LOCAL_PLAN_STALE` 零速，而不会为了“必须绕过去”缩小安全包络。真实碰撞位置能否找到可行绕行空间仍必须以 RViz 代价图和车端无运动回放验证。
-- 相关离线回归：局部几何规划、Day4 参数化、MPPI 轨迹切换、costmap/Scan、启动拓扑和 RViz 共 37 个测试通过；完整仓库回归和车端构建仍需在提交前后继续核对。
+- 当前冻结分支完整仓库回归为 154 项通过；车端同步文件 SHA-256 一致，planning/control/safety/bringup 四包构建成功，避障核心测试 66 项通过。
 
 ## 车端无运动验证（2026-07-22）
 
@@ -158,5 +158,5 @@
 - 新增的顺序启动、自动看门狗与 `/tf_static` 录包工具尚未进行下一次不中断
   全段实车复验；因此仍不声称一次不中断整线已经通过。
 - 离线模型没有包含执行器延迟、轮胎侧偏、地面摩擦变化和 FAST-LIO 实际噪声。
-- 在线局部避障/简单代价图尚未实现；整线贴合冻结轨迹或 proximity hard-stop 不能证明小车具备绕开货架的能力。
+- 当前局部 Hybrid A* 避障已作为实验室冻结基线进入下一阶段；连续三次、最新 rosbag/视频和正式赛场验收证据暂缓，后续只在出现可复现实车回归时重开算法调参。
 - 曲率连续非线性优化、CBF/QP、显式差速自旋恢复和连续 footprint 扫掠仍在 `docs/algorithm-debt.md` 登记。
