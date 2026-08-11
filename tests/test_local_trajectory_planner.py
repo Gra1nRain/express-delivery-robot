@@ -134,6 +134,57 @@ class ReferencePathConcatenationTest(unittest.TestCase):
             }.issubset(refs)
         )
 
+    def test_indoor_route_boundary_is_valid_for_runtime_parameterization(self) -> None:
+        artifact = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "docs"
+                / "evidence"
+                / "day4"
+                / "debug_indoor_one_lap_trajectory.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        paths = tuple(
+            tuple(
+                PathPoint(
+                    float(point["x"]),
+                    float(point["y"]),
+                    float(point["yaw"]),
+                    point.get("ref_id"),
+                )
+                for point in trajectory["points"]
+            )
+            for trajectory in artifact["trajectories"]
+        )
+        joined = concatenate_reference_paths(paths)
+        local_path = joined[:31]
+
+        trajectory = parameterize_local_path(
+            local_path,
+            yaml.safe_load(
+                (REPO_ROOT / "maps" / "debug" / "semantic_map.yaml").read_text(
+                    encoding="utf-8"
+                )
+            ),
+            yaml.safe_load(
+                (
+                    REPO_ROOT / "config" / "planning" / "optimizer_params.yaml"
+                ).read_text(encoding="utf-8")
+            ),
+        )
+
+        self.assertLessEqual(
+            max(abs(point.curvature) for point in trajectory.points),
+            1.0 / 0.60 + 1e-9,
+        )
+        for path in paths:
+            endpoint = path[-1]
+            joined_endpoint = next(
+                point for point in joined if point.ref_id == endpoint.ref_id
+            )
+            self.assertAlmostEqual(joined_endpoint.x, endpoint.x)
+            self.assertAlmostEqual(joined_endpoint.y, endpoint.y)
+
 
 def _relaxed_reference(*, repeated: bool = False) -> tuple[PathPoint, ...]:
     markers = {

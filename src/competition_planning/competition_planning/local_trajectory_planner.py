@@ -788,11 +788,18 @@ def concatenate_reference_paths(
     *,
     connection_tolerance_m: float = 0.15,
     connection_heading_tolerance_rad: float = math.radians(10.0),
+    connection_blend_distance_m: float = 0.80,
 ) -> tuple[PathPoint, ...]:
     """Join route segments into one monotonic local-planning reference."""
 
-    if connection_tolerance_m < 0.0 or connection_heading_tolerance_rad < 0.0:
-        raise ValueError("reference connection tolerances must be non-negative")
+    if (
+        connection_tolerance_m < 0.0
+        or connection_heading_tolerance_rad < 0.0
+        or connection_blend_distance_m <= 0.0
+    ):
+        raise ValueError(
+            "reference connection tolerances and blend distance are invalid"
+        )
     if not paths:
         raise ValueError("at least one reference segment is required")
     if any(len(path) < 2 for path in paths):
@@ -813,9 +820,38 @@ def concatenate_reference_paths(
                 f"position_gap_m={position_gap_m:.3f}, "
                 f"heading_gap_deg={math.degrees(heading_gap_rad):.3f}"
             )
+        offset_x_m = previous.x - current.x
+        offset_y_m = previous.y - current.y
+        offset_yaw_rad = _wrap_angle(previous.yaw - current.yaw)
+        distances_m: list[float] = []
+        distance_m = 0.0
+        prior = current
+        for point in path[1:]:
+            distance_m += math.hypot(point.x - prior.x, point.y - prior.y)
+            distances_m.append(distance_m)
+            prior = point
+        blend_distance_m = min(connection_blend_distance_m, distances_m[-1])
         if previous.ref_id is None and current.ref_id is not None:
-            joined[-1] = current
-        joined.extend(path[1:])
+            joined[-1] = PathPoint(
+                previous.x,
+                previous.y,
+                previous.yaw,
+                current.ref_id,
+            )
+        for point, distance_m in zip(path[1:], distances_m):
+            blend_weight = (
+                max(0.0, 1.0 - distance_m / blend_distance_m)
+                if blend_distance_m > 0.0
+                else 0.0
+            )
+            joined.append(
+                PathPoint(
+                    point.x + offset_x_m * blend_weight,
+                    point.y + offset_y_m * blend_weight,
+                    _wrap_angle(point.yaw + offset_yaw_rad * blend_weight),
+                    point.ref_id,
+                )
+            )
     return tuple(joined)
 
 
