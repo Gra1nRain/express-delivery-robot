@@ -38,6 +38,7 @@ from competition_control.ranger_twist_adapter import (
     adapt_yaw_rate_for_ranger_driver,
 )
 from day5_run_policy import (
+    control_status_requires_stop,
     load_route_metadata,
     local_planner_status_is_ready,
     resolve_watchdog_timeout_s,
@@ -780,7 +781,10 @@ def run(args: argparse.Namespace) -> int:
                 ):
                     stop_reason = f"local_status_sustained_{node.data.get('local_status')}"
                     break
-                control_bad = control_status in ("INVALID_STATE", "ERROR", "RECOVERY_REQUIRED") and bool(control_reasons)
+                control_bad = control_status_requires_stop(
+                    control_status,
+                    control_reasons,
+                )
                 if elapsed_s > 6.0 and _sustained(
                     bad_since, "control_bad", control_bad, now_s, args.sustained_error_s
                 ):

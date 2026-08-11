@@ -14,6 +14,7 @@ from competition_control.segmented_route_state_machine import (
     SegmentedRouteObservation,
     SegmentedRoutePhase,
     SegmentedRouteStateMachine,
+    state_failure_requires_rearm,
 )
 
 
@@ -61,6 +62,19 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
 
         self.assertEqual(decision.phase, SegmentedRoutePhase.TRACKING)
         self.assertTrue(decision.allow_tracking)
+
+    def test_only_transient_freshness_failures_can_auto_resume(self) -> None:
+        self.assertFalse(state_failure_requires_rearm(("stale_velocity",)))
+        self.assertFalse(
+            state_failure_requires_rearm(("stale_pose", "stale_velocity"))
+        )
+        self.assertTrue(state_failure_requires_rearm(("position_jump",)))
+        self.assertTrue(
+            state_failure_requires_rearm(("stale_velocity", "position_jump"))
+        )
+        self.assertTrue(state_failure_requires_rearm(("future_velocity_stamp",)))
+        self.assertTrue(state_failure_requires_rearm(("unknown_failure",)))
+        self.assertTrue(state_failure_requires_rearm(()))
 
     def test_advances_only_after_pose_heading_speed_and_hold_are_satisfied(self) -> None:
         self.machine.update(self.observation(0.0))

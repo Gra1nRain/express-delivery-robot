@@ -28,6 +28,17 @@ class Day5RunPolicyTest(unittest.TestCase):
         self.assertTrue(module.local_planner_status_is_ready("RELAXED_HOLD"))
         self.assertFalse(module.local_planner_status_is_ready("HYBRID_ASTAR_TIMEOUT"))
 
+    def test_latched_control_fault_always_stops_relay(self) -> None:
+        module = _load_policy_module()
+
+        self.assertTrue(module.control_status_requires_stop("FAULT_HOLD", ()))
+        self.assertTrue(
+            module.control_status_requires_stop(
+                "INVALID_STATE", ("position_jump",)
+            )
+        )
+        self.assertFalse(module.control_status_requires_stop("TRACKING", ()))
+
     def test_loads_duration_and_finish_from_trajectory(self) -> None:
         module = _load_policy_module()
         with tempfile.TemporaryDirectory() as temp_dir:

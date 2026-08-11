@@ -50,6 +50,7 @@ from competition_control.segmented_route_state_machine import (
     SegmentedRouteConfig,
     SegmentedRouteObservation,
     SegmentedRouteStateMachine,
+    state_failure_requires_rearm,
 )
 from competition_localization.planar_transform import yaw_from_quaternion
 from competition_localization.state_estimator import (
@@ -639,14 +640,21 @@ class MPPIControlNode(Node):
             status=decision.phase.value,
         )
 
-    def _segmented_invalid_command(self, now_s: float) -> BodyCommand:
+    def _segmented_invalid_command(
+        self,
+        now_s: float,
+        state_reasons: tuple[str, ...],
+    ) -> BodyCommand:
         assert self._segmented_state_machine is not None
+        requires_rearm = state_failure_requires_rearm(state_reasons)
         decision = self._segmented_state_machine.update(
             SegmentedRouteObservation(
                 now_s=now_s,
                 enabled=self._route_enabled,
-                state_valid=False,
-                stop_requested=self._avoidance_stop_requested,
+                state_valid=not requires_rearm,
+                stop_requested=(
+                    self._avoidance_stop_requested or not requires_rearm
+                ),
                 position_error_m=math.inf,
                 heading_error_rad=math.inf,
                 speed_mps=math.inf,
@@ -750,7 +758,7 @@ class MPPIControlNode(Node):
                     command = self._controller.compute_command(vehicle_state)
             else:
                 if self._segmented_state_machine is not None:
-                    command = self._segmented_invalid_command(now_s)
+                    command = self._segmented_invalid_command(now_s, state_reasons)
                 else:
                     command = BodyCommand.hold(
                         target_index=0,
@@ -761,7 +769,7 @@ class MPPIControlNode(Node):
         except (TransformException, RuntimeError) as exc:
             state_reasons = (str(exc),)
             if self._segmented_state_machine is not None:
-                command = self._segmented_invalid_command(now_s)
+                command = self._segmented_invalid_command(now_s, state_reasons)
             else:
                 command = BodyCommand.hold(
                     target_index=0,

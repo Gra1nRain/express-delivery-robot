@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 import yaml
 
@@ -34,6 +35,17 @@ class RouteMetadata:
 
 def local_planner_status_is_ready(status: str | None) -> bool:
     return status in LOCAL_PLANNER_READY_STATUSES
+
+
+def control_status_requires_stop(
+    status: str | None,
+    reasons: Sequence[str],
+) -> bool:
+    if status == "FAULT_HOLD":
+        return True
+    return status in ("INVALID_STATE", "ERROR", "RECOVERY_REQUIRED") and bool(
+        reasons
+    )
 
 
 def load_route_metadata(path: Path) -> RouteMetadata:

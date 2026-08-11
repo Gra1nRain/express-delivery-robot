@@ -7,6 +7,16 @@ from enum import Enum
 import math
 
 
+_RECOVERABLE_FRESHNESS_FAILURES = frozenset({"stale_pose", "stale_velocity"})
+
+
+def state_failure_requires_rearm(reasons: tuple[str, ...]) -> bool:
+    """Return whether an invalid estimate must latch the route in FAULT_HOLD."""
+    return not reasons or not set(reasons).issubset(
+        _RECOVERABLE_FRESHNESS_FAILURES
+    )
+
+
 class SegmentedRoutePhase(str, Enum):
     DISARMED = "MISSION_DISARMED"
     TRACKING = "SEGMENT_TRACKING"
