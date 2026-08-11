@@ -29,6 +29,7 @@ from competition_planning.local_trajectory_planner import (
     LocalTrajectoryPlanner,
     concatenate_reference_paths,
     occupied_grid_cell_centers,
+    reference_prefix_through_ref,
 )
 from competition_planning.occupancy_grid_planner import (
     GridPlanningError,
@@ -218,6 +219,7 @@ class LocalReplannerNode(Node):
         self._obstacle_header_stamp_s = 0.0
         self._odom_received_s = 0.0
         self._previous_reference_index = 0
+        self._active_checkpoint_ref: str | None = None
 
         self._path_publisher = self.create_publisher(
             Path,
@@ -278,6 +280,23 @@ class LocalReplannerNode(Node):
             "/initialpose",
             self._initialpose_callback,
             10,
+        )
+        checkpoint_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.create_subscription(
+            String,
+            str(
+                self.declare_parameter(
+                    "active_checkpoint_ref_topic",
+                    "/mission/active_checkpoint_ref",
+                ).value
+            ),
+            self._active_checkpoint_ref_callback,
+            checkpoint_qos,
         )
         frequency_hz = float(self.declare_parameter("frequency_hz", 1.0).value)
         if frequency_hz <= 0.0:
@@ -380,6 +399,17 @@ class LocalReplannerNode(Node):
         self._planner = LocalTrajectoryPlanner(self._static_map, self._config)
         self._publish_stop("INITIAL_POSE_RESET")
 
+    def _active_checkpoint_ref_callback(self, message: String) -> None:
+        checkpoint_ref = message.data.strip()
+        if not checkpoint_ref or checkpoint_ref == self._active_checkpoint_ref:
+            return
+        self._active_checkpoint_ref = checkpoint_ref
+        self._planner = LocalTrajectoryPlanner(self._static_map, self._config)
+        self._publish_stop(
+            "ACTIVE_CHECKPOINT_UPDATED",
+            detail=checkpoint_ref,
+        )
+
     def _planning_cycle(self) -> None:
         now = self.get_clock().now()
         now_s = now.nanoseconds / 1e9
@@ -409,6 +439,12 @@ class LocalReplannerNode(Node):
             return
 
         try:
+            reference_path = self._reference_path
+            if self._active_checkpoint_ref is not None:
+                reference_path = reference_prefix_through_ref(
+                    reference_path,
+                    self._active_checkpoint_ref,
+                )
             map_from_base = self._tf_buffer.lookup_transform(
                 self._map_frame,
                 self._base_frame,
@@ -422,7 +458,7 @@ class LocalReplannerNode(Node):
             )
             started_at = time.perf_counter()
             result = self._planner.plan(
-                reference_path=self._reference_path,
+                reference_path=reference_path,
                 current_pose=current_pose,
                 dynamic_obstacle_points=self._obstacle_points_map,
                 previous_reference_index=self._previous_reference_index,

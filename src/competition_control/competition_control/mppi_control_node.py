@@ -343,6 +343,16 @@ class MPPIControlNode(Node):
             ),
             path_qos,
         )
+        self._active_checkpoint_ref_publisher = self.create_publisher(
+            String,
+            str(
+                self.declare_parameter(
+                    "active_checkpoint_ref_topic",
+                    "/mission/active_checkpoint_ref",
+                ).value
+            ),
+            path_qos,
+        )
         self._executed_path_publisher = self.create_publisher(
             NavPath,
             str(
@@ -397,6 +407,10 @@ class MPPIControlNode(Node):
             _control_trajectory_path(trajectory, self.get_clock().now().to_msg())
         )
         self._active_checkpoint_publisher.publish(UInt32(data=0))
+        if self._checkpoint_route_enabled:
+            self._active_checkpoint_ref_publisher.publish(
+                String(data=self._mission_checkpoints[0].ref_id)
+            )
         if self._replanning_enabled:
             self.create_subscription(
                 NavPath,
@@ -592,6 +606,9 @@ class MPPIControlNode(Node):
             self._local_stop_requested = True
         self._active_checkpoint_publisher.publish(UInt32(data=checkpoint_index))
         checkpoint = self._mission_checkpoints[checkpoint_index]
+        self._active_checkpoint_ref_publisher.publish(
+            String(data=checkpoint.ref_id)
+        )
         self.get_logger().info(
             f"Activated mission checkpoint {checkpoint_index + 1}/"
             f"{len(self._mission_checkpoints)}: {checkpoint.ref_id}"

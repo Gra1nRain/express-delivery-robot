@@ -783,6 +783,23 @@ class LocalTrajectoryPlanner:
         )
 
 
+def reference_prefix_through_ref(
+    reference_path: Sequence[PathPoint],
+    checkpoint_ref: str,
+) -> tuple[PathPoint, ...]:
+    """Expose one continuous reference only through its active stop checkpoint."""
+
+    for index, point in enumerate(reference_path):
+        if point.ref_id != checkpoint_ref:
+            continue
+        if index < 1:
+            raise ValueError(
+                f"active checkpoint {checkpoint_ref!r} leaves fewer than two points"
+            )
+        return tuple(reference_path[: index + 1])
+    raise ValueError(f"active checkpoint ref not found: {checkpoint_ref}")
+
+
 def concatenate_reference_paths(
     paths: Sequence[Sequence[PathPoint]],
     *,

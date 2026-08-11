@@ -24,6 +24,7 @@ from competition_planning.local_trajectory_planner import (
     LocalTrajectoryPlanner,
     concatenate_reference_paths,
     occupied_grid_cell_centers,
+    reference_prefix_through_ref,
 )
 from competition_planning.occupancy_grid_planner import (
     GridPlanningError,
@@ -61,6 +62,65 @@ def _table_points() -> tuple[tuple[float, float], ...]:
 
 
 class ReferencePathConcatenationTest(unittest.TestCase):
+    def test_current_continuous_route_becomes_a_stop_trajectory_at_gate(self) -> None:
+        artifact = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "docs"
+                / "evidence"
+                / "day5"
+                / "debug_indoor_one_lap_continuous_trajectory.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        reference = tuple(
+            PathPoint(
+                float(point["x"]),
+                float(point["y"]),
+                float(point["yaw"]),
+                point.get("ref_id"),
+            )
+            for point in artifact["points"]
+        )
+        prefix = reference_prefix_through_ref(reference, "pickup_front")
+        semantic_map = yaml.safe_load(
+            (REPO_ROOT / "maps" / "debug" / "semantic_map.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        optimizer = yaml.safe_load(
+            (
+                REPO_ROOT / "config" / "planning" / "optimizer_params.yaml"
+            ).read_text(encoding="utf-8")
+        )
+
+        trajectory = parameterize_local_path(prefix, semantic_map, optimizer)
+
+        self.assertEqual(prefix[-1].ref_id, "pickup_front")
+        self.assertEqual(trajectory.points[-1].ref_id, "pickup_front")
+        self.assertEqual(trajectory.points[-1].v, 0.0)
+
+    def test_checkpoint_gate_exposes_only_prefix_of_one_continuous_reference(self) -> None:
+        reference = (
+            PathPoint(0.0, 0.0, 0.0, "start"),
+            PathPoint(1.0, 0.0, 0.0, "pickup_front"),
+            PathPoint(2.0, 0.0, 0.0, "pickup_rear"),
+            PathPoint(3.0, 0.0, 0.0, "finish_park"),
+        )
+
+        pickup_front = reference_prefix_through_ref(reference, "pickup_front")
+        pickup_rear = reference_prefix_through_ref(reference, "pickup_rear")
+
+        self.assertEqual(pickup_front, reference[:2])
+        self.assertEqual(pickup_rear, reference[:3])
+        self.assertEqual(len(reference), 4)
+
+    def test_checkpoint_gate_fails_closed_when_ref_is_missing(self) -> None:
+        with self.assertRaisesRegex(ValueError, "missing_checkpoint"):
+            reference_prefix_through_ref(
+                (PathPoint(0.0, 0.0, 0.0, "start"),),
+                "missing_checkpoint",
+            )
+
     def test_joins_segments_without_dropping_stop_or_obstacle_refs(self) -> None:
         first = (
             PathPoint(0.0, 0.0, 0.0, "start"),
