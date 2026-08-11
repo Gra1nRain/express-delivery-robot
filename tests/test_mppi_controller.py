@@ -274,6 +274,36 @@ class MPPIControllerTest(unittest.TestCase):
         self.assertGreater(speeds[-1], speeds[0] + 0.02)
         self.assertEqual(speeds, sorted(speeds))
 
+    def test_goal_requires_heading_tolerance_when_configured(self) -> None:
+        params = replace(
+            self.params,
+            goal_position_tolerance_m=0.10,
+            goal_heading_tolerance_rad=math.radians(5.0),
+            progress_search_window_points=100,
+            max_progress_advance_points=100,
+        )
+        controller = MPPIController(_straight_trajectory(), params, random_seed=41)
+
+        misaligned = controller.compute_command(
+            VehicleState(
+                x=4.0,
+                y=0.0,
+                yaw=math.radians(8.0),
+                linear_speed_mps=0.0,
+            )
+        )
+        aligned = controller.compute_command(
+            VehicleState(
+                x=4.0,
+                y=0.0,
+                yaw=math.radians(2.0),
+                linear_speed_mps=0.0,
+            )
+        )
+
+        self.assertEqual(misaligned.status, "TRACKING")
+        self.assertEqual(aligned.status, "GOAL_REACHED")
+
 
 if __name__ == "__main__":
     unittest.main()

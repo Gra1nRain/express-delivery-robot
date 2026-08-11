@@ -37,6 +37,12 @@ from competition_control.mppi_controller import (
     MPPIController,
     MPPIParams,
     VehicleState,
+    control_trajectories_from_dict,
+)
+from competition_control.segmented_route_state_machine import (
+    SegmentedRouteConfig,
+    SegmentedRouteObservation,
+    SegmentedRouteStateMachine,
 )
 from competition_localization.planar_transform import yaw_from_quaternion
 from competition_localization.state_estimator import (
@@ -117,12 +123,28 @@ class MPPIControlNode(Node):
         self._control_period_s = 1.0 / float(
             self.declare_parameter("frequency_hz", 20.0).value
         )
-        trajectory = ControlTrajectory.from_dict(artifact)
+        self._segment_trajectories = control_trajectories_from_dict(artifact)
+        self._segmented_route_enabled = len(self._segment_trajectories) > 1
+        if self._segmented_route_enabled and self._replanning_enabled:
+            raise ValueError(
+                "segmented route test requires replanning_enabled=false"
+            )
+        self._active_segment_index = 0
+        trajectory = self._segment_trajectories[self._active_segment_index]
         if trajectory.frame_id != self._map_frame:
             raise ValueError(
                 f"trajectory frame_id={trajectory.frame_id} does not match "
                 f"map_frame={self._map_frame}"
             )
+        goal_position_tolerance_m = float(
+            self.declare_parameter("goal_position_tolerance_m", 0.10).value
+        )
+        goal_heading_tolerance_deg = float(
+            self.declare_parameter(
+                "goal_heading_tolerance_deg",
+                5.0 if self._segmented_route_enabled else 180.0,
+            ).value
+        )
         params = MPPIParams(
             control_dt_s=self._control_period_s,
             horizon_steps=int(self.declare_parameter("horizon_steps", 30).value),
@@ -154,8 +176,9 @@ class MPPIControlNode(Node):
                     0.05,
                 ).value
             ),
-            goal_position_tolerance_m=float(
-                self.declare_parameter("goal_position_tolerance_m", 0.10).value
+            goal_position_tolerance_m=goal_position_tolerance_m,
+            goal_heading_tolerance_rad=math.radians(
+                goal_heading_tolerance_deg
             ),
             progress_search_window_points=int(
                 self.declare_parameter("progress_search_window_points", 40).value
@@ -176,6 +199,33 @@ class MPPIControlNode(Node):
             params,
             random_seed=int(self.declare_parameter("random_seed", 7).value),
         )
+        self._route_enabled = False
+        self._avoidance_stop_requested = self._segmented_route_enabled
+        self._mission_phase = (
+            "MISSION_DISARMED"
+            if self._segmented_route_enabled
+            else "CONTINUOUS_ROUTE"
+        )
+        self._segmented_state_machine = None
+        if self._segmented_route_enabled:
+            self._segmented_state_machine = SegmentedRouteStateMachine(
+                segment_count=len(self._segment_trajectories),
+                config=SegmentedRouteConfig(
+                    goal_position_tolerance_m=goal_position_tolerance_m,
+                    goal_heading_tolerance_rad=math.radians(
+                        goal_heading_tolerance_deg
+                    ),
+                    stop_speed_tolerance_mps=float(
+                        self.declare_parameter(
+                            "segment_stop_speed_tolerance_mps",
+                            0.03,
+                        ).value
+                    ),
+                    dock_hold_s=float(
+                        self.declare_parameter("segment_dock_hold_s", 2.0).value
+                    ),
+                ),
+            )
         local_optimizer = self._local_optimizer_config.setdefault(
             "trajectory_optimizer",
             {},
@@ -290,6 +340,29 @@ class MPPIControlNode(Node):
             self._initialpose_callback,
             10,
         )
+        if self._segmented_route_enabled:
+            self.create_subscription(
+                Bool,
+                str(
+                    self.declare_parameter(
+                        "route_enable_topic",
+                        "/mission/route_enable",
+                    ).value
+                ),
+                self._route_enable_callback,
+                10,
+            )
+            self.create_subscription(
+                Bool,
+                str(
+                    self.declare_parameter(
+                        "avoidance_stop_request_topic",
+                        "/avoidance/stop_request",
+                    ).value
+                ),
+                self._avoidance_stop_callback,
+                10,
+            )
         self._reference_path_publisher.publish(
             _control_trajectory_path(trajectory, self.get_clock().now().to_msg())
         )
@@ -319,6 +392,7 @@ class MPPIControlNode(Node):
         self._timer = self.create_timer(self._control_period_s, self._control_cycle)
         self.get_logger().info(
             f"MPPI ready: trajectory={trajectory_file}, "
+            f"segments={len(self._segment_trajectories)}, "
             f"frames={self._map_frame}->{self._base_frame}"
         )
 
@@ -353,6 +427,10 @@ class MPPIControlNode(Node):
         now_s = self.get_clock().now().nanoseconds / 1e9
         self._initial_pose_settle_until_s = now_s + self._initial_pose_settle_s
         self._controller.reset()
+        if self._segmented_state_machine is not None:
+            self._route_enabled = False
+            self._segmented_state_machine.reset()
+            self._activate_segment(0)
         self._accepted_local_geometry = None
         self._local_plan_update_mode = "waiting"
         self._executed_poses.clear()
@@ -433,6 +511,83 @@ class MPPIControlNode(Node):
     def _local_stop_callback(self, message: Bool) -> None:
         self._local_stop_requested = bool(message.data)
 
+    def _route_enable_callback(self, message: Bool) -> None:
+        self._route_enabled = bool(message.data)
+
+    def _avoidance_stop_callback(self, message: Bool) -> None:
+        self._avoidance_stop_requested = bool(message.data)
+
+    def _activate_segment(self, segment_index: int) -> None:
+        trajectory = self._segment_trajectories[segment_index]
+        self._active_segment_index = segment_index
+        self._controller.replace_trajectory(trajectory)
+        self._accepted_local_geometry = None
+        self._latest_local_plan_stamp_s = None
+        self._reference_path_publisher.publish(
+            _control_trajectory_path(
+                trajectory,
+                self.get_clock().now().to_msg(),
+            )
+        )
+        self.get_logger().info(
+            f"Activated segment {segment_index + 1}/"
+            f"{len(self._segment_trajectories)}: {trajectory.route_name}"
+        )
+
+    def _segmented_command(
+        self,
+        state: VehicleState,
+        now_s: float,
+    ) -> BodyCommand:
+        assert self._segmented_state_machine is not None
+        goal = self._segment_trajectories[self._active_segment_index].points[-1]
+        decision = self._segmented_state_machine.update(
+            SegmentedRouteObservation(
+                now_s=now_s,
+                enabled=self._route_enabled,
+                state_valid=True,
+                stop_requested=self._avoidance_stop_requested,
+                position_error_m=math.hypot(state.x - goal.x, state.y - goal.y),
+                heading_error_rad=math.atan2(
+                    math.sin(state.yaw - goal.yaw),
+                    math.cos(state.yaw - goal.yaw),
+                ),
+                speed_mps=state.linear_speed_mps,
+            )
+        )
+        self._mission_phase = decision.phase.value
+        if decision.segment_changed:
+            self._activate_segment(decision.active_segment_index)
+        if decision.allow_tracking:
+            return self._controller.compute_command(state)
+        return BodyCommand.hold(
+            target_index=0,
+            lateral_error_m=0.0,
+            heading_error_rad=0.0,
+            status=decision.phase.value,
+        )
+
+    def _segmented_invalid_command(self, now_s: float) -> BodyCommand:
+        assert self._segmented_state_machine is not None
+        decision = self._segmented_state_machine.update(
+            SegmentedRouteObservation(
+                now_s=now_s,
+                enabled=self._route_enabled,
+                state_valid=False,
+                stop_requested=self._avoidance_stop_requested,
+                position_error_m=math.inf,
+                heading_error_rad=math.inf,
+                speed_mps=math.inf,
+            )
+        )
+        self._mission_phase = decision.phase.value
+        return BodyCommand.hold(
+            target_index=0,
+            lateral_error_m=0.0,
+            heading_error_rad=0.0,
+            status=decision.phase.value,
+        )
+
     def _control_cycle(self) -> None:
         now = self.get_clock().now()
         now_s = now.nanoseconds / 1e9
@@ -496,7 +651,9 @@ class MPPIControlNode(Node):
                 )
                 self._publish_executed_pose(vehicle_state, now.to_msg())
                 local_plan_age_s = self._local_plan_age_s(now_s)
-                if self._replanning_enabled and self._local_stop_requested:
+                if self._segmented_state_machine is not None:
+                    command = self._segmented_command(vehicle_state, now_s)
+                elif self._replanning_enabled and self._local_stop_requested:
                     command = BodyCommand.hold(
                         target_index=0,
                         lateral_error_m=0.0,
@@ -516,20 +673,26 @@ class MPPIControlNode(Node):
                 else:
                     command = self._controller.compute_command(vehicle_state)
             else:
+                if self._segmented_state_machine is not None:
+                    command = self._segmented_invalid_command(now_s)
+                else:
+                    command = BodyCommand.hold(
+                        target_index=0,
+                        lateral_error_m=0.0,
+                        heading_error_rad=0.0,
+                        status="INVALID_STATE",
+                    )
+        except (TransformException, RuntimeError) as exc:
+            state_reasons = (str(exc),)
+            if self._segmented_state_machine is not None:
+                command = self._segmented_invalid_command(now_s)
+            else:
                 command = BodyCommand.hold(
                     target_index=0,
                     lateral_error_m=0.0,
                     heading_error_rad=0.0,
                     status="INVALID_STATE",
                 )
-        except (TransformException, RuntimeError) as exc:
-            state_reasons = (str(exc),)
-            command = BodyCommand.hold(
-                target_index=0,
-                lateral_error_m=0.0,
-                heading_error_rad=0.0,
-                status="INVALID_STATE",
-            )
 
         if command.status != "TRACKING":
             self._controller.reset()
@@ -563,6 +726,13 @@ class MPPIControlNode(Node):
                         "local_plan_reuse_count": self._local_plan_reuse_count,
                         "local_plan_replace_count": self._local_plan_replace_count,
                         "local_plan_error_count": self._local_plan_error_count,
+                        "mission_phase": self._mission_phase,
+                        "route_enabled": self._route_enabled,
+                        "active_segment_index": self._active_segment_index,
+                        "active_segment_id": self._segment_trajectories[
+                            self._active_segment_index
+                        ].route_name,
+                        "segment_count": len(self._segment_trajectories),
                     },
                     separators=(",", ":"),
                 )

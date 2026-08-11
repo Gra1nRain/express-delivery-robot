@@ -62,6 +62,33 @@ class ArtifactProvenanceTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "planning_params"):
                 validate_source_manifest(artifact, sources)
 
+    def test_indoor_one_lap_artifact_matches_its_route_sources(self) -> None:
+        artifact_path = (
+            REPO_ROOT
+            / "docs"
+            / "evidence"
+            / "day4"
+            / "debug_indoor_one_lap_trajectory.yaml"
+        )
+        artifact = yaml.safe_load(artifact_path.read_text(encoding="utf-8"))
+        sources = resolve_trajectory_source_paths(
+            route_file=(
+                REPO_ROOT
+                / "config"
+                / "routes"
+                / "debug_indoor_one_lap_route.yaml"
+            ),
+            semantic_map_file=REPO_ROOT / "maps" / "debug" / "semantic_map.yaml",
+            planning_params_file=(
+                REPO_ROOT / "config" / "planning" / "planning_params.yaml"
+            ),
+            optimizer_params_file=(
+                REPO_ROOT / "config" / "planning" / "optimizer_params.yaml"
+            ),
+        )
+
+        validate_source_manifest(artifact, sources)
+
 
 if __name__ == "__main__":
     unittest.main()

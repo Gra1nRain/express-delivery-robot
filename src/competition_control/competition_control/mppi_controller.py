@@ -51,6 +51,32 @@ class ControlTrajectory:
             points=points,
         )
 
+
+def control_trajectories_from_dict(
+    artifact: dict[str, Any],
+) -> tuple[ControlTrajectory, ...]:
+    """Load either one continuous artifact or a stop-bounded segment sequence."""
+
+    raw_segments = artifact.get("trajectories")
+    if raw_segments is None:
+        return (ControlTrajectory.from_dict(artifact),)
+    if not isinstance(raw_segments, list) or not raw_segments:
+        raise ValueError("segmented trajectory artifact requires trajectories")
+
+    frame_id = str(artifact.get("frame_id", "map"))
+    route_name = str(artifact.get("route_name", ""))
+    trajectories: list[ControlTrajectory] = []
+    for index, raw_segment in enumerate(raw_segments):
+        if not isinstance(raw_segment, dict):
+            raise ValueError(f"trajectory segment {index} is not a mapping")
+        segment = dict(raw_segment)
+        segment["frame_id"] = frame_id
+        segment["route_name"] = str(
+            raw_segment.get("step_id", f"{route_name}:{index}")
+        )
+        trajectories.append(ControlTrajectory.from_dict(segment))
+    return tuple(trajectories)
+
 @dataclass(frozen=True)
 class VehicleState:
     x: float
@@ -105,6 +131,7 @@ class MPPIParams:
     max_curvature_rate_1pmps: float = 0.80
     command_speed_memory_limit_mps: float = 0.05
     goal_position_tolerance_m: float = 0.10
+    goal_heading_tolerance_rad: float = math.pi
     position_weight: float = 45.0
     heading_weight: float = 12.0
     speed_weight: float = 4.0
@@ -146,6 +173,8 @@ class MPPIController:
             raise ValueError("control_dt_s must be positive")
         if params.command_speed_memory_limit_mps < 0.0:
             raise ValueError("command_speed_memory_limit_mps must be non-negative")
+        if params.goal_heading_tolerance_rad < 0.0:
+            raise ValueError("goal_heading_tolerance_rad must be non-negative")
         self._trajectory = trajectory
         self._params = params
         self._rng = np.random.default_rng(random_seed)
@@ -212,7 +241,12 @@ class MPPIController:
             state.x - self._xy[-1, 0],
             state.y - self._xy[-1, 1],
         )
-        if nearest >= len(self._trajectory.points) - 2 and goal_distance <= self._params.goal_position_tolerance_m:
+        goal_heading_error = abs(_wrap_angle(state.yaw - self._yaw[-1]))
+        if (
+            nearest >= len(self._trajectory.points) - 2
+            and goal_distance <= self._params.goal_position_tolerance_m
+            and goal_heading_error <= self._params.goal_heading_tolerance_rad
+        ):
             self._last_speed = 0.0
             return BodyCommand.hold(
                 target_index=len(self._trajectory.points) - 1,
