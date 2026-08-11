@@ -192,7 +192,7 @@ def generate_launch_description():
                 "livox_publish_frequency_hz", default_value="10.0"
             ),
             DeclareLaunchArgument(
-                "livox_raw_packet_queue_limit", default_value="256"
+                "livox_raw_packet_queue_limit", default_value="1"
             ),
             DeclareLaunchArgument("start_fast_lio", default_value="true"),
             DeclareLaunchArgument("start_base", default_value="false"),
