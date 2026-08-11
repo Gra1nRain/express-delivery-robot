@@ -13,6 +13,16 @@ DEFAULT_WATCHDOG_FALLBACK_S = 420.0
 DEFAULT_WATCHDOG_DURATION_SCALE = 2.5
 DEFAULT_WATCHDOG_MARGIN_S = 60.0
 DEFAULT_WATCHDOG_MINIMUM_S = 120.0
+LOCAL_PLANNER_READY_STATUSES = frozenset(
+    {
+        "REPLANNED",
+        "REFERENCE_CLEAR",
+        "RELAXED_REPLANNED",
+        "RELAXED_HOLD",
+        "DWA_TRACKING",
+        "DWA_AVOIDING",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -20,6 +30,10 @@ class RouteMetadata:
     point_count: int | None
     finish_xy: tuple[float, float] | None
     duration_s: float | None
+
+
+def local_planner_status_is_ready(status: str | None) -> bool:
+    return status in LOCAL_PLANNER_READY_STATUSES
 
 
 def load_route_metadata(path: Path) -> RouteMetadata:

@@ -39,6 +39,7 @@ from competition_control.ranger_twist_adapter import (
 )
 from day5_run_policy import (
     load_route_metadata,
+    local_planner_status_is_ready,
     resolve_watchdog_timeout_s,
     scan_stop_reason,
 )
@@ -402,8 +403,7 @@ class RelayMonitor(Node):
     def local_ready(self) -> bool:
         trajectory_ready = (
             bool(self._args.global_tracking_mode)
-            or self.data.get("local_status_value")
-            in ("REPLANNED", "REFERENCE_CLEAR", "DWA_TRACKING", "DWA_AVOIDING")
+            or local_planner_status_is_ready(self.data.get("local_status_value"))
         )
         return (
             trajectory_ready

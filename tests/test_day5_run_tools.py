@@ -21,6 +21,13 @@ def _load_policy_module():
 
 
 class Day5RunPolicyTest(unittest.TestCase):
+    def test_relaxed_avoidance_paths_are_ready_for_supervised_motion(self) -> None:
+        module = _load_policy_module()
+
+        self.assertTrue(module.local_planner_status_is_ready("RELAXED_REPLANNED"))
+        self.assertTrue(module.local_planner_status_is_ready("RELAXED_HOLD"))
+        self.assertFalse(module.local_planner_status_is_ready("HYBRID_ASTAR_TIMEOUT"))
+
     def test_loads_duration_and_finish_from_trajectory(self) -> None:
         module = _load_policy_module()
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -155,12 +162,10 @@ class Day5RunScriptTest(unittest.TestCase):
         self.assertIn("elapsed_s >= watchdog_timeout_s", text)
 
     def test_relay_accepts_dwa_ready_states(self) -> None:
-        text = (
-            REPO_ROOT / "scripts" / "day5_full_route_relay.py"
-        ).read_text(encoding="utf-8")
+        module = _load_policy_module()
 
-        self.assertIn('"DWA_TRACKING"', text)
-        self.assertIn('"DWA_AVOIDING"', text)
+        self.assertTrue(module.local_planner_status_is_ready("DWA_TRACKING"))
+        self.assertTrue(module.local_planner_status_is_ready("DWA_AVOIDING"))
 
     def test_relay_explicitly_arms_segmented_route_before_ready_gate(self) -> None:
         text = (
