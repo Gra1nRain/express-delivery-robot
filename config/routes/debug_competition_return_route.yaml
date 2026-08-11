@@ -15,17 +15,26 @@ steps:
     type: RUN_SEGMENT
     avoidance_required: true
     corridor_ref: go_to_pickup
-    target_ref: pickup_dock
+    target_ref: pickup_front
   - id: pickup_1_dock
     type: DOCK
     dock_type: PICKUP
     cycle_index: 1
-    dock_pose_ref: pickup_dock
+    dock_pose_ref: pickup_front
   - id: pickup_1_arm
     type: ARM_TASK
     task_type: PICKUP
     cycle_index: 1
-    dock_pose_ref: pickup_dock
+    dock_pose_ref: pickup_front
+  - id: pickup_1_rear
+    type: RUN_SEGMENT
+    corridor_ref: pickup_front_to_rear
+    target_ref: pickup_rear
+  - id: pickup_1_rear_dock
+    type: DOCK
+    dock_type: PICKUP
+    cycle_index: 1
+    dock_pose_ref: pickup_rear
   - id: cone_lane_change_1
     type: CONE_LANE_CHANGE
     corridor_ref: pickup_to_drop
@@ -35,27 +44,45 @@ steps:
     type: DOCK
     dock_type: DROP
     cycle_index: 1
-    dock_pose_ref: drop_dock
+    dock_pose_ref: drop_front
   - id: drop_1_arm
     type: ARM_TASK
     task_type: DROP
     cycle_index: 1
-    dock_pose_ref: drop_dock
+    dock_pose_ref: drop_front
+  - id: drop_1_rear
+    type: RUN_SEGMENT
+    corridor_ref: drop_front_to_rear
+    target_ref: drop_rear
+  - id: drop_1_rear_dock
+    type: DOCK
+    dock_type: DROP
+    cycle_index: 1
+    dock_pose_ref: drop_rear
   - id: return_to_pickup_area
     type: RUN_SEGMENT
     avoidance_required: false
     corridor_ref: return_to_pickup
-    target_ref: pickup_dock
+    target_ref: pickup_front
   - id: pickup_2_dock
     type: DOCK
     dock_type: PICKUP
     cycle_index: 2
-    dock_pose_ref: pickup_dock
+    dock_pose_ref: pickup_front
   - id: pickup_2_arm
     type: ARM_TASK
     task_type: PICKUP
     cycle_index: 2
-    dock_pose_ref: pickup_dock
+    dock_pose_ref: pickup_front
+  - id: pickup_2_rear
+    type: RUN_SEGMENT
+    corridor_ref: pickup_front_to_rear
+    target_ref: pickup_rear
+  - id: pickup_2_rear_dock
+    type: DOCK
+    dock_type: PICKUP
+    cycle_index: 2
+    dock_pose_ref: pickup_rear
   - id: cone_lane_change_2
     type: CONE_LANE_CHANGE
     corridor_ref: pickup_to_drop
@@ -65,12 +92,21 @@ steps:
     type: DOCK
     dock_type: DROP
     cycle_index: 2
-    dock_pose_ref: drop_dock
+    dock_pose_ref: drop_front
   - id: drop_2_arm
     type: ARM_TASK
     task_type: DROP
     cycle_index: 2
-    dock_pose_ref: drop_dock
+    dock_pose_ref: drop_front
+  - id: drop_2_rear
+    type: RUN_SEGMENT
+    corridor_ref: drop_front_to_rear
+    target_ref: drop_rear
+  - id: drop_2_rear_dock
+    type: DOCK
+    dock_type: DROP
+    cycle_index: 2
+    dock_pose_ref: drop_rear
   - id: finish_park
     type: FINISH_PARK
     corridor_ref: finish_return

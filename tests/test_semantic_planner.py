@@ -62,6 +62,28 @@ class SemanticPlannerTest(unittest.TestCase):
         self.params["global_planner"]["plugin"] = "semantic_corridor"
         self.params["global_planner"]["min_turning_radius_m"] = 0.0
 
+    def test_retired_single_dock_points_have_no_active_references(self) -> None:
+        retired = {"pickup_dock", "drop_dock"}
+        active_refs = {
+            str(ref)
+            for centerline in self.semantic_map["lane_centerlines"]
+            for ref in centerline["points"]
+        }
+        active_refs.update(
+            str(item["point_ref"])
+            for collection in ("stop_lines", "dock_poses")
+            for item in self.semantic_map[collection]
+        )
+        active_refs.update(
+            str(step[key])
+            for step in self.route["steps"]
+            for key in ("target_ref", "dock_pose_ref")
+            if step.get(key)
+        )
+
+        self.assertTrue(retired.isdisjoint(self.semantic_map["points"]))
+        self.assertTrue(retired.isdisjoint(active_refs))
+
     def test_debug_route_generates_paths_for_plannable_steps(self) -> None:
         result = plan_route(self.route, self.semantic_map, self.params)
 
@@ -71,9 +93,13 @@ class SemanticPlannerTest(unittest.TestCase):
             [
                 "go_traffic_light_1",
                 "random_obstacle_1",
+                "pickup_1_rear",
                 "cone_lane_change_1",
+                "drop_1_rear",
                 "return_to_pickup_area",
+                "pickup_2_rear",
                 "cone_lane_change_2",
+                "drop_2_rear",
                 "finish_park",
             ],
         )
@@ -95,13 +121,13 @@ class SemanticPlannerTest(unittest.TestCase):
             {plan.planner_plugin for plan in result.plans},
             {"hybrid_astar"},
         )
-        self.assertEqual(len(result.plans), 6)
+        self.assertEqual(len(result.plans), 10)
 
     def test_cone_lane_change_without_target_uses_corridor_end(self) -> None:
         result = plan_route(self.route, self.semantic_map, self.params)
         cone_plan = next(plan for plan in result.plans if plan.step_id == "cone_lane_change_1")
 
-        self.assertEqual(cone_plan.target_ref, "drop_dock")
+        self.assertEqual(cone_plan.target_ref, "drop_front")
         self.assertEqual(cone_plan.target_source, "corridor_end")
 
     def test_debug_route_lab_return_goes_via_traffic_light_before_second_pickup(self) -> None:
@@ -112,15 +138,15 @@ class SemanticPlannerTest(unittest.TestCase):
             plan for plan in result.plans if plan.step_id == "return_to_pickup_area"
         )
         self.assertEqual(return_plan.corridor_ref, "lab_return_to_pickup")
-        self.assertEqual(return_plan.target_ref, "pickup_dock")
+        self.assertEqual(return_plan.target_ref, "pickup_front")
         self.assertEqual(
             [point.ref_id for point in return_plan.path if point.ref_id],
             [
-                "drop_dock",
+                "drop_rear",
                 "traffic_light_stop_line",
                 "random_obstacle_entry",
                 "random_obstacle_exit",
-                "pickup_dock",
+                "pickup_front",
             ],
         )
 
@@ -139,10 +165,10 @@ class SemanticPlannerTest(unittest.TestCase):
         self.assertEqual(
             [point.ref_id for point in return_plan.path if point.ref_id],
             [
-                "drop_dock",
+                "drop_rear",
                 "cone_lane_change_exit",
                 "cone_lane_change_entry",
-                "pickup_dock",
+                "pickup_front",
             ],
         )
 
@@ -431,7 +457,13 @@ class SemanticPlannerTest(unittest.TestCase):
         self.assertLess(_angle_delta(plan.path[-1].yaw, math.pi), math.radians(6.0))
         self.assertGreaterEqual(_minimum_path_radius(plan.path), 0.80)
 
-    def test_debug_route_has_one_continuous_ackermann_path(self) -> None:
+    def test_control_validation_route_has_one_continuous_ackermann_path(self) -> None:
+        route = load_yaml_file(
+            REPO_ROOT / "config" / "routes" / "debug_control_validation_route.yaml"
+        )
+        semantic_map = load_yaml_file(
+            REPO_ROOT / "maps" / "debug" / "semantic_map_control_validation.yaml"
+        )
         params = load_yaml_file(
             REPO_ROOT / "config" / "planning" / "planning_params.yaml"
         )
@@ -440,16 +472,16 @@ class SemanticPlannerTest(unittest.TestCase):
                 "plugin": "hybrid_astar",
                 "min_turning_radius_m": 0.81,
                 "path_sample_spacing_m": 0.10,
-                "hybrid_step_length_m": 0.20,
+                "hybrid_step_length_m": 0.10,
                 "hybrid_heading_bins": 72,
-                "hybrid_goal_position_tolerance_m": 0.15,
-                "hybrid_goal_heading_tolerance_deg": 8.0,
+                "hybrid_goal_position_tolerance_m": 0.10,
+                "hybrid_goal_heading_tolerance_deg": 5.0,
                 "planning_timeout_ms": 10_000.0,
             }
         )
         params["trajectory_smoother"]["enabled"] = False
 
-        result = plan_continuous_route(self.route, self.semantic_map, params)
+        result = plan_continuous_route(route, semantic_map, params)
 
         self.assertTrue(result.ok, result.failures)
         self.assertEqual(result.planner_plugin, "hybrid_astar")
@@ -462,17 +494,17 @@ class SemanticPlannerTest(unittest.TestCase):
                 "traffic_light_stop_line",
                 "random_obstacle_entry",
                 "random_obstacle_exit",
-                "pickup_dock",
+                "pickup_pass",
                 "cone_lane_change_entry",
                 "cone_lane_change_exit",
-                "drop_dock",
+                "drop_pass",
                 "traffic_light_stop_line",
                 "random_obstacle_entry",
                 "random_obstacle_exit",
-                "pickup_dock",
+                "pickup_pass",
                 "cone_lane_change_entry",
                 "cone_lane_change_exit",
-                "drop_dock",
+                "drop_pass",
                 "finish_park",
             ],
         )
@@ -556,10 +588,10 @@ class SemanticPlannerTest(unittest.TestCase):
         cone_plan = next(
             plan for plan in result.plans if plan.step_id == "cone_lane_change_1"
         )
-        pickup_yaw = self.semantic_map["points"]["pickup_dock"]["yaw"]
+        pickup_yaw = self.semantic_map["points"]["pickup_rear"]["yaw"]
         departure_heading = _segment_heading(cone_plan.path[0], cone_plan.path[1])
         self.assertEqual(cone_plan.smoother_plugin, "cubic_bezier")
-        self.assertEqual(cone_plan.path[0].ref_id, "pickup_dock")
+        self.assertEqual(cone_plan.path[0].ref_id, "pickup_rear")
         self.assertLess(_angle_delta(departure_heading, pickup_yaw), math.radians(20.0))
         return_plan = next(
             plan for plan in result.plans if plan.step_id == "return_to_pickup_area"

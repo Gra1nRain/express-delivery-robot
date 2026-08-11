@@ -73,17 +73,43 @@ points:
     yaw: 0.045
     role: traffic_light_stop_line
     status: measured
-  pickup_dock:
-    x: 8.859
-    y: -0.018
-    yaw: -0.003
-    role: pickup_area
+  # Retired on 2026-08-09; replaced by pickup_front and pickup_rear.
+  # pickup_dock:
+  #   x: 8.859
+  #   y: -0.018
+  #   yaw: -0.003
+  #   role: pickup_area
+  #   status: measured
+  pickup_front:
+    x: 8.413
+    y: -0.081
+    yaw: 0.015
+    role: pickup_area_front
     status: measured
-  drop_dock:
-    x: 2.077
-    y: 3.370
-    yaw: 3.108
-    role: drop_area
+  pickup_rear:
+    x: 9.013
+    y: -0.091
+    yaw: 0.022
+    role: pickup_area_rear
+    status: measured
+  # Retired on 2026-08-09; replaced by drop_front and drop_rear.
+  # drop_dock:
+  #   x: 2.077
+  #   y: 3.370
+  #   yaw: 3.108
+  #   role: drop_area
+  #   status: measured
+  drop_front:
+    x: 2.266
+    y: 3.456
+    yaw: -3.136
+    role: drop_area_front
+    status: measured
+  drop_rear:
+    x: 1.685
+    y: 3.467
+    yaw: -3.115
+    role: drop_area_rear
     status: measured
   finish_park:
     x: -0.740
@@ -126,37 +152,49 @@ lane_centerlines:
       - traffic_light_stop_line
       - random_obstacle_entry
       - random_obstacle_exit
-      - pickup_dock
+      - pickup_front
+  - id: pickup_front_to_rear_lane
+    status: measured
+    width_m: 2.40
+    points:
+      - pickup_front
+      - pickup_rear
   - id: pickup_to_drop_lane
     status: draft
     width_m: 2.40
     points:
-      - pickup_dock
+      - pickup_rear
       - cone_lane_change_entry
       - cone_lane_change_exit
-      - drop_dock
+      - drop_front
+  - id: drop_front_to_rear_lane
+    status: measured
+    width_m: 2.40
+    points:
+      - drop_front
+      - drop_rear
   - id: drop_to_pickup_lane
     status: draft
     width_m: 2.40
     points:
-      - drop_dock
+      - drop_rear
       - cone_lane_change_exit
       - cone_lane_change_entry
-      - pickup_dock
+      - pickup_front
   - id: lab_drop_to_pickup_lane
     status: debug_lab_only
     width_m: 2.40
     points:
-      - drop_dock
+      - drop_rear
       - traffic_light_stop_line
       - random_obstacle_entry
       - random_obstacle_exit
-      - pickup_dock
+      - pickup_front
   - id: drop_to_finish_lane
     status: draft
     width_m: 2.40
     points:
-      - drop_dock
+      - drop_rear
       - finish_park
 
 lane_boundaries:
@@ -178,12 +216,20 @@ stop_lines:
     point_ref: traffic_light_stop_line
     status: measured
     length_m: 2.40
-  - id: pickup_dock_stop_line
-    point_ref: pickup_dock
+  - id: pickup_front_stop_line
+    point_ref: pickup_front
     status: measured
     length_m: 2.40
-  - id: drop_dock_stop_line
-    point_ref: drop_dock
+  - id: pickup_rear_stop_line
+    point_ref: pickup_rear
+    status: measured
+    length_m: 2.40
+  - id: drop_front_stop_line
+    point_ref: drop_front
+    status: measured
+    length_m: 2.40
+  - id: drop_rear_stop_line
+    point_ref: drop_rear
     status: measured
     length_m: 2.40
 
@@ -214,15 +260,29 @@ no_go_zones:
     reason: Do not plan outside the selected laboratory debug area.
 
 dock_poses:
-  - id: pickup_dock
-    point_ref: pickup_dock
+  - id: pickup_front
+    point_ref: pickup_front
     dock_type: PICKUP
     work_side: RIGHT
     position_tolerance_m: 0.10
     yaw_tolerance_deg: 5.0
     status: measured
-  - id: drop_dock
-    point_ref: drop_dock
+  - id: pickup_rear
+    point_ref: pickup_rear
+    dock_type: PICKUP
+    work_side: RIGHT
+    position_tolerance_m: 0.10
+    yaw_tolerance_deg: 5.0
+    status: measured
+  - id: drop_front
+    point_ref: drop_front
+    dock_type: DROP
+    work_side: RIGHT
+    position_tolerance_m: 0.10
+    yaw_tolerance_deg: 5.0
+    status: measured
+  - id: drop_rear
+    point_ref: drop_rear
     dock_type: DROP
     work_side: RIGHT
     position_tolerance_m: 0.10
@@ -240,9 +300,15 @@ route_corridors:
   - id: go_to_pickup
     centerline_ref: start_to_pickup_lane
     allowed_steps: [go_traffic_light_1, random_obstacle_1]
+  - id: pickup_front_to_rear
+    centerline_ref: pickup_front_to_rear_lane
+    allowed_steps: [pickup_1_rear, pickup_2_rear]
   - id: pickup_to_drop
     centerline_ref: pickup_to_drop_lane
     allowed_steps: [cone_lane_change_1, cone_lane_change_2]
+  - id: drop_front_to_rear
+    centerline_ref: drop_front_to_rear_lane
+    allowed_steps: [drop_1_rear, drop_2_rear]
   - id: return_to_pickup
     centerline_ref: drop_to_pickup_lane
     allowed_steps: [return_to_pickup_area]

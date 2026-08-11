@@ -5,7 +5,7 @@
 - route_name: debug_route
 - frame_id: map
 - ok: True
-- trajectory_count: 6
+- trajectory_count: 10
 - failure_count: 0
 
 ## 配置限值
@@ -20,12 +20,16 @@
 
 | step_id | points | length_m | duration_s | max_v_mps | max_abs_curvature |
 |---|---:|---:|---:|---:|---:|
-| go_traffic_light_1 | 12 | 2.593 | 5.693 | 0.500 | 0.000000 |
-| random_obstacle_1 | 36 | 6.673 | 18.900 | 0.500 | 0.388479 |
-| cone_lane_change_1 | 53 | 9.049 | 25.225 | 0.500 | 5.252711 |
-| return_to_pickup_area | 59 | 10.143 | 27.891 | 0.500 | 6.634781 |
-| cone_lane_change_2 | 53 | 9.049 | 25.225 | 0.500 | 5.252711 |
-| finish_park | 13 | 2.823 | 7.001 | 0.500 | 0.000000 |
+| go_traffic_light_1 | 27 | 2.600 | 5.706 | 0.500 | 0.000000 |
+| random_obstacle_1 | 63 | 6.200 | 17.829 | 0.500 | 0.771613 |
+| pickup_1_rear | 7 | 0.600 | 2.538 | 0.447 | 0.000000 |
+| cone_lane_change_1 | 103 | 10.198 | 27.567 | 0.500 | 1.234568 |
+| drop_1_rear | 6 | 0.500 | 2.317 | 0.424 | 0.000000 |
+| return_to_pickup_area | 109 | 10.799 | 29.039 | 0.500 | 1.234568 |
+| pickup_2_rear | 7 | 0.600 | 2.538 | 0.447 | 0.000000 |
+| cone_lane_change_2 | 103 | 10.198 | 27.567 | 0.500 | 1.234568 |
+| drop_2_rear | 6 | 0.500 | 2.317 | 0.424 | 0.000000 |
+| finish_park | 25 | 2.400 | 6.141 | 0.500 | 0.462968 |
 
 ## 未验证
 

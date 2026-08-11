@@ -12,6 +12,10 @@ from typing import Sequence
 
 import yaml
 
+from competition_planning.artifact_provenance import (
+    build_source_manifest,
+    resolve_trajectory_source_paths,
+)
 from competition_planning.semantic_planner import load_yaml_file
 from competition_planning.trajectory_parameterizer import (
     OptimizedRouteTrajectory,
@@ -43,6 +47,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     result = optimize_route_trajectory(route, semantic_map, planning_params, optimizer_params)
     selected_result = _select_steps(result, args.step_id)
     output = selected_result.to_dict()
+    output["source_manifest"] = build_source_manifest(
+        resolve_trajectory_source_paths(
+            route_file=args.route,
+            semantic_map_file=args.semantic_map,
+            planning_params_file=args.planning_params,
+            optimizer_params_file=args.optimizer_params,
+        )
+    )
 
     if args.output:
         output_path = Path(args.output)

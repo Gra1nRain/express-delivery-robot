@@ -12,11 +12,11 @@ global_planner:
   max_speed_mps: 1.80
   fallback_plugin: none
   path_sample_spacing_m: 0.10
-  hybrid_step_length_m: 0.20
+  hybrid_step_length_m: 0.10
   hybrid_curvature_bins: 9
   hybrid_heading_bins: 72
-  hybrid_goal_position_tolerance_m: 0.15
-  hybrid_goal_heading_tolerance_deg: 8.0
+  hybrid_goal_position_tolerance_m: 0.10
+  hybrid_goal_heading_tolerance_deg: 5.0
   hybrid_max_expansions: 250000
 
 trajectory_smoother:

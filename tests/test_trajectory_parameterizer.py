@@ -19,10 +19,12 @@ from competition_planning.trajectory_parameterizer import (
 
 
 class TrajectoryParameterizerTest(unittest.TestCase):
-    def test_continuous_route_uses_jerk_limited_profile_with_only_final_stop(self) -> None:
-        route = load_yaml_file(REPO_ROOT / "config" / "routes" / "debug_route.yaml")
+    def test_continuous_control_validation_route_uses_only_final_stop(self) -> None:
+        route = load_yaml_file(
+            REPO_ROOT / "config" / "routes" / "debug_control_validation_route.yaml"
+        )
         semantic_map = load_yaml_file(
-            REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
+            REPO_ROOT / "maps" / "debug" / "semantic_map_control_validation.yaml"
         )
         planning = load_yaml_file(
             REPO_ROOT / "config" / "planning" / "planning_params.yaml"
@@ -32,10 +34,10 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                 "plugin": "hybrid_astar",
                 "min_turning_radius_m": 0.81,
                 "path_sample_spacing_m": 0.10,
-                "hybrid_step_length_m": 0.20,
+                "hybrid_step_length_m": 0.10,
                 "hybrid_heading_bins": 72,
-                "hybrid_goal_position_tolerance_m": 0.15,
-                "hybrid_goal_heading_tolerance_deg": 8.0,
+                "hybrid_goal_position_tolerance_m": 0.10,
+                "hybrid_goal_heading_tolerance_deg": 5.0,
                 "planning_timeout_ms": 10_000.0,
             }
         )
@@ -191,7 +193,7 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             self.assertLessEqual(point.v, expected_cap + 1e-9)
             self.assertAlmostEqual(point.yaw_rate, point.v * point.curvature)
 
-    def test_public_route_optimizer_generates_six_config_limited_trajectories(self) -> None:
+    def test_public_route_optimizer_generates_stop_bounded_trajectories(self) -> None:
         route = load_yaml_file(REPO_ROOT / "config" / "routes" / "debug_route.yaml")
         semantic_map = load_yaml_file(REPO_ROOT / "maps" / "debug" / "semantic_map.yaml")
         planning_params = load_yaml_file(
@@ -209,9 +211,13 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             [
                 "go_traffic_light_1",
                 "random_obstacle_1",
+                "pickup_1_rear",
                 "cone_lane_change_1",
+                "drop_1_rear",
                 "return_to_pickup_area",
+                "pickup_2_rear",
                 "cone_lane_change_2",
+                "drop_2_rear",
                 "finish_park",
             ],
         )
@@ -219,12 +225,16 @@ class TrajectoryParameterizerTest(unittest.TestCase):
         self.assertEqual(result.route_name, "debug_route")
 
         traffic = _point_by_ref(result, "go_traffic_light_1", "traffic_light_stop_line")
-        pickup = _point_by_ref(result, "random_obstacle_1", "pickup_dock")
-        drop = _point_by_ref(result, "cone_lane_change_1", "drop_dock")
+        pickup_front = _point_by_ref(result, "random_obstacle_1", "pickup_front")
+        pickup_rear = _point_by_ref(result, "pickup_1_rear", "pickup_rear")
+        drop_front = _point_by_ref(result, "cone_lane_change_1", "drop_front")
+        drop_rear = _point_by_ref(result, "drop_1_rear", "drop_rear")
         finish = _point_by_ref(result, "finish_park", "finish_park")
         self.assertEqual(traffic.v, 0.0)
-        self.assertEqual(pickup.v, 0.0)
-        self.assertEqual(drop.v, 0.0)
+        self.assertEqual(pickup_front.v, 0.0)
+        self.assertEqual(pickup_rear.v, 0.0)
+        self.assertEqual(drop_front.v, 0.0)
+        self.assertEqual(drop_rear.v, 0.0)
         self.assertEqual(finish.v, 0.0)
 
         random_entry = _point_by_ref(result, "random_obstacle_1", "random_obstacle_entry")
@@ -301,9 +311,20 @@ class TrajectoryParameterizerTest(unittest.TestCase):
 
             self.assertEqual(completed.returncode, 0, completed.stderr)
             output = load_yaml_file(output_yaml)
-            self.assertEqual(len(output["trajectories"]), 6)
+            self.assertEqual(len(output["trajectories"]), 10)
+            self.assertEqual(
+                set(output["source_manifest"]),
+                {
+                    "route",
+                    "semantic_map",
+                    "planning_params",
+                    "optimizer_params",
+                    "occupancy_map",
+                    "occupancy_image",
+                },
+            )
             self.assertIn(
-                "route=debug_route ok=True trajectories=6 failures=0",
+                "route=debug_route ok=True trajectories=10 failures=0",
                 completed.stdout,
             )
             csv_files = sorted(path.name for path in csv_dir.glob("*.csv"))
@@ -312,8 +333,12 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                 [
                     "cone_lane_change_1.csv",
                     "cone_lane_change_2.csv",
+                    "drop_1_rear.csv",
+                    "drop_2_rear.csv",
                     "finish_park.csv",
                     "go_traffic_light_1.csv",
+                    "pickup_1_rear.csv",
+                    "pickup_2_rear.csv",
                     "random_obstacle_1.csv",
                     "return_to_pickup_area.csv",
                 ],

@@ -7,8 +7,10 @@ notes:
 points:
   start: null
   traffic_light_stop_line: null
-  pickup_dock: null
-  drop_dock: null
+  pickup_front: null
+  pickup_rear: null
+  drop_front: null
+  drop_rear: null
   finish_park: null
 lane_centerlines: []
 lane_boundaries: []

@@ -17,9 +17,9 @@ from competition_planning.artifact_provenance import (
 
 
 class ArtifactProvenanceTest(unittest.TestCase):
-    def test_committed_day5_artifact_matches_all_current_sources(self) -> None:
+    def test_current_segmented_artifact_matches_all_current_sources(self) -> None:
         artifact_path = (
-            REPO_ROOT / "docs" / "evidence" / "day5" / "debug_continuous_trajectory.yaml"
+            REPO_ROOT / "docs" / "evidence" / "day4" / "debug_optimized_trajectory.yaml"
         )
         artifact = yaml.safe_load(artifact_path.read_text(encoding="utf-8"))
         sources = resolve_trajectory_source_paths(
