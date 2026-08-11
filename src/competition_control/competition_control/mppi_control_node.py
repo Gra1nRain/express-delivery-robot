@@ -19,7 +19,7 @@ from nav_msgs.msg import Odometry, Path as NavPath
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, String, UInt32
 from tf2_ros import Buffer, TransformException, TransformListener
 import yaml
 
@@ -125,10 +125,6 @@ class MPPIControlNode(Node):
         )
         self._segment_trajectories = control_trajectories_from_dict(artifact)
         self._segmented_route_enabled = len(self._segment_trajectories) > 1
-        if self._segmented_route_enabled and self._replanning_enabled:
-            raise ValueError(
-                "segmented route test requires replanning_enabled=false"
-            )
         self._active_segment_index = 0
         trajectory = self._segment_trajectories[self._active_segment_index]
         if trajectory.frame_id != self._map_frame:
@@ -313,6 +309,16 @@ class MPPIControlNode(Node):
             ),
             path_qos,
         )
+        self._active_segment_publisher = self.create_publisher(
+            UInt32,
+            str(
+                self.declare_parameter(
+                    "active_segment_topic",
+                    "/mission/active_segment_index",
+                ).value
+            ),
+            path_qos,
+        )
         self._executed_path_publisher = self.create_publisher(
             NavPath,
             str(
@@ -366,6 +372,7 @@ class MPPIControlNode(Node):
         self._reference_path_publisher.publish(
             _control_trajectory_path(trajectory, self.get_clock().now().to_msg())
         )
+        self._active_segment_publisher.publish(UInt32(data=0))
         if self._replanning_enabled:
             self.create_subscription(
                 NavPath,
@@ -523,6 +530,9 @@ class MPPIControlNode(Node):
         self._controller.replace_trajectory(trajectory)
         self._accepted_local_geometry = None
         self._latest_local_plan_stamp_s = None
+        if self._replanning_enabled:
+            self._local_stop_requested = True
+        self._active_segment_publisher.publish(UInt32(data=segment_index))
         self._reference_path_publisher.publish(
             _control_trajectory_path(
                 trajectory,
@@ -538,15 +548,23 @@ class MPPIControlNode(Node):
         self,
         state: VehicleState,
         now_s: float,
+        local_plan_age_s: float | None,
     ) -> BodyCommand:
         assert self._segmented_state_machine is not None
         goal = self._segment_trajectories[self._active_segment_index].points[-1]
+        local_plan_unavailable = self._replanning_enabled and (
+            self._local_stop_requested
+            or local_plan_age_s is None
+            or local_plan_age_s > self._local_trajectory_timeout_s
+        )
         decision = self._segmented_state_machine.update(
             SegmentedRouteObservation(
                 now_s=now_s,
                 enabled=self._route_enabled,
                 state_valid=True,
-                stop_requested=self._avoidance_stop_requested,
+                stop_requested=(
+                    self._avoidance_stop_requested or local_plan_unavailable
+                ),
                 position_error_m=math.hypot(state.x - goal.x, state.y - goal.y),
                 heading_error_rad=math.atan2(
                     math.sin(state.yaw - goal.yaw),
@@ -652,7 +670,11 @@ class MPPIControlNode(Node):
                 self._publish_executed_pose(vehicle_state, now.to_msg())
                 local_plan_age_s = self._local_plan_age_s(now_s)
                 if self._segmented_state_machine is not None:
-                    command = self._segmented_command(vehicle_state, now_s)
+                    command = self._segmented_command(
+                        vehicle_state,
+                        now_s,
+                        local_plan_age_s,
+                    )
                 elif self._replanning_enabled and self._local_stop_requested:
                     command = BodyCommand.hold(
                         target_index=0,

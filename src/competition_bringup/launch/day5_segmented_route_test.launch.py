@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bring up the indoor one-lap docking route with every motion gate closed."""
+"""Bring up the state-driven indoor one-lap route on the Day 5 stack."""
 
 import os
 
@@ -66,8 +66,8 @@ def generate_launch_description():
                     "port_name": LaunchConfiguration("port_name"),
                     "rviz": LaunchConfiguration("rviz"),
                     "start_proximity_stop": "true",
-                    "start_local_replanner": "false",
-                    "replanning_enabled": "false",
+                    "start_local_replanner": "true",
+                    "replanning_enabled": "true",
                     "start_map_server": "true",
                     "command_output_topic": "/cmd_vel_safe",
                     "start_chassis_adapter": "false",

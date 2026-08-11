@@ -184,6 +184,9 @@ def _launch_setup(context, *args, **kwargs):
                     "reference_path_topic": visualization[
                         "reference_path_topic"
                     ],
+                    "active_segment_topic": LaunchConfiguration(
+                        "active_segment_topic"
+                    ),
                     "executed_path_topic": visualization["executed_path_topic"],
                     "executed_path_min_separation_m": visualization[
                         "executed_path_min_separation_m"
@@ -312,6 +315,9 @@ def _launch_setup(context, *args, **kwargs):
                     "local_trajectory_topic": replanning[
                         "local_trajectory_topic"
                     ],
+                    "active_segment_topic": LaunchConfiguration(
+                        "active_segment_topic"
+                    ),
                     "local_stop_request_topic": replanning[
                         "local_stop_request_topic"
                     ],
@@ -557,6 +563,10 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument("port_name", default_value="can3"),
+            DeclareLaunchArgument(
+                "active_segment_topic",
+                default_value="/mission/active_segment_index",
+            ),
             DeclareLaunchArgument(
                 "fast_lio_config",
                 default_value="fast_lio_mid360_day5_control.yaml",

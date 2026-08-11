@@ -1,6 +1,6 @@
 route_name: debug_indoor_one_lap_route
 profile: debug
-warning: Indoor one-lap stop-accuracy test without arm or vision feedback.
+warning: Indoor one-lap state-machine route without arm or vision feedback.
 semantic_map_file: maps/debug/semantic_map.yaml
 steps:
   - id: go_traffic_light_1
@@ -10,7 +10,7 @@ steps:
     target_ref: traffic_light_stop_line
   - id: random_obstacle_1
     type: RUN_SEGMENT
-    avoidance_required: false
+    avoidance_required: true
     corridor_ref: go_to_pickup
     target_ref: pickup_front
   - id: pickup_1_dock

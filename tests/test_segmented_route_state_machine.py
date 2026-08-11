@@ -256,7 +256,7 @@ class SegmentedTrajectoryArtifactTest(unittest.TestCase):
 
 
 class SegmentedRouteLaunchTopologyTest(unittest.TestCase):
-    def test_dedicated_launch_keeps_all_motion_gates_closed(self) -> None:
+    def test_one_lap_launch_reuses_full_local_avoidance_stack(self) -> None:
         launch_text = (
             REPO_ROOT
             / "src"
@@ -267,11 +267,52 @@ class SegmentedRouteLaunchTopologyTest(unittest.TestCase):
 
         self.assertIn("debug_indoor_one_lap_trajectory.yaml", launch_text)
         self.assertIn("debug_indoor_one_lap_route.yaml", launch_text)
-        self.assertIn('"start_local_replanner": "false"', launch_text)
-        self.assertIn('"replanning_enabled": "false"', launch_text)
+        self.assertIn('"start_local_replanner": "true"', launch_text)
+        self.assertIn('"replanning_enabled": "true"', launch_text)
         self.assertIn('"start_chassis_adapter": "false"', launch_text)
         self.assertIn('"command_output_topic": "/cmd_vel_safe"', launch_text)
         self.assertNotIn("restart.sh", launch_text)
+
+    def test_segmented_controller_and_local_replanner_share_active_segment(self) -> None:
+        control_node = (
+            REPO_ROOT
+            / "src"
+            / "competition_control"
+            / "competition_control"
+            / "mppi_control_node.py"
+        ).read_text(encoding="utf-8")
+        replanner_node = (
+            REPO_ROOT
+            / "src"
+            / "competition_planning"
+            / "competition_planning"
+            / "local_replanner_node.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "segmented route test requires replanning_enabled=false",
+            control_node,
+        )
+        self.assertIn("_active_segment_callback", replanner_node)
+        self.assertIn('"active_segment_topic"', replanner_node)
+        self.assertIn("_active_segment_publisher", control_node)
+        self.assertIn("DurabilityPolicy.TRANSIENT_LOCAL", replanner_node)
+        self.assertIn("self._local_stop_requested", control_node)
+
+    def test_one_lap_route_marks_obstacle_segment_for_avoidance(self) -> None:
+        import yaml
+
+        route = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "routes"
+                / "debug_indoor_one_lap_route.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        steps = {step["id"]: step for step in route["steps"]}
+
+        self.assertTrue(steps["random_obstacle_1"]["avoidance_required"])
 
 
 if __name__ == "__main__":

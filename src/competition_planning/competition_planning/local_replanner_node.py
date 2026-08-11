@@ -19,7 +19,7 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, String, UInt32
 from tf2_ros import Buffer, TransformException, TransformListener
 import yaml
 
@@ -47,11 +47,13 @@ class LocalReplannerNode(Node):
         map_file = str(self.declare_parameter("map_file", "").value)
         if not trajectory_file or not map_file:
             raise ValueError("trajectory_file and map_file parameters are required")
-        self._reference_path = _load_reference_path(
+        self._reference_paths = _load_reference_paths(
             trajectory_file,
             self._map_frame,
         )
-        static_map = OccupancyGridMap.from_yaml(map_file)
+        self._active_segment_index = 0
+        self._reference_path = self._reference_paths[self._active_segment_index]
+        self._static_map = OccupancyGridMap.from_yaml(map_file)
         self._config = LocalReplanConfig(
             lookahead_distance_m=float(
                 self.declare_parameter("lookahead_distance_m", 3.00).value
@@ -165,7 +167,7 @@ class LocalReplannerNode(Node):
                 ).value
             ),
         )
-        self._planner = LocalTrajectoryPlanner(static_map, self._config)
+        self._planner = LocalTrajectoryPlanner(self._static_map, self._config)
 
         obstacle_source = str(
             self.declare_parameter("obstacle_source", "costmap").value
@@ -246,6 +248,23 @@ class LocalReplannerNode(Node):
                 ).value
             ),
             10,
+        )
+        active_segment_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.create_subscription(
+            UInt32,
+            str(
+                self.declare_parameter(
+                    "active_segment_topic",
+                    "/mission/active_segment_index",
+                ).value
+            ),
+            self._active_segment_callback,
+            active_segment_qos,
         )
         costmap_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -360,6 +379,27 @@ class LocalReplannerNode(Node):
         del message
         self._odom_received_s = self._now_s()
 
+    def _active_segment_callback(self, message: UInt32) -> None:
+        segment_index = int(message.data)
+        if segment_index >= len(self._reference_paths):
+            self._publish_stop(
+                "ACTIVE_SEGMENT_REJECTED",
+                detail=(
+                    f"index={segment_index}, count={len(self._reference_paths)}"
+                ),
+            )
+            return
+
+        self._active_segment_index = segment_index
+        self._reference_path = self._reference_paths[segment_index]
+        self._previous_reference_index = 0
+        self._planner = LocalTrajectoryPlanner(self._static_map, self._config)
+        self._publish_stop(
+            "ACTIVE_SEGMENT_UPDATED",
+            active_segment_index=segment_index,
+            reference_point_count=len(self._reference_path),
+        )
+
     def _planning_cycle(self) -> None:
         now = self.get_clock().now()
         now_s = now.nanoseconds / 1e9
@@ -469,7 +509,10 @@ class LocalReplannerNode(Node):
         )
 
 
-def _load_reference_path(path: str, expected_frame: str) -> tuple[PathPoint, ...]:
+def _load_reference_paths(
+    path: str,
+    expected_frame: str,
+) -> tuple[tuple[PathPoint, ...], ...]:
     with FilePath(path).open("r", encoding="utf-8") as stream:
         artifact = yaml.safe_load(stream)
     if not isinstance(artifact, dict) or not artifact.get("ok", False):
@@ -479,18 +522,37 @@ def _load_reference_path(path: str, expected_frame: str) -> tuple[PathPoint, ...
         raise ValueError(
             f"trajectory frame_id={frame_id} does not match map_frame={expected_frame}"
         )
-    points = tuple(
-        PathPoint(
-            x=float(point["x"]),
-            y=float(point["y"]),
-            yaw=float(point["yaw"]),
-            ref_id=str(point["ref_id"]) if point.get("ref_id") else None,
+    point_record_groups = []
+    point_records = artifact.get("points", [])
+    if point_records:
+        point_record_groups.append(point_records)
+    else:
+        trajectories = artifact.get("trajectories", [])
+        if not isinstance(trajectories, list) or not trajectories:
+            raise ValueError("trajectory artifact has no reference path")
+        for trajectory in trajectories:
+            if not isinstance(trajectory, dict):
+                raise ValueError("trajectory artifact contains an invalid segment")
+            point_record_groups.append(trajectory.get("points", []))
+    paths = tuple(
+        tuple(
+            PathPoint(
+                x=float(point["x"]),
+                y=float(point["y"]),
+                yaw=float(point["yaw"]),
+                ref_id=str(point["ref_id"]) if point.get("ref_id") else None,
+            )
+            for point in records
         )
-        for point in artifact.get("points", [])
+        for records in point_record_groups
     )
-    if len(points) < 2:
+    if not paths or any(len(points) < 2 for points in paths):
         raise ValueError("trajectory artifact requires at least two points")
-    return points
+    return paths
+
+
+def _load_reference_path(path: str, expected_frame: str) -> tuple[PathPoint, ...]:
+    return _load_reference_paths(path, expected_frame)[0]
 
 
 def _path_message(
