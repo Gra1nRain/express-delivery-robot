@@ -19,6 +19,51 @@ from competition_planning.trajectory_parameterizer import (
 
 
 class TrajectoryParameterizerTest(unittest.TestCase):
+    def test_indoor_one_lap_is_one_continuous_trajectory(self) -> None:
+        route = load_yaml_file(
+            REPO_ROOT / "config" / "routes" / "debug_indoor_one_lap_route.yaml"
+        )
+        semantic_map = load_yaml_file(
+            REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
+        )
+        planning = load_yaml_file(
+            REPO_ROOT / "config" / "planning" / "planning_params.yaml"
+        )
+        optimizer = load_yaml_file(
+            REPO_ROOT / "config" / "planning" / "optimizer_params.yaml"
+        )
+
+        result = optimize_continuous_route_trajectory(
+            route,
+            semantic_map,
+            planning,
+            optimizer,
+        )
+
+        self.assertTrue(result.ok, result.failures)
+        refs = [point.ref_id for point in result.points if point.ref_id]
+        for ref in (
+            "traffic_light_stop_line",
+            "random_obstacle_entry",
+            "random_obstacle_exit",
+            "pickup_front",
+            "pickup_rear",
+            "cone_lane_change_entry",
+            "cone_lane_change_exit",
+            "drop_front",
+            "drop_rear",
+            "finish_park",
+        ):
+            self.assertIn(ref, refs)
+        self.assertEqual(
+            [point.ref_id for point in result.points[1:] if point.v == 0.0],
+            ["finish_park"],
+        )
+        self.assertLessEqual(
+            max(abs(point.curvature) for point in result.points),
+            1.0 / 0.60 + 1e-6,
+        )
+
     def test_continuous_control_validation_route_uses_only_final_stop(self) -> None:
         route = load_yaml_file(
             REPO_ROOT / "config" / "routes" / "debug_control_validation_route.yaml"

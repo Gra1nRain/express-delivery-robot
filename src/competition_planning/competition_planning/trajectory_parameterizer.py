@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 import math
 from typing import Any, Sequence
 
+from competition_planning.local_trajectory_planner import concatenate_reference_paths
 from competition_planning.semantic_planner import (
     ContinuousRoutePlan,
     PathPoint,
@@ -197,7 +198,31 @@ def optimize_continuous_route_trajectory(
 ) -> ContinuousRouteTrajectory:
     """Return one whole-line path with a bounded S-curve speed profile."""
 
-    route_plan = plan_continuous_route(route, semantic_map, planning_config)
+    planning_mode = str(route.get("continuous_planning_mode", "single_search"))
+    if planning_mode == "single_search":
+        route_plan = plan_continuous_route(route, semantic_map, planning_config)
+    elif planning_mode == "joined_step_paths":
+        route_plan = _plan_joined_step_paths(
+            route,
+            semantic_map,
+            planning_config,
+        )
+    else:
+        route_plan = ContinuousRoutePlan(
+            frame_id=str(semantic_map.get("frame_id", "map")),
+            route_name=str(route.get("route_name", "")),
+            path=(),
+            planner_plugin="",
+            planning_time_ms=0.0,
+            failures=(
+                PlanFailure(
+                    step_id="continuous_route",
+                    step_type="CONTROL_ROUTE",
+                    reason="unsupported_continuous_planning_mode",
+                    detail=f"unsupported continuous_planning_mode {planning_mode}",
+                ),
+            ),
+        )
     params = (optimizer_config or {}).get("continuous_trajectory_optimizer", {})
     optimizer_plugin = str(params.get("plugin", "jerk_limited_s_curve"))
     if not route_plan.ok:
@@ -262,6 +287,63 @@ def optimize_continuous_route_trajectory(
         planner_plugin=route_plan.planner_plugin,
         optimizer_plugin=optimizer_plugin,
         points=points,
+        failures=(),
+    )
+
+
+def _plan_joined_step_paths(
+    route: dict[str, Any],
+    semantic_map: dict[str, Any],
+    planning_config: dict[str, Any] | None,
+) -> ContinuousRoutePlan:
+    """Join globally planned task intervals before one speed parameterization.
+
+    Precision docking poses are exact interval anchors.  Joining the planned
+    intervals avoids carrying Hybrid A* endpoint tolerance into the next
+    pose-constrained search, while still exposing one continuous reference to
+    control and local replanning.
+    """
+
+    step_plan = plan_route(route, semantic_map, planning_config)
+    planner_plugin = next(
+        (plan.planner_plugin for plan in step_plan.plans if plan.planner_plugin),
+        "",
+    )
+    if not step_plan.ok:
+        return ContinuousRoutePlan(
+            frame_id=step_plan.frame_id,
+            route_name=step_plan.route_name,
+            path=(),
+            planner_plugin=planner_plugin,
+            planning_time_ms=sum(plan.planning_time_ms for plan in step_plan.plans),
+            failures=step_plan.failures,
+        )
+    try:
+        path = concatenate_reference_paths(
+            tuple(plan.path for plan in step_plan.plans),
+        )
+    except ValueError as exc:
+        return ContinuousRoutePlan(
+            frame_id=step_plan.frame_id,
+            route_name=step_plan.route_name,
+            path=(),
+            planner_plugin=planner_plugin,
+            planning_time_ms=sum(plan.planning_time_ms for plan in step_plan.plans),
+            failures=(
+                PlanFailure(
+                    step_id="continuous_route",
+                    step_type="CONTROL_ROUTE",
+                    reason="continuous_path_join_failed",
+                    detail=str(exc),
+                ),
+            ),
+        )
+    return ContinuousRoutePlan(
+        frame_id=step_plan.frame_id,
+        route_name=step_plan.route_name,
+        path=path,
+        planner_plugin=planner_plugin,
+        planning_time_ms=sum(plan.planning_time_ms for plan in step_plan.plans),
         failures=(),
     )
 
@@ -344,7 +426,17 @@ def _parameterize_continuous_path(
         for curvature in curvatures
         if abs(curvature) > 1e-9
     ]
-    profile_speed_mps = min([max_speed_mps, *curve_caps])
+    curvature_rate_caps = [
+        max_curvature_rate_1pmps
+        * (current_distance - previous_distance)
+        / abs(current_curvature - previous_curvature)
+        for previous_distance, current_distance, previous_curvature, current_curvature
+        in zip(distances, distances[1:], curvatures, curvatures[1:])
+        if abs(current_curvature - previous_curvature) > 1e-9
+    ]
+    profile_speed_mps = min(
+        [max_speed_mps, *curve_caps, *curvature_rate_caps]
+    )
     profile = _JerkLimitedProfile(
         distance_m=distances[-1],
         max_speed_mps=profile_speed_mps,

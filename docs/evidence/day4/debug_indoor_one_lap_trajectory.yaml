@@ -1947,8 +1947,8 @@ source_manifest:
     sha256: 495c217749e71e38675092380bc4787f1d65de8c0e5c8cee4dad2eda3dba6565
     size_bytes: 1956
   route:
-    sha256: 26049e47d79f250f8a9ca87b07866ec5f5d006462bba98c2667e49a4df68d37a
-    size_bytes: 1388
+    sha256: 70ed69af793c3e1795be1a922fa24434b47647b5bd7f34eb9813f2ea9cd3913d
+    size_bytes: 1539
   semantic_map:
     sha256: a2d76efe8cd0edcbb78d66c9aabbc78b93ddab089dc1f939d53c3b0a2c1e48e0
     size_bytes: 8104

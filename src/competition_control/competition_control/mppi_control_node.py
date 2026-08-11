@@ -36,6 +36,7 @@ from competition_control.local_plan_continuity import (
     nearest_stop_line_path_point_index,
     stop_line_lengths_excluding_docks,
 )
+from competition_control.mission_checkpoints import mission_checkpoints_from_route
 from competition_control.mppi_controller import (
     BodyCommand,
     ControlTrajectory,
@@ -89,6 +90,7 @@ class MPPIControlNode(Node):
 
         self._map_frame = str(self.declare_parameter("map_frame", "map").value)
         self._base_frame = str(self.declare_parameter("base_frame", "body").value)
+        self._route = _load_yaml(source_paths["route"])
         self._semantic_map = _load_yaml(source_paths["semantic_map"])
         self._stop_line_lengths_by_ref = stop_line_lengths_excluding_docks(
             self._semantic_map
@@ -132,10 +134,21 @@ class MPPIControlNode(Node):
         self._control_period_s = 1.0 / float(
             self.declare_parameter("frequency_hz", 20.0).value
         )
-        self._segment_trajectories = control_trajectories_from_dict(artifact)
-        self._segmented_route_enabled = len(self._segment_trajectories) > 1
-        self._active_segment_index = 0
-        trajectory = self._segment_trajectories[self._active_segment_index]
+        trajectories = control_trajectories_from_dict(artifact)
+        if len(trajectories) != 1:
+            raise ValueError(
+                "mppi_control requires one continuous trajectory artifact; "
+                "segmented artifacts must be regenerated"
+            )
+        self._global_trajectory = trajectories[0]
+        self._mission_checkpoints = mission_checkpoints_from_route(
+            self._route,
+            self._semantic_map,
+            self._global_trajectory,
+        )
+        self._checkpoint_route_enabled = bool(self._mission_checkpoints)
+        self._active_checkpoint_index = 0
+        trajectory = self._global_trajectory
         if trajectory.frame_id != self._map_frame:
             raise ValueError(
                 f"trajectory frame_id={trajectory.frame_id} does not match "
@@ -148,7 +161,7 @@ class MPPIControlNode(Node):
         goal_heading_tolerance_deg = float(
             self.declare_parameter(
                 "goal_heading_tolerance_deg",
-                5.0 if self._segmented_route_enabled else 180.0,
+                5.0 if self._checkpoint_route_enabled else 180.0,
             ).value
         )
         params = MPPIParams(
@@ -206,16 +219,16 @@ class MPPIControlNode(Node):
             random_seed=int(self.declare_parameter("random_seed", 7).value),
         )
         self._route_enabled = False
-        self._avoidance_stop_requested = self._segmented_route_enabled
+        self._avoidance_stop_requested = self._checkpoint_route_enabled
         self._mission_phase = (
             "MISSION_DISARMED"
-            if self._segmented_route_enabled
+            if self._checkpoint_route_enabled
             else "CONTINUOUS_ROUTE"
         )
         self._segmented_state_machine = None
-        if self._segmented_route_enabled:
+        if self._checkpoint_route_enabled:
             self._segmented_state_machine = SegmentedRouteStateMachine(
-                segment_count=len(self._segment_trajectories),
+                segment_count=len(self._mission_checkpoints),
                 config=SegmentedRouteConfig(
                     goal_position_tolerance_m=goal_position_tolerance_m,
                     goal_heading_tolerance_rad=math.radians(
@@ -319,12 +332,12 @@ class MPPIControlNode(Node):
             ),
             path_qos,
         )
-        self._active_segment_publisher = self.create_publisher(
+        self._active_checkpoint_publisher = self.create_publisher(
             UInt32,
             str(
                 self.declare_parameter(
-                    "active_segment_topic",
-                    "/mission/active_segment_index",
+                    "active_checkpoint_topic",
+                    "/mission/active_checkpoint_index",
                 ).value
             ),
             path_qos,
@@ -356,7 +369,7 @@ class MPPIControlNode(Node):
             self._initialpose_callback,
             10,
         )
-        if self._segmented_route_enabled:
+        if self._checkpoint_route_enabled:
             self.create_subscription(
                 Bool,
                 str(
@@ -382,7 +395,7 @@ class MPPIControlNode(Node):
         self._reference_path_publisher.publish(
             _control_trajectory_path(trajectory, self.get_clock().now().to_msg())
         )
-        self._active_segment_publisher.publish(UInt32(data=0))
+        self._active_checkpoint_publisher.publish(UInt32(data=0))
         if self._replanning_enabled:
             self.create_subscription(
                 NavPath,
@@ -409,7 +422,8 @@ class MPPIControlNode(Node):
         self._timer = self.create_timer(self._control_period_s, self._control_cycle)
         self.get_logger().info(
             f"MPPI ready: trajectory={trajectory_file}, "
-            f"segments={len(self._segment_trajectories)}, "
+            f"continuous_points={len(self._global_trajectory.points)}, "
+            f"mission_checkpoints={len(self._mission_checkpoints)}, "
             f"frames={self._map_frame}->{self._base_frame}"
         )
 
@@ -447,7 +461,8 @@ class MPPIControlNode(Node):
         if self._segmented_state_machine is not None:
             self._route_enabled = False
             self._segmented_state_machine.reset()
-            self._activate_segment(0)
+            self._controller.replace_trajectory(self._global_trajectory)
+            self._activate_checkpoint(0)
         self._accepted_local_geometry = None
         self._local_plan_update_mode = "waiting"
         self._executed_poses.clear()
@@ -530,13 +545,9 @@ class MPPIControlNode(Node):
         self,
         geometry: tuple[PathPoint, ...],
     ) -> tuple[PathPoint, ...]:
-        if not self._segmented_route_enabled:
+        if not self._checkpoint_route_enabled:
             return geometry
-        checkpoint = self._segment_trajectories[
-            self._active_segment_index
-        ].points[-1]
-        if not checkpoint.ref_id:
-            return geometry
+        checkpoint = self._mission_checkpoints[self._active_checkpoint_index]
         stop_line_length_m = self._stop_line_lengths_by_ref.get(checkpoint.ref_id)
         if stop_line_length_m is None:
             checkpoint_index = nearest_path_point_index(
@@ -572,24 +583,17 @@ class MPPIControlNode(Node):
     def _avoidance_stop_callback(self, message: Bool) -> None:
         self._avoidance_stop_requested = bool(message.data)
 
-    def _activate_segment(self, segment_index: int) -> None:
-        trajectory = self._segment_trajectories[segment_index]
-        self._active_segment_index = segment_index
-        self._controller.replace_trajectory(trajectory)
+    def _activate_checkpoint(self, checkpoint_index: int) -> None:
+        self._active_checkpoint_index = checkpoint_index
         self._accepted_local_geometry = None
         self._latest_local_plan_stamp_s = None
         if self._replanning_enabled:
             self._local_stop_requested = True
-        self._active_segment_publisher.publish(UInt32(data=segment_index))
-        self._reference_path_publisher.publish(
-            _control_trajectory_path(
-                trajectory,
-                self.get_clock().now().to_msg(),
-            )
-        )
+        self._active_checkpoint_publisher.publish(UInt32(data=checkpoint_index))
+        checkpoint = self._mission_checkpoints[checkpoint_index]
         self.get_logger().info(
-            f"Activated segment {segment_index + 1}/"
-            f"{len(self._segment_trajectories)}: {trajectory.route_name}"
+            f"Activated mission checkpoint {checkpoint_index + 1}/"
+            f"{len(self._mission_checkpoints)}: {checkpoint.ref_id}"
         )
 
     def _segmented_command(
@@ -599,7 +603,7 @@ class MPPIControlNode(Node):
         local_plan_age_s: float | None,
     ) -> BodyCommand:
         assert self._segmented_state_machine is not None
-        goal = self._segment_trajectories[self._active_segment_index].points[-1]
+        goal = self._mission_checkpoints[self._active_checkpoint_index]
         position_error_m, heading_error_rad = checkpoint_errors(
             state,
             goal,
@@ -625,7 +629,7 @@ class MPPIControlNode(Node):
         )
         self._mission_phase = decision.phase.value
         if decision.segment_changed:
-            self._activate_segment(decision.active_segment_index)
+            self._activate_checkpoint(decision.active_segment_index)
         if decision.allow_tracking:
             return self._controller.compute_command(state)
         return BodyCommand.hold(
@@ -800,11 +804,15 @@ class MPPIControlNode(Node):
                         "local_plan_error_count": self._local_plan_error_count,
                         "mission_phase": self._mission_phase,
                         "route_enabled": self._route_enabled,
-                        "active_segment_index": self._active_segment_index,
-                        "active_segment_id": self._segment_trajectories[
-                            self._active_segment_index
-                        ].route_name,
-                        "segment_count": len(self._segment_trajectories),
+                        "active_checkpoint_index": self._active_checkpoint_index,
+                        "active_checkpoint_ref": (
+                            self._mission_checkpoints[
+                                self._active_checkpoint_index
+                            ].ref_id
+                            if self._mission_checkpoints
+                            else None
+                        ),
+                        "checkpoint_count": len(self._mission_checkpoints),
                     },
                     separators=(",", ":"),
                 )

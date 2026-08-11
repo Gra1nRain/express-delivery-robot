@@ -8,6 +8,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_control"))
 
 from competition_control.mppi_controller import control_trajectories_from_dict
+from competition_control.mission_checkpoints import mission_checkpoints_from_route
 from competition_control.segmented_route_state_machine import (
     SegmentedRouteConfig,
     SegmentedRouteObservation,
@@ -173,6 +174,54 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
 
 
 class SegmentedTrajectoryArtifactTest(unittest.TestCase):
+    def test_indoor_route_stops_only_at_task_checkpoints(self) -> None:
+        import yaml
+
+        route = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "routes"
+                / "debug_indoor_one_lap_route.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        semantic_map = yaml.safe_load(
+            (REPO_ROOT / "maps" / "debug" / "semantic_map.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        artifact = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "docs"
+                / "evidence"
+                / "day5"
+                / "debug_indoor_one_lap_continuous_trajectory.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        trajectories = control_trajectories_from_dict(artifact)
+
+        self.assertEqual(len(trajectories), 1)
+        checkpoints = mission_checkpoints_from_route(
+            route,
+            semantic_map,
+            trajectories[0],
+        )
+        self.assertEqual(
+            [checkpoint.ref_id for checkpoint in checkpoints],
+            [
+                "pickup_front",
+                "pickup_rear",
+                "drop_front",
+                "drop_rear",
+                "finish_park",
+            ],
+        )
+        self.assertNotIn(
+            "traffic_light_stop_line",
+            [checkpoint.ref_id for checkpoint in checkpoints],
+        )
+
     def test_loads_current_ten_segment_artifact(self) -> None:
         import yaml
 
@@ -265,7 +314,7 @@ class SegmentedRouteLaunchTopologyTest(unittest.TestCase):
             / "day5_segmented_route_test.launch.py"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("debug_indoor_one_lap_trajectory.yaml", launch_text)
+        self.assertIn("debug_indoor_one_lap_continuous_trajectory.yaml", launch_text)
         self.assertIn("debug_indoor_one_lap_route.yaml", launch_text)
         self.assertIn('"start_local_replanner": "true"', launch_text)
         self.assertIn('"replanning_enabled": "true"', launch_text)
@@ -273,7 +322,7 @@ class SegmentedRouteLaunchTopologyTest(unittest.TestCase):
         self.assertIn('"command_output_topic": "/cmd_vel_safe"', launch_text)
         self.assertNotIn("restart.sh", launch_text)
 
-    def test_segmented_controller_and_local_replanner_share_active_segment(self) -> None:
+    def test_checkpoint_state_does_not_switch_the_global_reference(self) -> None:
         control_node = (
             REPO_ROOT
             / "src"
@@ -293,19 +342,17 @@ class SegmentedRouteLaunchTopologyTest(unittest.TestCase):
             "segmented route test requires replanning_enabled=false",
             control_node,
         )
-        self.assertIn("_active_segment_callback", replanner_node)
-        self.assertIn('"active_segment_topic"', replanner_node)
-        self.assertIn("_active_segment_publisher", control_node)
+        self.assertNotIn("_active_segment_callback", replanner_node)
+        self.assertNotIn('"active_segment_topic"', replanner_node)
+        self.assertIn("_initialpose_callback", replanner_node)
+        self.assertIn("_active_checkpoint_publisher", control_node)
         self.assertIn("concatenate_reference_paths", replanner_node)
-        self.assertNotIn(
-            "self._reference_path = self._reference_paths[segment_index]",
-            replanner_node,
-        )
+        self.assertNotIn("_activate_segment", control_node)
+        self.assertIn("mission_checkpoints_from_route", control_node)
         self.assertIn("nearest_path_point_index", control_node)
         self.assertIn("nearest_stop_line_path_point_index", control_node)
         self.assertIn("stop_line_lengths_excluding_docks", control_node)
         self.assertIn("checkpoint_errors(", control_node)
-        self.assertIn("DurabilityPolicy.TRANSIENT_LOCAL", replanner_node)
         self.assertIn("self._local_stop_requested", control_node)
 
     def test_one_lap_route_marks_obstacle_segment_for_avoidance(self) -> None:

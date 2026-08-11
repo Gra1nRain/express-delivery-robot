@@ -1,7 +1,14 @@
 route_name: debug_indoor_one_lap_route
 profile: debug
-warning: Indoor one-lap state-machine route without arm or vision feedback.
+warning: Indoor one-lap continuous checkpoint route without arm or vision feedback.
 semantic_map_file: maps/debug/semantic_map.yaml
+continuous_planning_mode: joined_step_paths
+mission_checkpoints:
+  - pickup_front
+  - pickup_rear
+  - drop_front
+  - drop_rear
+  - finish_park
 steps:
   - id: go_traffic_light_1
     type: RUN_SEGMENT

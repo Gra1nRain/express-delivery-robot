@@ -8,7 +8,7 @@ import math
 from pathlib import Path as FilePath
 import time
 
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 import rclpy
 from rclpy.duration import Duration
@@ -19,7 +19,7 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
-from std_msgs.msg import Bool, String, UInt32
+from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformException, TransformListener
 import yaml
 
@@ -52,7 +52,6 @@ class LocalReplannerNode(Node):
             trajectory_file,
             self._map_frame,
         )
-        self._active_segment_index = 0
         self._reference_path = concatenate_reference_paths(self._reference_paths)
         self._static_map = OccupancyGridMap.from_yaml(map_file)
         self._config = LocalReplanConfig(
@@ -250,23 +249,6 @@ class LocalReplannerNode(Node):
             ),
             10,
         )
-        active_segment_qos = QoSProfile(
-            history=HistoryPolicy.KEEP_LAST,
-            depth=1,
-            reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-        )
-        self.create_subscription(
-            UInt32,
-            str(
-                self.declare_parameter(
-                    "active_segment_topic",
-                    "/mission/active_segment_index",
-                ).value
-            ),
-            self._active_segment_callback,
-            active_segment_qos,
-        )
         costmap_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
@@ -290,6 +272,12 @@ class LocalReplannerNode(Node):
             str(self.declare_parameter("odom_topic", "/odom").value),
             self._odom_callback,
             20,
+        )
+        self.create_subscription(
+            PoseWithCovarianceStamped,
+            "/initialpose",
+            self._initialpose_callback,
+            10,
         )
         frequency_hz = float(self.declare_parameter("frequency_hz", 1.0).value)
         if frequency_hz <= 0.0:
@@ -380,26 +368,17 @@ class LocalReplannerNode(Node):
         del message
         self._odom_received_s = self._now_s()
 
-    def _active_segment_callback(self, message: UInt32) -> None:
-        segment_index = int(message.data)
-        if segment_index >= len(self._reference_paths):
+    def _initialpose_callback(self, message: PoseWithCovarianceStamped) -> None:
+        frame_id = message.header.frame_id or self._map_frame
+        if frame_id != self._map_frame:
             self._publish_stop(
-                "ACTIVE_SEGMENT_REJECTED",
-                detail=(
-                    f"index={segment_index}, count={len(self._reference_paths)}"
-                ),
+                "INITIAL_POSE_FRAME_MISMATCH",
+                detail=f"{frame_id}->{self._map_frame}",
             )
             return
-
-        self._active_segment_index = segment_index
-        if segment_index == 0:
-            self._previous_reference_index = 0
-            self._planner = LocalTrajectoryPlanner(self._static_map, self._config)
-        self._publish_stop(
-            "ACTIVE_SEGMENT_UPDATED",
-            active_segment_index=segment_index,
-            reference_point_count=len(self._reference_path),
-        )
+        self._previous_reference_index = 0
+        self._planner = LocalTrajectoryPlanner(self._static_map, self._config)
+        self._publish_stop("INITIAL_POSE_RESET")
 
     def _planning_cycle(self) -> None:
         now = self.get_clock().now()

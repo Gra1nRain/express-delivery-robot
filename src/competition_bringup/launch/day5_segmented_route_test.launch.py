@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bring up the state-driven indoor one-lap route on the Day 5 stack."""
+"""Bring up the continuous indoor one-lap checkpoint route on Day 5."""
 
 import os
 
@@ -33,8 +33,8 @@ def generate_launch_description():
                         competition_ws,
                         "docs",
                         "evidence",
-                        "day4",
-                        "debug_indoor_one_lap_trajectory.yaml",
+                        "day5",
+                        "debug_indoor_one_lap_continuous_trajectory.yaml",
                     ),
                     "route_file": os.path.join(
                         competition_ws,
