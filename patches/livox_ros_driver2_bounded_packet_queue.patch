@@ -1,0 +1,50 @@
+diff --git a/src/comm/pub_handler.cpp b/src/comm/pub_handler.cpp
+index aa59d37..3ec8d5a 100644
+--- a/src/comm/pub_handler.cpp
++++ b/src/comm/pub_handler.cpp
+@@ -27,6 +27,7 @@
+ #include <chrono>
+ #include <iostream>
+ #include <limits>
++#include <utility>
+ 
+ namespace livox_ros {
+ 
+@@ -37,6 +38,23 @@ PubHandler &pub_handler() {
+   return handler;
+ }
+ 
++static std::size_t MaxRawPacketQueueSize() {
++  static const std::size_t max_queue_size = [] {
++    const char* value = std::getenv("LIVOX_ROS_MAX_PACKET_QUEUE");
++    if (value == nullptr || value[0] == '\0' || value[0] == '-') {
++      return std::size_t{0};
++    }
++    char* end = nullptr;
++    const unsigned long long parsed = std::strtoull(value, &end, 10);
++    if (end == value || *end != '\0' || parsed == 0 ||
++        parsed > std::numeric_limits<std::size_t>::max()) {
++      return std::size_t{0};
++    }
++    return static_cast<std::size_t>(parsed);
++  }();
++  return max_queue_size;
++}
++
+ void PubHandler::Init() {
+ }
+ 
+@@ -158,7 +175,12 @@ void PubHandler::OnLivoxLidarPointCloudCallback(uint32_t handle, const uint8_t d
+   packet.raw_data.insert(packet.raw_data.end(), data->data, data->data + length);
+   {
+     std::unique_lock<std::mutex> lock(self->packet_mutex_);
+-    self->raw_packet_queue_.push_back(packet);
++    const std::size_t max_queue_size = MaxRawPacketQueueSize();
++    while (max_queue_size > 0 &&
++           self->raw_packet_queue_.size() >= max_queue_size) {
++      self->raw_packet_queue_.pop_front();
++    }
++    self->raw_packet_queue_.push_back(std::move(packet));
+   }
+     self->packet_condition_.notify_one();
+ 

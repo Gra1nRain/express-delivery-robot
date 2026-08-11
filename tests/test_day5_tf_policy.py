@@ -66,6 +66,30 @@ class Day5TfPolicyTest(unittest.TestCase):
             driver_patch,
         )
 
+    def test_livox_raw_packet_queue_is_bounded_for_vehicle_bringup(self) -> None:
+        day1_text = (
+            REPO_ROOT
+            / "src"
+            / "competition_bringup"
+            / "launch"
+            / "day1_mapping.launch.py"
+        ).read_text(encoding="utf-8")
+        driver_patch = (
+            REPO_ROOT / "patches" / "livox_ros_driver2_bounded_packet_queue.patch"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            '"livox_publish_frequency_hz", default_value="20.0"', day1_text
+        )
+        self.assertIn(
+            '"livox_raw_packet_queue_limit", default_value="256"', day1_text
+        )
+        self.assertIn('"publish_freq": float(', day1_text)
+        self.assertIn('"LIVOX_ROS_MAX_PACKET_QUEUE"', day1_text)
+        self.assertIn('std::getenv("LIVOX_ROS_MAX_PACKET_QUEUE")', driver_patch)
+        self.assertIn("raw_packet_queue_.pop_front()", driver_patch)
+        self.assertIn("raw_packet_queue_.push_back(std::move(packet))", driver_patch)
+
 
 if __name__ == "__main__":
     unittest.main()
