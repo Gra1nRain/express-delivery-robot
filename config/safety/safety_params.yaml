@@ -38,7 +38,7 @@ pointcloud_to_laserscan:
   range_max: 6.00
   use_inf: true
   inf_epsilon: 1.0
-  concurrency_level: 1
+  queue_size: 1
 
 proximity_stop:
   input_type: laser_scan

@@ -102,6 +102,12 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
         )
         self.assertEqual(projection_config["output_topic"], "/scan")
         self.assertEqual(projection_config["target_frame"], "body")
+        self.assertEqual(
+            projection_config.get("queue_size"),
+            1,
+            "PointCloud-to-LaserScan must discard queued stale clouds.",
+        )
+        self.assertNotIn("concurrency_level", projection_config)
         self.assertAlmostEqual(
             projection_config["angle_min"],
             -math.pi / 2.0,
