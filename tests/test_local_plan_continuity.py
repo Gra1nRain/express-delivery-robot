@@ -9,8 +9,11 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_control"))
 
 from competition_control.local_plan_continuity import (
+    checkpoint_errors,
     local_paths_are_equivalent,
     nearest_path_point_index,
+    nearest_stop_line_path_point_index,
+    stop_line_lengths_excluding_docks,
 )
 
 
@@ -145,6 +148,64 @@ class LocalPlanContinuityTest(unittest.TestCase):
                 _Point(1.0, 0.0),
                 max_distance_m=0.10,
             )
+        )
+
+    def test_finds_traffic_stop_line_on_laterally_offset_bypass(self) -> None:
+        checkpoint = _Point(2.2235, 0.164, 0.02)
+        path = (
+            _Point(2.1168, 0.4065, 0.08),
+            _Point(2.2165, 0.4527, 0.10),
+            _Point(2.2655, 0.4652, 0.12),
+        )
+
+        self.assertIsNone(
+            nearest_path_point_index(
+                path,
+                checkpoint,
+                max_distance_m=0.10,
+            )
+        )
+        self.assertEqual(
+            nearest_stop_line_path_point_index(
+                path,
+                checkpoint,
+                line_length_m=2.40,
+                max_longitudinal_distance_m=0.10,
+            ),
+            1,
+        )
+
+    def test_stop_line_goal_uses_longitudinal_error_inside_line_width(self) -> None:
+        position_error_m, heading_error_rad = checkpoint_errors(
+            _Point(2.2165, 0.4527, 0.10),
+            _Point(2.2235, 0.164, 0.02),
+            stop_line_length_m=2.40,
+        )
+
+        self.assertLess(position_error_m, 0.01)
+        self.assertEqual(heading_error_rad, 0.0)
+
+    def test_stop_line_goal_rejects_pose_beyond_line_width(self) -> None:
+        position_error_m, _ = checkpoint_errors(
+            _Point(2.2235, 1.50, 0.02),
+            _Point(2.2235, 0.164, 0.02),
+            stop_line_length_m=2.40,
+        )
+
+        self.assertTrue(math.isinf(position_error_m))
+
+    def test_semantic_stop_lines_exclude_precision_dock_poses(self) -> None:
+        import yaml
+
+        semantic_map = yaml.safe_load(
+            (
+                REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
+            ).read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(
+            stop_line_lengths_excluding_docks(semantic_map),
+            {"traffic_light_stop_line": 2.40},
         )
 
 

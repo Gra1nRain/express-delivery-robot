@@ -30,8 +30,11 @@ from competition_planning.artifact_provenance import (
 from competition_planning.semantic_planner import PathPoint
 from competition_planning.trajectory_parameterizer import parameterize_local_path
 from competition_control.local_plan_continuity import (
+    checkpoint_errors,
     local_paths_are_equivalent,
     nearest_path_point_index,
+    nearest_stop_line_path_point_index,
+    stop_line_lengths_excluding_docks,
 )
 from competition_control.mppi_controller import (
     BodyCommand,
@@ -87,6 +90,9 @@ class MPPIControlNode(Node):
         self._map_frame = str(self.declare_parameter("map_frame", "map").value)
         self._base_frame = str(self.declare_parameter("base_frame", "body").value)
         self._semantic_map = _load_yaml(source_paths["semantic_map"])
+        self._stop_line_lengths_by_ref = stop_line_lengths_excluding_docks(
+            self._semantic_map
+        )
         self._local_optimizer_config = _load_yaml(source_paths["optimizer_params"])
         self._replanning_enabled = bool(
             self.declare_parameter("replanning_enabled", False).value
@@ -531,11 +537,20 @@ class MPPIControlNode(Node):
         ].points[-1]
         if not checkpoint.ref_id:
             return geometry
-        checkpoint_index = nearest_path_point_index(
-            geometry,
-            checkpoint,
-            max_distance_m=self._checkpoint_match_tolerance_m,
-        )
+        stop_line_length_m = self._stop_line_lengths_by_ref.get(checkpoint.ref_id)
+        if stop_line_length_m is None:
+            checkpoint_index = nearest_path_point_index(
+                geometry,
+                checkpoint,
+                max_distance_m=self._checkpoint_match_tolerance_m,
+            )
+        else:
+            checkpoint_index = nearest_stop_line_path_point_index(
+                geometry,
+                checkpoint,
+                line_length_m=stop_line_length_m,
+                max_longitudinal_distance_m=self._checkpoint_match_tolerance_m,
+            )
         if checkpoint_index is None:
             return geometry
         return tuple(
@@ -585,6 +600,11 @@ class MPPIControlNode(Node):
     ) -> BodyCommand:
         assert self._segmented_state_machine is not None
         goal = self._segment_trajectories[self._active_segment_index].points[-1]
+        position_error_m, heading_error_rad = checkpoint_errors(
+            state,
+            goal,
+            stop_line_length_m=self._stop_line_lengths_by_ref.get(goal.ref_id),
+        )
         local_plan_unavailable = self._replanning_enabled and (
             self._local_stop_requested
             or local_plan_age_s is None
@@ -598,11 +618,8 @@ class MPPIControlNode(Node):
                 stop_requested=(
                     self._avoidance_stop_requested or local_plan_unavailable
                 ),
-                position_error_m=math.hypot(state.x - goal.x, state.y - goal.y),
-                heading_error_rad=math.atan2(
-                    math.sin(state.yaw - goal.yaw),
-                    math.cos(state.yaw - goal.yaw),
-                ),
+                position_error_m=position_error_m,
+                heading_error_rad=heading_error_rad,
                 speed_mps=state.linear_speed_mps,
             )
         )

@@ -3,13 +3,38 @@
 from __future__ import annotations
 
 import math
-from typing import Protocol, Sequence
+from collections.abc import Mapping
+from typing import Any, Protocol, Sequence
 
 
 class PathPose(Protocol):
     x: float
     y: float
     yaw: float
+
+
+def stop_line_lengths_excluding_docks(
+    semantic_map: Mapping[str, Any],
+) -> dict[str, float]:
+    """Return stop-line semantics that are not precision docking poses."""
+
+    dock_refs = {
+        str(record["point_ref"])
+        for record in semantic_map.get("dock_poses", [])
+        if isinstance(record, Mapping) and record.get("point_ref")
+    }
+    result: dict[str, float] = {}
+    for record in semantic_map.get("stop_lines", []):
+        if not isinstance(record, Mapping) or not record.get("point_ref"):
+            continue
+        point_ref = str(record["point_ref"])
+        if point_ref in dock_refs:
+            continue
+        length_m = float(record.get("length_m", 0.0))
+        if length_m <= 0.0:
+            raise ValueError(f"stop line {point_ref} requires positive length_m")
+        result[point_ref] = length_m
+    return result
 
 
 def local_paths_are_equivalent(
@@ -78,6 +103,79 @@ def nearest_path_point_index(
     )
     index = min(range(len(path)), key=distances.__getitem__)
     return index if distances[index] <= max_distance_m else None
+
+
+def nearest_stop_line_path_point_index(
+    path: Sequence[PathPose],
+    checkpoint: PathPose,
+    *,
+    line_length_m: float,
+    max_longitudinal_distance_m: float,
+) -> int | None:
+    """Find where local geometry crosses a finite semantic stop line."""
+
+    if line_length_m <= 0.0:
+        raise ValueError("line_length_m must be positive")
+    if max_longitudinal_distance_m < 0.0:
+        raise ValueError("max_longitudinal_distance_m must be non-negative")
+    if not path or not _finite_path(path) or not _finite_path((checkpoint,)):
+        return None
+    candidates = []
+    for index, point in enumerate(path):
+        longitudinal_m, lateral_m = _checkpoint_frame_offsets(point, checkpoint)
+        if abs(lateral_m) <= 0.5 * line_length_m:
+            candidates.append((abs(longitudinal_m), index))
+    if not candidates:
+        return None
+    longitudinal_error_m, index = min(candidates)
+    return (
+        index
+        if longitudinal_error_m <= max_longitudinal_distance_m
+        else None
+    )
+
+
+def checkpoint_errors(
+    pose: PathPose,
+    checkpoint: PathPose,
+    *,
+    stop_line_length_m: float | None = None,
+) -> tuple[float, float]:
+    """Return state-machine errors for an exact pose or finite stop line."""
+
+    if not _finite_path((pose, checkpoint)):
+        return math.inf, math.inf
+    if stop_line_length_m is not None:
+        if stop_line_length_m <= 0.0:
+            raise ValueError("stop_line_length_m must be positive")
+        longitudinal_m, lateral_m = _checkpoint_frame_offsets(pose, checkpoint)
+        if abs(lateral_m) > 0.5 * stop_line_length_m:
+            return math.inf, 0.0
+        return abs(longitudinal_m), 0.0
+    return (
+        math.hypot(
+            float(pose.x) - float(checkpoint.x),
+            float(pose.y) - float(checkpoint.y),
+        ),
+        math.atan2(
+            math.sin(float(pose.yaw) - float(checkpoint.yaw)),
+            math.cos(float(pose.yaw) - float(checkpoint.yaw)),
+        ),
+    )
+
+
+def _checkpoint_frame_offsets(
+    pose: PathPose,
+    checkpoint: PathPose,
+) -> tuple[float, float]:
+    delta_x_m = float(pose.x) - float(checkpoint.x)
+    delta_y_m = float(pose.y) - float(checkpoint.y)
+    cos_yaw = math.cos(float(checkpoint.yaw))
+    sin_yaw = math.sin(float(checkpoint.yaw))
+    return (
+        cos_yaw * delta_x_m + sin_yaw * delta_y_m,
+        -sin_yaw * delta_x_m + cos_yaw * delta_y_m,
+    )
 
 
 def _finite_path(path: Sequence[PathPose]) -> bool:

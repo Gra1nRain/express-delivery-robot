@@ -302,6 +302,9 @@ class SegmentedRouteLaunchTopologyTest(unittest.TestCase):
             replanner_node,
         )
         self.assertIn("nearest_path_point_index", control_node)
+        self.assertIn("nearest_stop_line_path_point_index", control_node)
+        self.assertIn("stop_line_lengths_excluding_docks", control_node)
+        self.assertIn("checkpoint_errors(", control_node)
         self.assertIn("DurabilityPolicy.TRANSIENT_LOCAL", replanner_node)
         self.assertIn("self._local_stop_requested", control_node)
 
