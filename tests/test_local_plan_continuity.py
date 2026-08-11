@@ -8,7 +8,10 @@ from dataclasses import dataclass
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_control"))
 
-from competition_control.local_plan_continuity import local_paths_are_equivalent
+from competition_control.local_plan_continuity import (
+    local_paths_are_equivalent,
+    nearest_path_point_index,
+)
 
 
 @dataclass(frozen=True)
@@ -16,6 +19,7 @@ class _Point:
     x: float
     y: float
     yaw: float = 0.0
+    ref_id: str | None = None
 
 
 class LocalPlanContinuityTest(unittest.TestCase):
@@ -95,11 +99,53 @@ class LocalPlanContinuityTest(unittest.TestCase):
 
         self.assertFalse(local_paths_are_equivalent(previous, current))
 
+    def test_replaces_geometry_when_checkpoint_annotation_changes(self) -> None:
+        previous = (
+            _Point(0.0, 0.0),
+            _Point(0.5, 0.0),
+            _Point(1.0, 0.0),
+        )
+        current = (
+            _Point(0.0, 0.0),
+            _Point(0.5, 0.0),
+            _Point(1.0, 0.0, ref_id="traffic_light_stop_line"),
+        )
+
+        self.assertFalse(local_paths_are_equivalent(previous, current))
+
     def test_does_not_reuse_a_two_point_plan(self) -> None:
         previous = (_Point(0.00, 0.00), _Point(0.30, 0.00))
         current = (_Point(0.01, 0.00), _Point(0.30, 0.00))
 
         self.assertFalse(local_paths_are_equivalent(previous, current))
+
+    def test_finds_checkpoint_on_local_bypass_path(self) -> None:
+        path = (
+            _Point(0.0, 0.0),
+            _Point(0.5, 0.02),
+            _Point(1.0, 0.08),
+            _Point(1.5, 0.20),
+        )
+
+        self.assertEqual(
+            nearest_path_point_index(
+                path,
+                _Point(1.0, 0.0),
+                max_distance_m=0.10,
+            ),
+            2,
+        )
+
+    def test_rejects_checkpoint_not_reached_by_local_path(self) -> None:
+        path = (_Point(0.0, 0.0), _Point(0.5, 0.0), _Point(1.0, 0.4))
+
+        self.assertIsNone(
+            nearest_path_point_index(
+                path,
+                _Point(1.0, 0.0),
+                max_distance_m=0.10,
+            )
+        )
 
 
 if __name__ == "__main__":

@@ -57,6 +57,29 @@ def local_paths_are_equivalent(
     return False
 
 
+def nearest_path_point_index(
+    path: Sequence[PathPose],
+    checkpoint: PathPose,
+    *,
+    max_distance_m: float,
+) -> int | None:
+    """Find a checkpoint on local geometry without snapping from far away."""
+
+    if max_distance_m < 0.0:
+        raise ValueError("max_distance_m must be non-negative")
+    if not path or not _finite_path(path):
+        return None
+    distances = tuple(
+        math.hypot(
+            float(point.x) - float(checkpoint.x),
+            float(point.y) - float(checkpoint.y),
+        )
+        for point in path
+    )
+    index = min(range(len(path)), key=distances.__getitem__)
+    return index if distances[index] <= max_distance_m else None
+
+
 def _finite_path(path: Sequence[PathPose]) -> bool:
     return all(
         math.isfinite(float(value))
@@ -85,4 +108,5 @@ def _poses_match(
     return (
         position_error_m <= position_tolerance_m
         and heading_error_rad <= heading_tolerance_rad
+        and getattr(first, "ref_id", None) == getattr(second, "ref_id", None)
     )

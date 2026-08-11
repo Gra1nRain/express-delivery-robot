@@ -783,6 +783,42 @@ class LocalTrajectoryPlanner:
         )
 
 
+def concatenate_reference_paths(
+    paths: Sequence[Sequence[PathPoint]],
+    *,
+    connection_tolerance_m: float = 0.15,
+    connection_heading_tolerance_rad: float = math.radians(10.0),
+) -> tuple[PathPoint, ...]:
+    """Join route segments into one monotonic local-planning reference."""
+
+    if connection_tolerance_m < 0.0 or connection_heading_tolerance_rad < 0.0:
+        raise ValueError("reference connection tolerances must be non-negative")
+    if not paths:
+        raise ValueError("at least one reference segment is required")
+    if any(len(path) < 2 for path in paths):
+        raise ValueError("every reference segment requires at least two points")
+
+    joined = list(paths[0])
+    for path in paths[1:]:
+        previous = joined[-1]
+        current = path[0]
+        position_gap_m = math.hypot(previous.x - current.x, previous.y - current.y)
+        heading_gap_rad = abs(_wrap_angle(previous.yaw - current.yaw))
+        if (
+            position_gap_m > connection_tolerance_m
+            or heading_gap_rad > connection_heading_tolerance_rad
+        ):
+            raise ValueError(
+                "reference segments are disconnected: "
+                f"position_gap_m={position_gap_m:.3f}, "
+                f"heading_gap_deg={math.degrees(heading_gap_rad):.3f}"
+            )
+        if previous.ref_id is None and current.ref_id is not None:
+            joined[-1] = current
+        joined.extend(path[1:])
+    return tuple(joined)
+
+
 def _nearest_reference_index(
     reference_path: Sequence[PathPoint],
     current_pose: PathPoint,

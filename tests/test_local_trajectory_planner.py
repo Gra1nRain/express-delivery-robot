@@ -22,6 +22,7 @@ from competition_planning.hybrid_astar_planner import HybridAStarTimeout
 from competition_planning.local_trajectory_planner import (
     LocalReplanConfig,
     LocalTrajectoryPlanner,
+    concatenate_reference_paths,
     occupied_grid_cell_centers,
 )
 from competition_planning.occupancy_grid_planner import (
@@ -57,6 +58,81 @@ def _table_points() -> tuple[tuple[float, float], ...]:
         for x_index in range(6)
         for y_index in range(9)
     )
+
+
+class ReferencePathConcatenationTest(unittest.TestCase):
+    def test_joins_segments_without_dropping_stop_or_obstacle_refs(self) -> None:
+        first = (
+            PathPoint(0.0, 0.0, 0.0, "start"),
+            PathPoint(1.0, 0.0, 0.0, "traffic_light_stop_line"),
+        )
+        second = (
+            PathPoint(1.0, 0.0, 0.0, "traffic_light_stop_line"),
+            PathPoint(2.0, 0.1, 0.1, "random_obstacle_entry"),
+            PathPoint(3.0, 0.0, 0.0, "random_obstacle_exit"),
+        )
+
+        joined = concatenate_reference_paths((first, second))
+
+        self.assertEqual(len(joined), 4)
+        self.assertEqual(
+            [point.ref_id for point in joined if point.ref_id],
+            [
+                "start",
+                "traffic_light_stop_line",
+                "random_obstacle_entry",
+                "random_obstacle_exit",
+            ],
+        )
+
+    def test_rejects_disconnected_reference_segments(self) -> None:
+        with self.assertRaisesRegex(ValueError, "disconnected"):
+            concatenate_reference_paths(
+                (
+                    (PathPoint(0.0, 0.0, 0.0), PathPoint(1.0, 0.0, 0.0)),
+                    (PathPoint(1.5, 0.0, 0.0), PathPoint(2.0, 0.0, 0.0)),
+                )
+            )
+
+    def test_indoor_one_lap_segments_form_one_planning_reference(self) -> None:
+        artifact = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "docs"
+                / "evidence"
+                / "day4"
+                / "debug_indoor_one_lap_trajectory.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        paths = tuple(
+            tuple(
+                PathPoint(
+                    float(point["x"]),
+                    float(point["y"]),
+                    float(point["yaw"]),
+                    point.get("ref_id"),
+                )
+                for point in trajectory["points"]
+            )
+            for trajectory in artifact["trajectories"]
+        )
+
+        joined = concatenate_reference_paths(paths)
+        refs = {point.ref_id for point in joined if point.ref_id}
+
+        self.assertEqual(len(joined), sum(map(len, paths)) - (len(paths) - 1))
+        self.assertTrue(
+            {
+                "traffic_light_stop_line",
+                "random_obstacle_entry",
+                "random_obstacle_exit",
+                "pickup_front",
+                "pickup_rear",
+                "drop_front",
+                "drop_rear",
+                "finish_park",
+            }.issubset(refs)
+        )
 
 
 def _relaxed_reference(*, repeated: bool = False) -> tuple[PathPoint, ...]:
@@ -1184,6 +1260,38 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
             1.0 / 0.81 + 0.02,
         )
         self.assertLessEqual(max(point.v for point in trajectory.points), 0.20)
+
+    def test_checkpoint_annotation_stops_without_ending_continuous_path(self) -> None:
+        path = tuple(
+            PathPoint(
+                x=index * 0.10,
+                y=0.0,
+                yaw=0.0,
+                ref_id="traffic_light_stop_line" if index == 10 else None,
+            )
+            for index in range(21)
+        )
+
+        trajectory = parameterize_local_path(
+            path,
+            semantic_map={
+                "frame_id": "map",
+                "stop_lines": [
+                    {"point_ref": "traffic_light_stop_line"},
+                ],
+            },
+            optimizer_config={
+                "trajectory_optimizer": {
+                    "max_speed_mps": 0.20,
+                    "max_acceleration_mps2": 0.20,
+                    "max_deceleration_mps2": 0.30,
+                    "max_lateral_acceleration_mps2": 0.20,
+                }
+            },
+        )
+
+        self.assertEqual(trajectory.points[10].v, 0.0)
+        self.assertGreater(max(point.v for point in trajectory.points[11:-1]), 0.0)
 
     def test_bagged_local_path_with_minor_curvature_overshoot_is_mppi_acceptable(self) -> None:
         path = (

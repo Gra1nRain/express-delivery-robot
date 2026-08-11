@@ -29,7 +29,10 @@ from competition_planning.artifact_provenance import (
 )
 from competition_planning.semantic_planner import PathPoint
 from competition_planning.trajectory_parameterizer import parameterize_local_path
-from competition_control.local_plan_continuity import local_paths_are_equivalent
+from competition_control.local_plan_continuity import (
+    local_paths_are_equivalent,
+    nearest_path_point_index,
+)
 from competition_control.mppi_controller import (
     BodyCommand,
     ControlTrajectory,
@@ -135,6 +138,7 @@ class MPPIControlNode(Node):
         goal_position_tolerance_m = float(
             self.declare_parameter("goal_position_tolerance_m", 0.10).value
         )
+        self._checkpoint_match_tolerance_m = goal_position_tolerance_m
         goal_heading_tolerance_deg = float(
             self.declare_parameter(
                 "goal_heading_tolerance_deg",
@@ -468,6 +472,7 @@ class MPPIControlNode(Node):
                 )
                 for pose in message.poses
             )
+            geometry = self._annotate_active_checkpoint(geometry)
             if self._accepted_local_geometry is not None and local_paths_are_equivalent(
                 self._accepted_local_geometry,
                 geometry,
@@ -514,6 +519,34 @@ class MPPIControlNode(Node):
         self._local_plan_error = None
         self._local_plan_update_mode = "replaced"
         self._local_plan_replace_count += 1
+
+    def _annotate_active_checkpoint(
+        self,
+        geometry: tuple[PathPoint, ...],
+    ) -> tuple[PathPoint, ...]:
+        if not self._segmented_route_enabled:
+            return geometry
+        checkpoint = self._segment_trajectories[
+            self._active_segment_index
+        ].points[-1]
+        if not checkpoint.ref_id:
+            return geometry
+        checkpoint_index = nearest_path_point_index(
+            geometry,
+            checkpoint,
+            max_distance_m=self._checkpoint_match_tolerance_m,
+        )
+        if checkpoint_index is None:
+            return geometry
+        return tuple(
+            PathPoint(
+                x=point.x,
+                y=point.y,
+                yaw=point.yaw,
+                ref_id=checkpoint.ref_id if index == checkpoint_index else point.ref_id,
+            )
+            for index, point in enumerate(geometry)
+        )
 
     def _local_stop_callback(self, message: Bool) -> None:
         self._local_stop_requested = bool(message.data)

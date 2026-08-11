@@ -162,6 +162,17 @@ class Day5RunScriptTest(unittest.TestCase):
         self.assertIn('"DWA_TRACKING"', text)
         self.assertIn('"DWA_AVOIDING"', text)
 
+    def test_relay_explicitly_arms_segmented_route_before_ready_gate(self) -> None:
+        text = (
+            REPO_ROOT / "scripts" / "day5_full_route_relay.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"--enable-segmented-route"', text)
+        arm_index = text.index("node.publish_route_enable(True)")
+        ready_gate_index = text.index("ready_start = time.time()")
+        self.assertLess(arm_index, ready_gate_index)
+        self.assertIn("node.publish_route_enable(False)", text)
+
     def test_relay_debounces_temporary_proximity_stop(self) -> None:
         text = (
             REPO_ROOT / "scripts" / "day5_full_route_relay.py"

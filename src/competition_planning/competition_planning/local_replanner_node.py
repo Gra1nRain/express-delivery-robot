@@ -27,6 +27,7 @@ from competition_planning.hybrid_astar_planner import HybridAStarTimeout
 from competition_planning.local_trajectory_planner import (
     LocalReplanConfig,
     LocalTrajectoryPlanner,
+    concatenate_reference_paths,
     occupied_grid_cell_centers,
 )
 from competition_planning.occupancy_grid_planner import (
@@ -52,7 +53,7 @@ class LocalReplannerNode(Node):
             self._map_frame,
         )
         self._active_segment_index = 0
-        self._reference_path = self._reference_paths[self._active_segment_index]
+        self._reference_path = concatenate_reference_paths(self._reference_paths)
         self._static_map = OccupancyGridMap.from_yaml(map_file)
         self._config = LocalReplanConfig(
             lookahead_distance_m=float(
@@ -391,9 +392,9 @@ class LocalReplannerNode(Node):
             return
 
         self._active_segment_index = segment_index
-        self._reference_path = self._reference_paths[segment_index]
-        self._previous_reference_index = 0
-        self._planner = LocalTrajectoryPlanner(self._static_map, self._config)
+        if segment_index == 0:
+            self._previous_reference_index = 0
+            self._planner = LocalTrajectoryPlanner(self._static_map, self._config)
         self._publish_stop(
             "ACTIVE_SEGMENT_UPDATED",
             active_segment_index=segment_index,

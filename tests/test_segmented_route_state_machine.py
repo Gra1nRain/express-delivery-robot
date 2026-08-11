@@ -296,6 +296,12 @@ class SegmentedRouteLaunchTopologyTest(unittest.TestCase):
         self.assertIn("_active_segment_callback", replanner_node)
         self.assertIn('"active_segment_topic"', replanner_node)
         self.assertIn("_active_segment_publisher", control_node)
+        self.assertIn("concatenate_reference_paths", replanner_node)
+        self.assertNotIn(
+            "self._reference_path = self._reference_paths[segment_index]",
+            replanner_node,
+        )
+        self.assertIn("nearest_path_point_index", control_node)
         self.assertIn("DurabilityPolicy.TRANSIENT_LOCAL", replanner_node)
         self.assertIn("self._local_stop_requested", control_node)
 

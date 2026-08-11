@@ -160,6 +160,11 @@ class RelayMonitor(Node):
         self.initial_pose_pub = self.create_publisher(
             PoseWithCovarianceStamped, "/initialpose", 10
         )
+        self.route_enable_pub = (
+            self.create_publisher(Bool, "/mission/route_enable", 10)
+            if args.enable_segmented_route
+            else None
+        )
 
         self.create_subscription(Twist, "/cmd_vel_safe", self._safe_cmd_cb, default_qos)
         self.create_subscription(
@@ -340,6 +345,18 @@ class RelayMonitor(Node):
             self.cmd_pub.publish(Twist())
             rclpy.spin_once(self, timeout_sec=0.02)
             time.sleep(0.03)
+
+    def publish_route_enable(self, enabled: bool) -> None:
+        if self.route_enable_pub is None:
+            return
+        self.relay_active = False
+        message = Bool(data=enabled)
+        for _ in range(6):
+            self.route_enable_pub.publish(message)
+            self.cmd_pub.publish(Twist())
+            rclpy.spin_once(self, timeout_sec=0.05)
+            time.sleep(0.08)
+        self.data["segmented_route_enabled"] = enabled
 
     def publish_initial_pose(self) -> None:
         if (
@@ -586,6 +603,7 @@ def run(args: argparse.Namespace) -> int:
                         if args.skip_initialpose
                         else [args.initial_x, args.initial_y, args.initial_yaw],
                         "skip_initialpose": bool(args.skip_initialpose),
+                        "enable_segmented_route": bool(args.enable_segmented_route),
                         "route_file": args.route_file,
                         "route_point_count": route_point_count,
                         "finish_xy": finish_xy,
@@ -629,6 +647,19 @@ def run(args: argparse.Namespace) -> int:
                         {
                             "event": "initialpose_published",
                             "snapshot": node.snapshot("initialpose"),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+
+            if args.enable_segmented_route:
+                node.publish_route_enable(True)
+                jsonl.write(
+                    json.dumps(
+                        {
+                            "event": "segmented_route_enabled",
+                            "snapshot": node.snapshot("segmented_route_enabled"),
                         },
                         ensure_ascii=False,
                     )
@@ -783,6 +814,10 @@ def run(args: argparse.Namespace) -> int:
             shutdown_log = _safe_shutdown(node, args.launch_pid)
     finally:
         try:
+            node.publish_route_enable(False)
+        except Exception:
+            pass
+        try:
             final_snapshot = node.snapshot("final")
         except Exception as exc:
             final_snapshot = {"phase": "final_snapshot_failed", "error": str(exc)}
@@ -853,6 +888,14 @@ def main() -> int:
         "--global-tracking-mode",
         action="store_true",
         help="Do not require /planning/local_replan_status before enabling relay.",
+    )
+    parser.add_argument(
+        "--enable-segmented-route",
+        action="store_true",
+        help=(
+            "Arm /mission/route_enable while the chassis relay is still held at "
+            "zero, then disarm it on exit."
+        ),
     )
     parser.add_argument("--log-dir", default="/home/agilex/competition_ws/log")
     parser.add_argument("--prepose-timeout-s", type=float, default=18.0)
