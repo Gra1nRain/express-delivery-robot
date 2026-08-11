@@ -57,30 +57,37 @@ class Day5ObstacleSafetyTopologyTest(unittest.TestCase):
             )
         )
 
-        publish_config = fast_lio_config["/**"]["ros__parameters"]["publish"]
-        preprocess_config = fast_lio_config["/**"]["ros__parameters"]["preprocess"]
+        fast_lio_params = fast_lio_config["/**"]["ros__parameters"]
+        mapping_config = fast_lio_params["mapping"]
+        publish_config = fast_lio_params["publish"]
+        preprocess_config = fast_lio_params["preprocess"]
         proximity_config = safety_config["proximity_stop"]
         projection_config = safety_config["pointcloud_to_laserscan"]
         self.assertEqual(
-            fast_lio_config["/**"]["ros__parameters"]["point_filter_num"],
+            fast_lio_params["point_filter_num"],
             10,
+        )
+        self.assertEqual(
+            mapping_config.get("timer_hz"),
+            100,
+            "FAST-LIO mapping timer must retain executor headroom.",
         )
         self.assertLessEqual(
             preprocess_config["blind"],
             0.20,
             "Lowered Day5 lidar must retain near-field obstacle returns.",
         )
-        self.assertTrue(
+        self.assertFalse(
             publish_config["scan_publish_en"],
-            "FAST-LIO scan_publish_en is the master switch for point cloud outputs.",
+            "Day5 must not build the unused world-frame cloud in the control loop.",
         )
         self.assertTrue(
             publish_config["scan_bodyframe_pub_en"],
             "Day5 motion must expose body-frame FAST-LIO points for obstacle stop.",
         )
-        self.assertTrue(
+        self.assertFalse(
             publish_config["dense_publish_en"],
-            "Day5 obstacle projection needs the dense de-skewed body cloud.",
+            "Day5 body cloud must use the existing downsampled scan.",
         )
         self.assertIn("proximity_stop_node", launch_text)
         self.assertIn('package="pointcloud_to_laserscan"', launch_text)

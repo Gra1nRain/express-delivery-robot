@@ -23,6 +23,9 @@
       scan_rate: 10
 
     mapping:
+      # Keep the patched mapping timer above the 10 Hz LiDAR and 200 Hz IMU
+      # callbacks so processing does not fall behind the sensor stream.
+      timer_hz: 100
       acc_cov: 0.1
       gyr_cov: 0.1
       b_acc_cov: 0.0001
@@ -37,8 +40,10 @@
       path_en: false
       effect_map_en: false
       map_en: false
-      scan_publish_en: true
-      dense_publish_en: true
+      # The patched body-cloud publisher is independent of the expensive
+      # world-frame cloud and can reuse the existing downsampled scan.
+      scan_publish_en: false
+      dense_publish_en: false
       scan_bodyframe_pub_en: true
 
     pcd_save:
