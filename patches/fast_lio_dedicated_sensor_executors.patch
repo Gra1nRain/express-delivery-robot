@@ -1,0 +1,75 @@
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -949,11 +949,14 @@ public:
+             cout << "~~~~"<<ROOT_DIR<<" doesn't exist" << endl;
+ 
+         lidar_callback_group_ = this->create_callback_group(
+-            rclcpp::CallbackGroupType::MutuallyExclusive);
++            rclcpp::CallbackGroupType::MutuallyExclusive,
++            false);
+         imu_callback_group_ = this->create_callback_group(
+-            rclcpp::CallbackGroupType::MutuallyExclusive);
++            rclcpp::CallbackGroupType::MutuallyExclusive,
++            false);
+         mapping_callback_group_ = this->create_callback_group(
+-            rclcpp::CallbackGroupType::MutuallyExclusive);
++            rclcpp::CallbackGroupType::MutuallyExclusive,
++            false);
+ 
+         rclcpp::SubscriptionOptions lidar_options;
+         lidar_options.callback_group = lidar_callback_group_;
+@@ -1022,6 +1025,21 @@ public:
+         fclose(fp);
+     }
+ 
++    rclcpp::CallbackGroup::SharedPtr lidar_callback_group() const
++    {
++        return lidar_callback_group_;
++    }
++
++    rclcpp::CallbackGroup::SharedPtr imu_callback_group() const
++    {
++        return imu_callback_group_;
++    }
++
++    rclcpp::CallbackGroup::SharedPtr mapping_callback_group() const
++    {
++        return mapping_callback_group_;
++    }
++
+ private:
+     void report_runtime_health()
+     {
+@@ -1283,11 +1301,27 @@ int main(int argc, char** argv)
+ 
+     signal(SIGINT, SigHandle);
+ 
++    // FAST_LIO_DEDICATED_SENSOR_EXECUTORS
+     auto node = std::make_shared<LaserMappingNode>();
+-    rclcpp::executors::MultiThreadedExecutor executor(
+-        rclcpp::ExecutorOptions(), 3);
+-    executor.add_node(node);
+-    executor.spin();
++    auto node_base = node->get_node_base_interface();
++    rclcpp::executors::SingleThreadedExecutor lidar_executor;
++    rclcpp::executors::SingleThreadedExecutor imu_executor;
++    rclcpp::executors::SingleThreadedExecutor mapping_executor;
++    lidar_executor.add_callback_group(node->lidar_callback_group(), node_base);
++    imu_executor.add_callback_group(node->imu_callback_group(), node_base);
++    mapping_executor.add_callback_group(node->mapping_callback_group(), node_base);
++    mapping_executor.add_callback_group(node->get_default_callback_group(), node_base);
++
++    std::thread lidar_thread([&lidar_executor]() { lidar_executor.spin(); });
++    std::thread imu_thread([&imu_executor]() { imu_executor.spin(); });
++    mapping_executor.spin();
++
++    lidar_executor.cancel();
++    imu_executor.cancel();
++    if (lidar_thread.joinable())
++        lidar_thread.join();
++    if (imu_thread.joinable())
++        imu_thread.join();
+ 
+     if (rclcpp::ok())
+         rclcpp::shutdown();

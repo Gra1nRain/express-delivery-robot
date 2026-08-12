@@ -1,0 +1,104 @@
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -32,6 +32,7 @@
+ // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ // POSSIBILITY OF SUCH DAMAGE.
++#include <atomic>
+ #include <omp.h>
+ #include <mutex>
+ #include <math.h>
+@@ -96,6 +97,11 @@ int    effct_feat_num = 0, time_log_counter = 0, scan_count = 0, publish_count =
+ bool   point_selected_surf[100000] = {0};
+ bool   lidar_pushed, flg_first_scan = true, flg_exit = false, flg_EKF_inited;
+ bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
++std::atomic<uint64_t> lidar_callback_started_count{0};
++std::atomic<uint64_t> lidar_callback_completed_count{0};
++std::atomic<uint64_t> imu_callback_count{0};
++std::atomic<uint64_t> mapping_timer_count{0};
++std::atomic<double> lidar_preprocess_ms{0.0};
+ bool    is_first_lidar = true;
+ 
+ vector<vector<int>>  pointSearchInd_surf; 
+@@ -311,10 +317,13 @@ double timediff_lidar_wrt_imu = 0.0;
+ bool   timediff_set_flg = false;
+ void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg) 
+ {
++    lidar_callback_started_count.fetch_add(1, std::memory_order_relaxed);
+     double cur_time = get_time_sec(msg->header.stamp);
+     double preprocess_start_time = omp_get_wtime();
+     PointCloudXYZI::Ptr ptr(new PointCloudXYZI());
+     p_pre->process(msg, ptr);
++    lidar_preprocess_ms.store((omp_get_wtime() - preprocess_start_time) * 1000.0, std::memory_order_relaxed);
++    lidar_callback_completed_count.fetch_add(1, std::memory_order_relaxed);
+     // FAST_LIO_PREPROCESS_OUTSIDE_SYNC_LOCK
+ 
+     {
+@@ -350,6 +359,7 @@ void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
+ 
+ void imu_cbk(const sensor_msgs::msg::Imu::UniquePtr msg_in)
+ {
++    imu_callback_count.fetch_add(1, std::memory_order_relaxed);
+     publish_count ++;
+     // cout<<"IMU got at: "<<msg_in->header.stamp.toSec()<<endl;
+     sensor_msgs::msg::Imu::SharedPtr msg(new sensor_msgs::msg::Imu(*msg_in));
+@@ -1015,8 +1024,58 @@ private:
+     }
+ 
+ private:
++    void report_runtime_health()
++    {
++        static auto previous_time = std::chrono::steady_clock::now();
++        static uint64_t previous_lidar_started = 0;
++        static uint64_t previous_lidar_completed = 0;
++        static uint64_t previous_imu = 0;
++        static uint64_t previous_timer = 0;
++        const auto now = std::chrono::steady_clock::now();
++        const double elapsed_s = std::chrono::duration<double>(now - previous_time).count();
++        if (elapsed_s < 1.0)
++        {
++            return;
++        }
++
++        const uint64_t lidar_started = lidar_callback_started_count.load(std::memory_order_relaxed);
++        const uint64_t lidar_completed = lidar_callback_completed_count.load(std::memory_order_relaxed);
++        const uint64_t imu = imu_callback_count.load(std::memory_order_relaxed);
++        const uint64_t timer = mapping_timer_count.load(std::memory_order_relaxed);
++        size_t lidar_depth = 0;
++        size_t imu_depth = 0;
++        bool selected = false;
++        double imu_minus_lidar_end_s = 0.0;
++        {
++            std::lock_guard<std::mutex> lock(mtx_buffer);
++            lidar_depth = lidar_buffer.size();
++            imu_depth = imu_buffer.size();
++            selected = lidar_pushed;
++            imu_minus_lidar_end_s = last_timestamp_imu - lidar_end_time;
++        }
++        RCLCPP_INFO(
++            this->get_logger(),
++            "FAST_LIO_HEALTH lidar_start_hz=%.2f lidar_done_hz=%.2f imu_hz=%.2f timer_hz=%.2f preprocess_ms=%.2f lidar_depth=%zu imu_depth=%zu selected=%d imu_minus_lidar_end_s=%.6f",
++            (lidar_started - previous_lidar_started) / elapsed_s,
++            (lidar_completed - previous_lidar_completed) / elapsed_s,
++            (imu - previous_imu) / elapsed_s,
++            (timer - previous_timer) / elapsed_s,
++            lidar_preprocess_ms.load(std::memory_order_relaxed),
++            lidar_depth,
++            imu_depth,
++            selected ? 1 : 0,
++            imu_minus_lidar_end_s);
++        previous_lidar_started = lidar_started;
++        previous_lidar_completed = lidar_completed;
++        previous_imu = imu;
++        previous_timer = timer;
++        previous_time = now;
++    }
++
+     void timer_callback()
+     {
++        mapping_timer_count.fetch_add(1, std::memory_order_relaxed);
++        report_runtime_health();
+         if(sync_packages(Measures))
+         {
+             if (flg_first_scan)

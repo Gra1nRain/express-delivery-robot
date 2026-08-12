@@ -1,0 +1,91 @@
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -94,14 +94,16 @@ double last_timestamp_lidar = 0, last_timestamp_imu = -1.0;
+ double gyr_cov = 0.1, acc_cov = 0.1, b_gyr_cov = 0.0001, b_acc_cov = 0.0001;
+ double filter_size_corner_min = 0, filter_size_surf_min = 0, filter_size_map_min = 0, fov_deg = 0;
+ double cube_len = 0, HALF_FOV_COS = 0, FOV_DEG = 0, total_distance = 0, lidar_end_time = 0, first_lidar_time = 0.0;
++double max_sync_lag_s = 0.35;
+ int    effct_feat_num = 0, time_log_counter = 0, scan_count = 0, publish_count = 0;
+ int    iterCount = 0, feats_down_size = 0, NUM_MAX_ITERATIONS = 0, laserCloudValidNum = 0, pcd_save_interval = -1, pcd_index = 0;
+ bool   point_selected_surf[100000] = {0};
+ bool   lidar_pushed, flg_first_scan = true, flg_exit = false, flg_EKF_inited;
+ bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
++std::atomic<uint64_t> stale_sync_drop_count{0};
+ std::atomic<uint64_t> lidar_callback_started_count{0};
+ std::atomic<uint64_t> lidar_callback_completed_count{0};
+ std::atomic<uint64_t> imu_callback_count{0};
+ std::atomic<uint64_t> mapping_timer_count{0};
+ std::atomic<double> lidar_preprocess_ms{0.0};
+ bool    is_first_lidar = true;
+@@ -431,11 +433,18 @@ bool sync_packages(MeasureGroup &meas)
+         meas.lidar_end_time = lidar_end_time;
+ 
+         lidar_pushed = true;
+     }
+ 
+     if (last_timestamp_imu < lidar_end_time)
+     {
++        if (last_timestamp_lidar - lidar_end_time > max_sync_lag_s)
++        {
++            lidar_buffer.pop_front();
++            time_buffer.pop_front();
++            lidar_pushed = false;
++            stale_sync_drop_count.fetch_add(1, std::memory_order_relaxed);
++        }
+         return false;
+     }
+ 
+     /*** push imu data, and pop from imu buffer ***/
+@@ -852,7 +862,8 @@ public:
+         this->declare_parameter<int>("point_filter_num", 2);
+         this->declare_parameter<bool>("feature_extract_enable", false);
+         this->declare_parameter<bool>("runtime_pos_log_enable", false);
+         this->declare_parameter<int>("mapping.timer_hz", 100);
++        this->declare_parameter<double>("mapping.max_sync_lag_s", 0.35);
+         this->declare_parameter<bool>("mapping.extrinsic_est_en", true);
+         this->declare_parameter<bool>("pcd_save.pcd_save_en", false);
+         this->declare_parameter<int>("pcd_save.interval", -1);
+@@ -890,11 +901,16 @@ public:
+         this->get_parameter_or<bool>("feature_extract_enable", p_pre->feature_enabled, false);
+         this->get_parameter_or<bool>("runtime_pos_log_enable", runtime_pos_log, 0);
+         int mapping_timer_hz = 100;
+         this->get_parameter_or<int>("mapping.timer_hz", mapping_timer_hz, 100);
++        this->get_parameter_or<double>("mapping.max_sync_lag_s", max_sync_lag_s, 0.35);
+         this->get_parameter_or<bool>("mapping.extrinsic_est_en", extrinsic_est_en, true);
+         this->get_parameter_or<bool>("pcd_save.pcd_save_en", pcd_save_en, false);
+         if (mapping_timer_hz <= 0)
+         {
+             throw std::invalid_argument("mapping_timer_hz must be positive");
+         }
++        if (max_sync_lag_s <= 0.0)
++        {
++            throw std::invalid_argument("mapping.max_sync_lag_s must be positive");
++        }
+         this->get_parameter_or<int>("pcd_save.interval", pcd_save_interval, -1);
+@@ -1062,7 +1078,8 @@ private:
+         const uint64_t lidar_completed = lidar_callback_completed_count.load(std::memory_order_relaxed);
+         const uint64_t imu = imu_callback_count.load(std::memory_order_relaxed);
+         const uint64_t timer = mapping_timer_count.load(std::memory_order_relaxed);
++        const uint64_t stale_drops = stale_sync_drop_count.load(std::memory_order_relaxed);
+         size_t lidar_depth = 0;
+         size_t imu_depth = 0;
+         bool selected = false;
+         double imu_minus_lidar_end_s = 0.0;
+@@ -1076,7 +1093,7 @@ private:
+         }
+         RCLCPP_INFO(
+             this->get_logger(),
+-            "FAST_LIO_HEALTH lidar_start_hz=%.2f lidar_done_hz=%.2f imu_hz=%.2f timer_hz=%.2f preprocess_ms=%.2f lidar_depth=%zu imu_depth=%zu selected=%d imu_minus_lidar_end_s=%.6f",
++            "FAST_LIO_HEALTH lidar_start_hz=%.2f lidar_done_hz=%.2f imu_hz=%.2f timer_hz=%.2f preprocess_ms=%.2f stale_sync_drops=%llu lidar_depth=%zu imu_depth=%zu selected=%d imu_minus_lidar_end_s=%.6f",
+             (lidar_started - previous_lidar_started) / elapsed_s,
+             (lidar_completed - previous_lidar_completed) / elapsed_s,
+             (imu - previous_imu) / elapsed_s,
+@@ -1083,6 +1100,7 @@ private:
+             (timer - previous_timer) / elapsed_s,
+             lidar_preprocess_ms.load(std::memory_order_relaxed),
++            static_cast<unsigned long long>(stale_drops),
+             lidar_depth,
+             imu_depth,
+             selected ? 1 : 0,
+             imu_minus_lidar_end_s);

@@ -1,0 +1,12 @@
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -1310,7 +1310,7 @@ int main(int argc, char** argv)
+     lidar_executor.add_callback_group(node->lidar_callback_group(), node_base);
+     imu_executor.add_callback_group(node->imu_callback_group(), node_base);
+     mapping_executor.add_callback_group(node->mapping_callback_group(), node_base);
+-    mapping_executor.add_callback_group(node->get_default_callback_group(), node_base);
++    mapping_executor.add_callback_group(node_base->get_default_callback_group(), node_base);
+ 
+     std::thread lidar_thread([&lidar_executor]() { lidar_executor.spin(); });
+     std::thread imu_thread([&imu_executor]() { imu_executor.spin(); });

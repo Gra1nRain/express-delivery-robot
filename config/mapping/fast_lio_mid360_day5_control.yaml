@@ -26,6 +26,8 @@
       # Keep the patched mapping timer above the 10 Hz LiDAR and 200 Hz IMU
       # callbacks so processing does not fall behind the sensor stream.
       timer_hz: 100
+      # Never keep waiting on an old LiDAR frame if IMU delivery is disrupted.
+      max_sync_lag_s: 0.35
       acc_cov: 0.1
       gyr_cov: 0.1
       b_acc_cov: 0.0001

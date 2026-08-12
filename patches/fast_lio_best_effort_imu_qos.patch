@@ -1,0 +1,15 @@
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -976,7 +976,10 @@ public:
+                 lid_topic, rclcpp::SensorDataQoS(), standard_pcl_cbk, lidar_options);
+         }
++        auto imu_qos = rclcpp::SensorDataQoS();
++        imu_qos.keep_last(200);
+         sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(
+-            imu_topic, 10, imu_cbk, imu_options);
++            imu_topic, imu_qos, imu_cbk, imu_options);
++        // FAST_LIO_BEST_EFFORT_IMU_QOS
+         pubLaserCloudFull_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered", 20);
+         pubLaserCloudFull_body_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_body", 20);
+         pubLaserCloudEffect_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_effected", 20);

@@ -8,6 +8,8 @@
 - `day5_sequential_bringup.sh`：先单独启动并门控 Livox、再启动并门控 FAST-LIO，
   最后加载完整 Day5 导航栈并复检点云；不会启用底盘 relay。
 - `day5_sensor_freshness_gate.py`：使用 `KEEP_LAST depth=1` 检查 Livox 扫描末点或 FAST-LIO 点云 P95 年龄。
+- `day5_sensor_sync_probe.py`：同时观测 Livox、IMU和 FAST-LIO 最新时间戳、频率与扫描跨度，用于区分传感器源、同步和输出积压。
+- `rebuild_fast_lio_release.sh`：幂等应用车端 FAST-LIO 实时性补丁链并执行受限的 Release重建；运行前必须停止 FAST-LIO。
 - `day5_record_motion.sh`：按 Day5 权威 topic 清单录包，并用 transient-local QoS 捕获 `/tf_static`。
 - `day5_full_route_relay.py`：现场监督 relay；看门狗默认按轨迹 `duration_s * 2.5 + 60s` 计算，可显式覆盖。
 - `day5_run_policy.py`：Day5 轨迹元数据与看门狗纯逻辑。

@@ -1,0 +1,12 @@
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -1127,6 +1127,7 @@ private:
+             /******* Publish points *******/
+             if (path_en)                         publish_path(pubPath_);
+             if (scan_pub_en)      publish_frame_world(pubLaserCloudFull_);
+-            if (scan_pub_en && scan_body_pub_en) publish_frame_body(pubLaserCloudFull_body_);
++            // FAST_LIO_INDEPENDENT_BODY_CLOUD_PUBLISH
++            if (scan_body_pub_en) publish_frame_body(pubLaserCloudFull_body_);
+             if (effect_pub_en) publish_effect_world(pubLaserCloudEffect_);
+             // if (map_pub_en) publish_map(pubLaserCloudMap_);
