@@ -1140,6 +1140,52 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertEqual(resumed.status, "REFERENCE_CLEAR")
         self.assertGreater(resumed.rejoin_index, 60)
 
+    def test_early_rejoin_deduplicates_an_exact_reference_join(self) -> None:
+        reference = _relaxed_reference()
+        planner = LocalTrajectoryPlanner(_empty_map(), _relaxed_config())
+        collision_planner = planner._planner(  # noqa: SLF001 - regression seam
+            _empty_map(),
+            reference,
+        )
+
+        spliced = planner._splice_held_path_to_reference(  # noqa: SLF001
+            held_path=(reference[1], reference[2]),
+            planner=collision_planner,
+            reference_path=reference,
+            start_index=1,
+            segment_exit_index=6,
+        )
+
+        self.assertTrue(spliced)
+        self.assertTrue(
+            all(
+                math.hypot(following.x - previous.x, following.y - previous.y)
+                > 1e-9
+                for previous, following in zip(spliced, spliced[1:])
+            )
+        )
+        trajectory = parameterize_local_path(
+            spliced,
+            semantic_map={"frame_id": "map"},
+            optimizer_config={
+                "trajectory_optimizer": {
+                    "max_speed_mps": 0.20,
+                    "max_acceleration_mps2": 0.20,
+                    "max_deceleration_mps2": 0.30,
+                    "max_lateral_acceleration_mps2": 0.20,
+                }
+            },
+        )
+        self.assertTrue(
+            all(
+                following.s > previous.s and following.t > previous.t
+                for previous, following in zip(
+                    trajectory.points,
+                    trajectory.points[1:],
+                )
+            )
+        )
+
     def test_soft_obstacle_edge_cost_increases_clearance(self) -> None:
         reference = _relaxed_reference()
         obstacle_center = reference[42]

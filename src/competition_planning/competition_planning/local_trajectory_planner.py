@@ -623,6 +623,18 @@ class LocalTrajectoryPlanner:
                     min_turning_radius_m=self._config.min_turning_radius_m,
                 ):
                     continue
+                reference_tail_index = reference_index
+                if join_distance_m <= 1e-9:
+                    if not _splice_respects_turning_radius(
+                        (
+                            held_path[held_index - 1],
+                            held_point,
+                            next_reference,
+                        ),
+                        min_turning_radius_m=self._config.min_turning_radius_m,
+                    ):
+                        continue
+                    reference_tail_index += 1
                 bridge_sample_count = max(
                     1,
                     math.ceil(join_distance_m / self._config.sample_spacing_m),
@@ -643,7 +655,9 @@ class LocalTrajectoryPlanner:
                 )
                 candidate = (
                     *held_path[: held_index + 1],
-                    *reference_path[reference_index : segment_exit_index + 1],
+                    *reference_path[
+                        reference_tail_index : segment_exit_index + 1
+                    ],
                 )
                 if planner.path_is_navigable(bridge) and planner.path_is_navigable(
                     candidate
