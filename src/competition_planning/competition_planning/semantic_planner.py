@@ -154,6 +154,9 @@ def plan_route(
     timeout_ms = float(params.get("planning_timeout_ms", 500.0))
     margin_m = _corridor_margin_m(params)
     min_turning_radius_m = float(params.get("min_turning_radius_m", 0.0))
+    dock_approach_min_turning_radius_m = float(
+        params.get("dock_approach_min_turning_radius_m", min_turning_radius_m)
+    )
     sample_spacing_m = float(params.get("path_sample_spacing_m", 0.25))
     planner_plugin = str(params.get("plugin", "semantic_corridor"))
     fallback_plugin = str(params.get("fallback_plugin", ""))
@@ -161,6 +164,7 @@ def plan_route(
 
     map_model = _SemanticMap(semantic_map)
     grid_planner = None
+    dock_approach_grid_planner = None
     grid_planner_failure: str | None = None
     if planner_plugin in {"occupancy_grid_astar", "hybrid_astar"}:
         try:
@@ -169,6 +173,18 @@ def plan_route(
                 if planner_plugin == "hybrid_astar"
                 else _load_grid_planner(semantic_map, params)
             )
+            if (
+                planner_plugin == "hybrid_astar"
+                and "dock_approach_min_turning_radius_m" in params
+            ):
+                dock_params = dict(params)
+                dock_params["min_turning_radius_m"] = params[
+                    "dock_approach_min_turning_radius_m"
+                ]
+                dock_approach_grid_planner = _load_hybrid_planner(
+                    semantic_map,
+                    dock_params,
+                )
         except Exception as exc:
             grid_planner_failure = str(exc)
     current_ref = _initial_current_ref(route, map_model)
@@ -192,10 +208,14 @@ def plan_route(
             map_model=map_model,
             margin_m=margin_m,
             min_turning_radius_m=min_turning_radius_m,
+            dock_approach_min_turning_radius_m=(
+                dock_approach_min_turning_radius_m
+            ),
             sample_spacing_m=sample_spacing_m,
             planner_plugin=planner_plugin,
             fallback_plugin=fallback_plugin,
             grid_planner=grid_planner,
+            dock_approach_grid_planner=dock_approach_grid_planner,
             grid_planner_failure=grid_planner_failure,
             smoother=smoother,
         )
@@ -450,10 +470,12 @@ def _plan_step(
     map_model: _SemanticMap,
     margin_m: float,
     min_turning_radius_m: float,
+    dock_approach_min_turning_radius_m: float,
     sample_spacing_m: float,
     planner_plugin: str,
     fallback_plugin: str,
     grid_planner: Any,
+    dock_approach_grid_planner: Any,
     grid_planner_failure: str | None,
     smoother: Any,
 ) -> tuple[StepPlan | None, PlanFailure | None, str | None]:
@@ -526,11 +548,18 @@ def _plan_step(
     if any(point is None for point in points):
         return None, _failure(step, "unknown_point_ref", "segment contains unknown point"), current_ref
 
+    is_dock_approach = bool(step.get("docking_approach", False))
     semantic_path = tuple(_interpolate_path([point for point in points if point], sample_spacing_m))
     path = semantic_path
     used_plugin = "semantic_corridor"
     if planner_plugin in {"occupancy_grid_astar", "hybrid_astar"}:
-        if grid_planner is None:
+        active_grid_planner = (
+            dock_approach_grid_planner
+            if dock_approach_grid_planner is not None
+            and is_dock_approach
+            else grid_planner
+        )
+        if active_grid_planner is None:
             if fallback_plugin != "semantic_corridor":
                 return (
                     None,
@@ -543,7 +572,7 @@ def _plan_step(
                 )
         else:
             try:
-                path = grid_planner.plan([point for point in points if point])
+                path = active_grid_planner.plan([point for point in points if point])
                 used_plugin = planner_plugin
             except Exception as exc:
                 if fallback_plugin != "semantic_corridor":
@@ -559,7 +588,11 @@ def _plan_step(
         centerline,
         map_model,
         margin_m,
-        min_turning_radius_m,
+        (
+            dock_approach_min_turning_radius_m
+            if is_dock_approach
+            else min_turning_radius_m
+        ),
         check_corridor_distance=used_plugin == "semantic_corridor",
     )
     if validation_failure is not None:

@@ -4,7 +4,7 @@ ok: true
 trajectories:
 - step_id: go_traffic_light_1
   type: RUN_SEGMENT
-  corridor_ref: go_to_pickup
+  corridor_ref: go_to_pickup_aligned
   target_ref: traffic_light_stop_line
   target_source: target_ref
   planner_plugin: hybrid_astar
@@ -233,14 +233,14 @@ trajectories:
     ref_id: traffic_light_stop_line
 - step_id: random_obstacle_1
   type: RUN_SEGMENT
-  corridor_ref: go_to_pickup
-  target_ref: pickup_front
+  corridor_ref: go_to_pickup_aligned
+  target_ref: random_obstacle_exit
   target_source: target_ref
   planner_plugin: hybrid_astar
   smoother_plugin: none
-  point_count: 63
-  path_length_m: 6.2
-  duration_s: 17.829
+  point_count: 45
+  path_length_m: 4.4
+  duration_s: 13.587
   points:
   - x: 2.215
     y: 0.222
@@ -600,155 +600,168 @@ trajectories:
     y: 0.2965
     yaw: -0.0167
     s: 4.4
-    curvature: -0.154323
+    curvature: 0.0
     v: 0.3
-    yaw_rate: -0.0463
+    yaw_rate: 0.0
     t: 13.5872
     ref_id: random_obstacle_exit
-  - x: 6.7123
-    y: 0.2933
-    yaw: -0.0476
-    s: 4.5
-    curvature: -0.462968
+- step_id: pickup_approach_1
+  type: RUN_SEGMENT
+  corridor_ref: go_to_pickup_aligned
+  target_ref: pickup_front
+  target_source: target_ref
+  planner_plugin: hybrid_astar
+  smoother_plugin: none
+  point_count: 18
+  path_length_m: 1.7
+  duration_s: 4.104
+  points:
+  - x: 6.679
+    y: 0.295
+    yaw: -0.016
+    s: 0.0
+    curvature: -0.625011
+    v: 0.3
+    yaw_rate: -0.1875
+    t: 0.0
+    ref_id: random_obstacle_exit
+  - x: 6.7789
+    y: 0.2913
+    yaw: -0.0577
+    s: 0.1
+    curvature: -0.625011
     v: 0.3873
-    yaw_rate: -0.1793
-    t: 13.8781
-  - x: 6.812
-    y: 0.2855
-    yaw: -0.1093
-    s: 4.6
-    curvature: -0.617284
+    yaw_rate: -0.2421
+    t: 0.291
+  - x: 6.8784
+    y: 0.2814
+    yaw: -0.141
+    s: 0.2
+    curvature: -0.833333
     v: 0.4582
-    yaw_rate: -0.2829
-    t: 14.1146
-  - x: 6.911
-    y: 0.2715
-    yaw: -0.171
-    s: 4.7
-    curvature: -0.617284
+    yaw_rate: -0.3819
+    t: 0.5274
+  - x: 6.9767
+    y: 0.2632
+    yaw: -0.2243
+    s: 0.2999
+    curvature: -0.833333
+    v: 0.4899
+    yaw_rate: -0.4082
+    t: 0.7383
+  - x: 7.0732
+    y: 0.237
+    yaw: -0.3077
+    s: 0.3999
+    curvature: -0.833333
+    v: 0.4899
+    yaw_rate: -0.4082
+    t: 0.9424
+  - x: 7.1671
+    y: 0.2027
+    yaw: -0.391
+    s: 0.4999
+    curvature: -0.625011
     v: 0.5
-    yaw_rate: -0.3086
-    t: 14.3233
-  - x: 7.0089
-    y: 0.2514
-    yaw: -0.2328
-    s: 4.7999
-    curvature: -0.462968
+    yaw_rate: -0.3125
+    t: 1.1444
+  - x: 7.2587
+    y: 0.1627
+    yaw: -0.4327
+    s: 0.5999
+    curvature: -0.208337
     v: 0.5
-    yaw_rate: -0.2315
-    t: 14.5233
-  - x: 7.1059
-    y: 0.2269
-    yaw: -0.2636
-    s: 4.8999
-    curvature: -0.308642
+    yaw_rate: -0.1042
+    t: 1.3444
+  - x: 7.3495
+    y: 0.1208
+    yaw: -0.4327
+    s: 0.6999
+    curvature: 0.208337
     v: 0.5
-    yaw_rate: -0.1543
-    t: 14.7233
-  - x: 7.202
-    y: 0.1993
-    yaw: -0.2945
-    s: 4.9999
-    curvature: -0.308642
+    yaw_rate: 0.1042
+    t: 1.5444
+  - x: 7.4411
+    y: 0.0808
+    yaw: -0.391
+    s: 0.7999
+    curvature: 0.625011
     v: 0.5
-    yaw_rate: -0.1543
-    t: 14.9233
-  - x: 7.2972
-    y: 0.1688
-    yaw: -0.3254
-    s: 5.0999
-    curvature: -0.154323
+    yaw_rate: 0.3125
+    t: 1.7443
+  - x: 7.5351
+    y: 0.0465
+    yaw: -0.3077
+    s: 0.8998
+    curvature: 1.041685
+    v: 0.4382
+    yaw_rate: 0.4564
+    t: 1.9575
+  - x: 7.632
+    y: 0.0223
+    yaw: -0.1827
+    s: 0.9998
+    curvature: 1.041685
+    v: 0.4382
+    yaw_rate: 0.4564
+    t: 2.1855
+  - x: 7.731
+    y: 0.0082
+    yaw: -0.0993
+    s: 1.0997
+    curvature: 0.625011
     v: 0.5
-    yaw_rate: -0.0772
-    t: 15.1233
-  - x: 7.392
-    y: 0.1369
-    yaw: -0.3254
-    s: 5.1999
+    yaw_rate: 0.3125
+    t: 2.3987
+  - x: 7.8307
+    y: 0.0004
+    yaw: -0.0577
+    s: 1.1997
+    curvature: 0.208337
+    v: 0.5
+    yaw_rate: 0.1042
+    t: 2.5986
+  - x: 7.9305
+    y: -0.0054
+    yaw: -0.0577
+    s: 1.2997
+    curvature: 0.0
+    v: 0.5
+    yaw_rate: 0.0
+    t: 2.7986
+    ref_id: pickup_approach_align
+  - x: 8.0304
+    y: -0.0111
+    yaw: -0.0577
+    s: 1.3997
     curvature: -0.0
     v: 0.5
     yaw_rate: -0.0
-    t: 15.3233
-  - x: 7.4867
-    y: 0.1049
-    yaw: -0.3254
-    s: 5.2999
+    t: 2.9986
+  - x: 8.1302
+    y: -0.0169
+    yaw: -0.0577
+    s: 1.4997
     curvature: 0.0
-    v: 0.5
-    yaw_rate: 0.0
-    t: 15.5233
-  - x: 7.5815
-    y: 0.0729
-    yaw: -0.3254
-    s: 5.3999
-    curvature: 0.0
-    v: 0.5
-    yaw_rate: 0.0
-    t: 15.7233
-  - x: 7.6762
-    y: 0.041
-    yaw: -0.3254
-    s: 5.4999
-    curvature: 0.154323
-    v: 0.5
-    yaw_rate: 0.0772
-    t: 15.9233
-  - x: 7.7715
-    y: 0.0105
-    yaw: -0.2945
-    s: 5.5999
-    curvature: 0.462968
-    v: 0.5
-    yaw_rate: 0.2315
-    t: 16.1233
-  - x: 7.868
-    y: -0.0156
-    yaw: -0.2328
-    s: 5.6999
-    curvature: 0.617284
-    v: 0.5
-    yaw_rate: 0.3086
-    t: 16.3232
-  - x: 7.9659
-    y: -0.0356
-    yaw: -0.171
-    s: 5.7999
-    curvature: 0.771613
-    v: 0.5
-    yaw_rate: 0.3858
-    t: 16.5232
-  - x: 8.0651
-    y: -0.0481
-    yaw: -0.0785
-    s: 5.8999
-    curvature: 0.771613
-    v: 0.5
-    yaw_rate: 0.3858
-    t: 16.7231
-  - x: 8.165
-    y: -0.0528
-    yaw: -0.0167
-    s: 5.9998
-    curvature: 0.462968
     v: 0.4472
-    yaw_rate: 0.207
-    t: 16.9342
-  - x: 8.265
-    y: -0.053
-    yaw: 0.0141
-    s: 6.0998
-    curvature: 0.154323
+    yaw_rate: 0.0
+    t: 3.2098
+  - x: 8.23
+    y: -0.0227
+    yaw: -0.0577
+    s: 1.5997
+    curvature: 0.0
     v: 0.3162
-    yaw_rate: 0.0488
-    t: 17.1962
-  - x: 8.365
-    y: -0.0516
-    yaw: 0.0141
-    s: 6.1998
-    curvature: 0.154323
+    yaw_rate: 0.0
+    t: 3.4718
+  - x: 8.3299
+    y: -0.0284
+    yaw: -0.0577
+    s: 1.6997
+    curvature: 0.0
     v: 0.0
     yaw_rate: 0.0
-    t: 17.8287
+    t: 4.1042
     ref_id: pickup_front
 - step_id: pickup_1_rear
   type: RUN_SEGMENT
@@ -821,14 +834,14 @@ trajectories:
     ref_id: pickup_rear
 - step_id: cone_lane_change_1
   type: CONE_LANE_CHANGE
-  corridor_ref: pickup_to_drop
-  target_ref: drop_front
-  target_source: corridor_end
+  corridor_ref: pickup_to_drop_aligned
+  target_ref: cone_lane_change_exit
+  target_source: target_ref
   planner_plugin: hybrid_astar
   smoother_plugin: none
-  point_count: 103
-  path_length_m: 10.198
-  duration_s: 27.567
+  point_count: 84
+  path_length_m: 8.299
+  duration_s: 22.953
   points:
   - x: 9.013
     y: -0.091
@@ -1500,163 +1513,176 @@ trajectories:
     y: 2.8625
     yaw: -3.113
     s: 8.2987
-    curvature: -0.154323
+    curvature: 0.0
     v: 0.3
-    yaw_rate: -0.0463
+    yaw_rate: 0.0
     t: 22.9529
     ref_id: cone_lane_change_exit
-  - x: 3.8936
-    y: 2.8612
-    yaw: 3.1393
-    s: 8.3987
-    curvature: -0.462968
+- step_id: drop_approach_1
+  type: RUN_SEGMENT
+  corridor_ref: pickup_to_drop_aligned
+  target_ref: drop_front
+  target_source: target_ref
+  planner_plugin: hybrid_astar
+  smoother_plugin: none
+  point_count: 19
+  path_length_m: 1.799
+  duration_s: 4.519
+  points:
+  - x: 3.896
+    y: 2.866
+    yaw: -3.118
+    s: 0.0
+    curvature: -0.625011
+    v: 0.3
+    yaw_rate: -0.1875
+    t: 0.0
+    ref_id: cone_lane_change_exit
+  - x: 3.796
+    y: 2.8657
+    yaw: 3.1235
+    s: 0.1
+    curvature: -0.625011
     v: 0.3873
-    yaw_rate: -0.1793
-    t: 23.2439
-  - x: 3.7937
-    y: 2.8645
-    yaw: 3.0776
-    s: 8.4987
-    curvature: -0.771613
-    v: 0.4582
-    yaw_rate: -0.3536
-    t: 23.4804
-  - x: 3.6943
-    y: 2.8755
-    yaw: 2.985
-    s: 8.5986
-    curvature: -0.925926
-    v: 0.4648
-    yaw_rate: -0.4303
-    t: 23.697
-  - x: 3.5964
-    y: 2.8956
-    yaw: 2.8924
-    s: 8.6986
-    curvature: -0.925926
-    v: 0.4648
-    yaw_rate: -0.4303
-    t: 23.9121
-  - x: 3.5008
-    y: 2.9247
-    yaw: 2.7998
-    s: 8.7985
-    curvature: -0.925926
-    v: 0.4648
-    yaw_rate: -0.4303
-    t: 24.1272
-  - x: 3.4082
-    y: 2.9626
-    yaw: 2.7072
-    s: 8.8985
-    curvature: -0.925926
-    v: 0.4648
-    yaw_rate: -0.4303
-    t: 24.3423
-  - x: 3.3196
-    y: 3.0088
-    yaw: 2.6146
-    s: 8.9985
-    curvature: -0.771613
+    yaw_rate: -0.2421
+    t: 0.291
+  - x: 3.6962
+    y: 2.8717
+    yaw: 3.0402
+    s: 0.2
+    curvature: -1.041685
+    v: 0.4382
+    yaw_rate: -0.4564
+    t: 0.5332
+  - x: 3.5976
+    y: 2.888
+    yaw: 2.9152
+    s: 0.2999
+    curvature: -1.45836
+    v: 0.3703
+    yaw_rate: -0.5401
+    t: 0.7804
+  - x: 3.5025
+    y: 2.9184
+    yaw: 2.7485
+    s: 0.3998
+    curvature: -1.45836
+    v: 0.3703
+    yaw_rate: -0.5401
+    t: 1.0501
+  - x: 3.4127
+    y: 2.9624
+    yaw: 2.6235
+    s: 0.4997
+    curvature: -1.041685
+    v: 0.4382
+    yaw_rate: -0.4564
+    t: 1.2973
+  - x: 3.328
+    y: 3.0155
+    yaw: 2.5402
+    s: 0.5997
+    curvature: -0.625011
     v: 0.5
-    yaw_rate: -0.3858
-    t: 24.5495
-  - x: 3.2348
-    y: 3.0617
-    yaw: 2.5529
-    s: 9.0985
-    curvature: -0.462968
+    yaw_rate: -0.3125
+    t: 1.5105
+  - x: 3.2468
+    y: 3.0738
+    yaw: 2.4985
+    s: 0.6997
+    curvature: -0.208337
     v: 0.5
-    yaw_rate: -0.2315
-    t: 24.7495
-  - x: 3.1525
-    y: 3.1185
-    yaw: 2.522
-    s: 9.1985
-    curvature: -0.154323
+    yaw_rate: -0.1042
+    t: 1.7104
+  - x: 3.1668
+    y: 3.1337
+    yaw: 2.4985
+    s: 0.7997
+    curvature: 0.208337
     v: 0.5
-    yaw_rate: -0.0772
-    t: 24.9495
-  - x: 3.0711
-    y: 3.1766
-    yaw: 2.522
-    s: 9.2985
-    curvature: 0.154323
+    yaw_rate: 0.1042
+    t: 1.9104
+  - x: 3.0855
+    y: 3.192
+    yaw: 2.5402
+    s: 0.8997
+    curvature: 0.416667
     v: 0.5
-    yaw_rate: 0.0772
-    t: 25.1495
-  - x: 2.9888
-    y: 3.2334
-    yaw: 2.5529
-    s: 9.3985
-    curvature: 0.462968
+    yaw_rate: 0.2083
+    t: 2.1104
+  - x: 3.0019
+    y: 3.2469
+    yaw: 2.5819
+    s: 0.9997
+    curvature: 0.625011
     v: 0.5
-    yaw_rate: 0.2315
-    t: 25.3495
-  - x: 2.9039
-    y: 3.2863
-    yaw: 2.6146
-    s: 9.4984
-    curvature: 0.771613
+    yaw_rate: 0.3125
+    t: 2.3104
+  - x: 2.915
+    y: 3.2964
+    yaw: 2.6652
+    s: 1.0996
+    curvature: 1.041685
+    v: 0.4382
+    yaw_rate: 0.4564
+    t: 2.5235
+  - x: 2.8235
+    y: 3.3366
+    yaw: 2.7902
+    s: 1.1996
+    curvature: 1.25
+    v: 0.4
+    yaw_rate: 0.5
+    t: 2.762
+  - x: 2.7278
+    y: 3.365
+    yaw: 2.9152
+    s: 1.2995
+    curvature: 1.041685
+    v: 0.4382
+    yaw_rate: 0.4564
+    t: 3.0004
+  - x: 2.6295
+    y: 3.3834
+    yaw: 2.9985
+    s: 1.3995
+    curvature: 0.625011
     v: 0.5
-    yaw_rate: 0.3858
-    t: 25.5494
-  - x: 2.8153
-    y: 3.3326
-    yaw: 2.7072
-    s: 9.5984
-    curvature: 1.080258
-    v: 0.4303
-    yaw_rate: 0.4648
-    t: 25.7643
-  - x: 2.7222
-    y: 3.3689
-    yaw: 2.8306
-    s: 9.6983
-    curvature: 1.234568
-    v: 0.4025
-    yaw_rate: 0.4969
-    t: 26.0043
-  - x: 2.6254
-    y: 3.3936
-    yaw: 2.9541
-    s: 9.7983
-    curvature: 1.080258
-    v: 0.4303
-    yaw_rate: 0.4648
-    t: 26.2444
-  - x: 2.5264
-    y: 3.4077
-    yaw: 3.0467
-    s: 9.8982
-    curvature: 0.771613
-    v: 0.4951
-    yaw_rate: 0.382
-    t: 26.4604
-  - x: 2.4266
-    y: 3.4141
-    yaw: 3.1084
-    s: 9.9982
-    curvature: 0.462968
+    yaw_rate: 0.3125
+    t: 3.2136
+  - x: 2.5302
+    y: 3.3956
+    yaw: 3.0402
+    s: 1.4995
+    curvature: 0.208337
+    v: 0.5
+    yaw_rate: 0.1042
+    t: 3.4136
+  - x: 2.4307
+    y: 3.4057
+    yaw: 3.0402
+    s: 1.5995
+    curvature: 0.208337
     v: 0.4472
-    yaw_rate: 0.207
-    t: 26.6726
-  - x: 2.3266
-    y: 3.4158
-    yaw: 3.1393
-    s: 10.0982
-    curvature: 0.154323
+    yaw_rate: 0.0932
+    t: 3.6247
+    ref_id: drop_approach_align
+  - x: 2.3311
+    y: 3.4138
+    yaw: 3.0819
+    s: 1.6995
+    curvature: 0.208337
     v: 0.3162
-    yaw_rate: 0.0488
-    t: 26.9346
-  - x: 2.2266
-    y: 3.4161
-    yaw: 3.1393
-    s: 10.1982
-    curvature: 0.154323
+    yaw_rate: 0.0659
+    t: 3.8867
+  - x: 2.2313
+    y: 3.4197
+    yaw: 3.0819
+    s: 1.7995
+    curvature: 0.208337
     v: 0.0
     yaw_rate: 0.0
-    t: 27.567
+    t: 4.5191
     ref_id: drop_front
 - step_id: drop_1_rear
   type: RUN_SEGMENT
@@ -1944,11 +1970,11 @@ source_manifest:
     sha256: 6a813e16330d540c1f05eaa29d3e1986a2eda42af7fd26a62745a156be5039fe
     size_bytes: 743
   planning_params:
-    sha256: 495c217749e71e38675092380bc4787f1d65de8c0e5c8cee4dad2eda3dba6565
-    size_bytes: 1956
+    sha256: e5e15400c10174a9f16c087642929daa3905cdf2da442fc1d49e1040f8d2b8eb
+    size_bytes: 2152
   route:
-    sha256: 70ed69af793c3e1795be1a922fa24434b47647b5bd7f34eb9813f2ea9cd3913d
-    size_bytes: 1539
+    sha256: a4f703e45f8c38a39a2b592385e02a80e265d55a0325e639ea822b5669c15b40
+    size_bytes: 1893
   semantic_map:
-    sha256: a2d76efe8cd0edcbb78d66c9aabbc78b93ddab089dc1f939d53c3b0a2c1e48e0
-    size_bytes: 8104
+    sha256: 0d0968f2dcdb076f7d137e396dfbc1d038d7c988abb8a8c8cfdf1952d423e9fb
+    size_bytes: 9584

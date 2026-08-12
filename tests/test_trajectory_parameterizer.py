@@ -46,10 +46,12 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             "traffic_light_stop_line",
             "random_obstacle_entry",
             "random_obstacle_exit",
+            "pickup_approach_align",
             "pickup_front",
             "pickup_rear",
             "cone_lane_change_entry",
             "cone_lane_change_exit",
+            "drop_approach_align",
             "drop_front",
             "drop_rear",
             "finish_park",
@@ -63,6 +65,73 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             max(abs(point.curvature) for point in result.points),
             1.0 / 0.60 + 1e-6,
         )
+        for prefix, distance_band_m, max_heading_error_deg in (
+            ("pickup", (0.55, 0.70), 5.0),
+            ("drop", (0.52, 0.68), 27.0),
+        ):
+            front = semantic_map["points"][f"{prefix}_front"]
+            rear = semantic_map["points"][f"{prefix}_rear"]
+            shelf_yaw = math.atan2(
+                float(rear["y"]) - float(front["y"]),
+                float(rear["x"]) - float(front["x"]),
+            )
+            direction_x = math.cos(shelf_yaw)
+            direction_y = math.sin(shelf_yaw)
+            heading_errors = []
+            for point in result.points:
+                distance_before_front_m = -(
+                    (point.x - float(front["x"])) * direction_x
+                    + (point.y - float(front["y"])) * direction_y
+                )
+                lateral_distance_m = abs(
+                    -(point.x - float(front["x"])) * direction_y
+                    + (point.y - float(front["y"])) * direction_x
+                )
+                if (
+                    distance_band_m[0]
+                    <= distance_before_front_m
+                    <= distance_band_m[1]
+                    and lateral_distance_m <= 0.35
+                ):
+                    heading_errors.append(
+                        abs(
+                            math.degrees(
+                                (point.yaw - shelf_yaw + math.pi)
+                                % (2.0 * math.pi)
+                                - math.pi
+                            )
+                        )
+                    )
+            self.assertTrue(heading_errors, prefix)
+            self.assertLessEqual(
+                max(heading_errors),
+                max_heading_error_deg,
+                prefix,
+            )
+
+    def test_dock_approach_anchors_follow_measured_front_rear_axes(self) -> None:
+        semantic_map = load_yaml_file(
+            REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
+        )
+
+        for prefix, expected_distance_m in (("pickup", 0.55), ("drop", 0.25)):
+            front = semantic_map["points"][f"{prefix}_front"]
+            rear = semantic_map["points"][f"{prefix}_rear"]
+            align = semantic_map["points"][f"{prefix}_approach_align"]
+            shelf_yaw = math.atan2(
+                float(rear["y"]) - float(front["y"]),
+                float(rear["x"]) - float(front["x"]),
+            )
+
+            self.assertAlmostEqual(float(align["yaw"]), shelf_yaw, places=3)
+            self.assertAlmostEqual(
+                math.hypot(
+                    float(front["x"]) - float(align["x"]),
+                    float(front["y"]) - float(align["y"]),
+                ),
+                expected_distance_m,
+                places=3,
+            )
 
     def test_continuous_control_validation_route_uses_only_final_stop(self) -> None:
         route = load_yaml_file(

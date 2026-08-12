@@ -308,8 +308,10 @@ class SegmentedTrajectoryArtifactTest(unittest.TestCase):
             [
                 "go_traffic_light_1",
                 "random_obstacle_1",
+                "pickup_approach_1",
                 "pickup_1_rear",
                 "cone_lane_change_1",
+                "drop_approach_1",
                 "drop_1_rear",
                 "finish_park",
             ],

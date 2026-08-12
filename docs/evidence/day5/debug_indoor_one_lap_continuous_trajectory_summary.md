@@ -7,10 +7,10 @@
 - ok: True
 - planner_plugin: hybrid_astar
 - optimizer_plugin: jerk_limited_s_curve
-- point_count: 226
-- path_length_m: 22.577
-- duration_s: 311.179
-- max_speed_mps: 0.073
+- point_count: 224
+- path_length_m: 22.573
+- duration_s: 281.314
+- max_speed_mps: 0.080
 - max_abs_acceleration_mps2: 0.000
 - max_abs_jerk_mps3: 0.000
 - max_abs_curvature_1pm: 1.420410

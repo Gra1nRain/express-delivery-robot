@@ -9,6 +9,9 @@ global_planner:
   grid_search_padding_m: 3.00
   grid_simplify_path: true
   min_turning_radius_m: 0.81
+  # Only dock-approach segments use the verified Day5 control/safety radius.
+  # Ordinary route turns retain the more conservative 0.81 m global radius.
+  dock_approach_min_turning_radius_m: 0.60
   max_speed_mps: 1.80
   fallback_plugin: none
   path_sample_spacing_m: 0.10
