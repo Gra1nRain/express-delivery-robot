@@ -155,6 +155,15 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             effective_hard_clearance_m,
             vehicle_corner_radius_m + 0.03,
         )
+        self.assertEqual(runtime["docking_activation_distance_m"], 1.5)
+        self.assertEqual(runtime["docking_costmap_occupancy_threshold"], 100)
+        self.assertEqual(runtime["docking_vehicle_length_m"], 0.72)
+        self.assertEqual(runtime["docking_vehicle_width_m"], 0.50)
+        self.assertEqual(runtime["docking_work_side_clearance_m"], 0.05)
+        self.assertGreater(
+            runtime["docking_non_work_side_clearance_m"],
+            runtime["docking_work_side_clearance_m"],
+        )
         self.assertEqual(runtime["planning_timeout_s"], 0.75)
         self.assertEqual(runtime["relaxed_extension_timeout_s"], 0.75)
         self.assertLess(

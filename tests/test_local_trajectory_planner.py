@@ -18,12 +18,18 @@ from competition_control.mppi_controller import (
     MPPIController,
     MPPIParams,
 )
-from competition_planning.hybrid_astar_planner import HybridAStarTimeout
+from competition_planning.hybrid_astar_planner import (
+    AsymmetricFootprint,
+    HybridAStarPlanner,
+    HybridAStarTimeout,
+)
 from competition_planning.local_trajectory_planner import (
     LocalReplanConfig,
     LocalTrajectoryPlanner,
     concatenate_reference_paths,
+    docking_mode_is_active,
     occupied_grid_cell_centers,
+    precision_docking_work_sides,
     reference_prefix_to_checkpoint,
 )
 from competition_planning.occupancy_grid_planner import (
@@ -44,6 +50,120 @@ def _empty_map(*, width: int = 100) -> OccupancyGridMap:
         origin_y=-4.0,
         occupied=tuple(False for _ in range(width * height)),
     )
+
+
+def _map_with_obstacle(x: float, y: float) -> OccupancyGridMap:
+    grid_map = OccupancyGridMap(
+        width=80,
+        height=80,
+        resolution=0.05,
+        origin_x=-2.0,
+        origin_y=-2.0,
+        occupied=tuple(False for _ in range(80 * 80)),
+    )
+    occupied = list(grid_map.occupied)
+    occupied[grid_map.index(grid_map.world_to_cell(x, y))] = True
+    return replace(grid_map, occupied=tuple(occupied))
+
+
+def _docking_planner(obstacle_x: float, obstacle_y: float) -> HybridAStarPlanner:
+    return HybridAStarPlanner(
+        _map_with_obstacle(obstacle_x, obstacle_y),
+        inflation_radius_m=0.0,
+        search_padding_m=1.0,
+        sample_spacing_m=0.05,
+        min_turning_radius_m=0.60,
+        step_length_m=0.10,
+        curvature_bins=9,
+        heading_bins=72,
+        goal_position_tolerance_m=0.10,
+        goal_heading_tolerance_rad=math.radians(5.0),
+        footprint=AsymmetricFootprint(
+            vehicle_length_m=0.72,
+            vehicle_width_m=0.50,
+            front_clearance_m=0.10,
+            rear_clearance_m=0.10,
+            left_clearance_m=0.10,
+            right_clearance_m=0.05,
+        ),
+    )
+
+
+class DockingCollisionModeTest(unittest.TestCase):
+    def test_only_pickup_and_drop_semantics_enable_precision_docking(self) -> None:
+        semantic_map = yaml.safe_load(
+            (REPO_ROOT / "maps" / "debug" / "semantic_map.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        work_sides = precision_docking_work_sides(semantic_map["dock_poses"])
+
+        self.assertEqual(
+            work_sides,
+            {
+                "pickup_front": "RIGHT",
+                "pickup_rear": "RIGHT",
+                "drop_front": "RIGHT",
+                "drop_rear": "RIGHT",
+            },
+        )
+
+    def test_right_work_side_accepts_measured_28_cm_shelf_gap(self) -> None:
+        planner = _docking_planner(0.0, -(0.25 + 0.28))
+
+        self.assertTrue(planner.path_is_navigable((PathPoint(0.0, 0.0, 0.0),)))
+        path = planner.plan(
+            (
+                PathPoint(-0.50, 0.0, 0.0),
+                PathPoint(0.0, 0.0, 0.0, "pickup_front"),
+            )
+        )
+
+        self.assertEqual(path[-1].ref_id, "pickup_front")
+
+    def test_non_work_side_keeps_larger_clearance(self) -> None:
+        planner = _docking_planner(0.0, 0.25 + 0.08)
+
+        self.assertFalse(planner.path_is_navigable((PathPoint(0.0, 0.0, 0.0),)))
+
+    def test_footprint_rotates_with_candidate_vehicle_pose(self) -> None:
+        planner = _docking_planner(-(0.25 + 0.08), 0.0)
+
+        self.assertFalse(
+            planner.path_is_navigable((PathPoint(0.0, 0.0, math.pi / 2.0),))
+        )
+
+    def test_semantic_mode_requires_dock_ref_and_activation_distance(self) -> None:
+        checkpoint = PathPoint(8.413, -0.081, 0.015, "pickup_front")
+
+        self.assertTrue(
+            docking_mode_is_active(
+                current_pose=PathPoint(7.15, -0.081, 0.0),
+                checkpoint=checkpoint,
+                active_checkpoint_ref="pickup_front",
+                docking_refs={"pickup_front", "pickup_rear"},
+                activation_distance_m=1.5,
+            )
+        )
+        self.assertFalse(
+            docking_mode_is_active(
+                current_pose=PathPoint(6.80, -0.081, 0.0),
+                checkpoint=checkpoint,
+                active_checkpoint_ref="pickup_front",
+                docking_refs={"pickup_front", "pickup_rear"},
+                activation_distance_m=1.5,
+            )
+        )
+        self.assertFalse(
+            docking_mode_is_active(
+                current_pose=PathPoint(8.0, -0.081, 0.0),
+                checkpoint=checkpoint,
+                active_checkpoint_ref="finish_park",
+                docking_refs={"pickup_front", "pickup_rear"},
+                activation_distance_m=1.5,
+            )
+        )
 
 
 def _straight_reference(length_m: float = 8.0) -> tuple[PathPoint, ...]:
@@ -1048,6 +1168,25 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertEqual(len(points), 2)
         self.assertTrue(all(0.05 <= x <= 0.25 for x, _ in points))
         self.assertTrue(all(abs(y) <= 0.10 for _, y in points))
+
+    def test_raw_costmap_threshold_excludes_inflation_only_cells(self) -> None:
+        points = occupied_grid_cell_centers(
+            (50, 100),
+            width=2,
+            height=1,
+            resolution_m=0.10,
+            origin_x_m=0.0,
+            origin_y_m=-0.05,
+            occupancy_threshold=100,
+            x_min_m=0.0,
+            x_max_m=0.20,
+            y_half_width_m=0.10,
+            max_points=2,
+        )
+
+        self.assertEqual(len(points), 1)
+        self.assertAlmostEqual(points[0][0], 0.15)
+        self.assertAlmostEqual(points[0][1], 0.0)
 
     def test_day5_runtime_horizon_can_replan_around_a_route_obstacle(self) -> None:
         runtime = yaml.safe_load(

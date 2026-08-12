@@ -31,6 +31,29 @@ class _Node:
     curvature_index: int
 
 
+@dataclass(frozen=True)
+class AsymmetricFootprint:
+    """Yaw-aware rectangular vehicle envelope for precision docking."""
+
+    vehicle_length_m: float
+    vehicle_width_m: float
+    front_clearance_m: float
+    rear_clearance_m: float
+    left_clearance_m: float
+    right_clearance_m: float
+
+    def __post_init__(self) -> None:
+        if self.vehicle_length_m <= 0.0 or self.vehicle_width_m <= 0.0:
+            raise GridPlanningError("footprint dimensions must be positive")
+        if min(
+            self.front_clearance_m,
+            self.rear_clearance_m,
+            self.left_clearance_m,
+            self.right_clearance_m,
+        ) < 0.0:
+            raise GridPlanningError("footprint clearances must be non-negative")
+
+
 class HybridAStarPlanner:
     """Search collision-free forward motions while preserving pose and radius.
 
@@ -60,6 +83,7 @@ class HybridAStarPlanner:
         obstacle_clearance_distance_m: float = 0.0,
         obstacle_clearance_weight: float = 0.0,
         search_heuristic_weight: float = 1.0,
+        footprint: AsymmetricFootprint | None = None,
     ) -> None:
         if min_turning_radius_m <= 0.0:
             raise GridPlanningError("hybrid_astar requires a positive min_turning_radius_m")
@@ -102,13 +126,17 @@ class HybridAStarPlanner:
         self._obstacle_clearance_distance_m = obstacle_clearance_distance_m
         self._obstacle_clearance_weight = obstacle_clearance_weight
         self._search_heuristic_weight = search_heuristic_weight
+        self._footprint = footprint
         self._obstacle_clearance_cost_by_cell: tuple[float, ...] | None = (
             None
             if obstacle_clearance_distance_m > 0.0 and obstacle_clearance_weight > 0.0
             else ()
         )
-        self._navigable_cell_cache: dict[tuple[int, int], bool] = {}
-        self._point_cost_cache: dict[tuple[int, int], float | None] = {}
+        self._navigable_cell_cache: dict[tuple[int, int, int], bool] = {}
+        self._point_cost_cache: dict[tuple[int, int, int], float | None] = {}
+        self._footprint_offsets_by_yaw: dict[
+            int, tuple[tuple[int, int], ...]
+        ] = {}
         max_curvature = 1.0 / min_turning_radius_m
         if curvature_bins < 3 or curvature_bins % 2 == 0:
             raise GridPlanningError(
@@ -152,7 +180,10 @@ class HybridAStarPlanner:
         return tuple(path)
 
     def path_is_navigable(self, path: Sequence[PathPoint]) -> bool:
-        return all(self._point_is_navigable(point.x, point.y) for point in path)
+        return all(
+            self._point_is_navigable(point.x, point.y, point.yaw)
+            for point in path
+        )
 
     def _search(
         self,
@@ -162,8 +193,8 @@ class HybridAStarPlanner:
         start_curvature_index: int,
         deadline_s: float | None,
     ) -> tuple[list[PathPoint], int]:
-        self._require_navigable(start.x, start.y, "start")
-        self._require_navigable(goal.x, goal.y, "goal")
+        self._require_navigable(start.x, start.y, start.yaw, "start")
+        self._require_navigable(goal.x, goal.y, goal.yaw, "goal")
         bounds = self._bounds(start, goal)
         start_node = _Node(
             start.x,
@@ -338,7 +369,7 @@ class HybridAStarPlanner:
                 curvature_index,
                 self._step_length_m * index / samples,
             )
-            point_cost = self._point_navigation_cost(point.x, point.y)
+            point_cost = self._point_navigation_cost(point.x, point.y, point.yaw)
             if point_cost is None:
                 return None
             clearance_cost += point_cost
@@ -386,9 +417,12 @@ class HybridAStarPlanner:
 
     def _key(self, node: _Node) -> tuple[int, int, int, int]:
         col, row = self._map.world_to_cell(node.x, node.y)
-        yaw_fraction = (_wrap_angle(node.yaw) + math.pi) / (2.0 * math.pi)
-        yaw_bin = int(round(yaw_fraction * self._heading_bins)) % self._heading_bins
+        yaw_bin = self._yaw_bin(node.yaw)
         return col, row, yaw_bin, node.curvature_index
+
+    def _yaw_bin(self, yaw: float) -> int:
+        yaw_fraction = (_wrap_angle(yaw) + math.pi) / (2.0 * math.pi)
+        return int(round(yaw_fraction * self._heading_bins)) % self._heading_bins
 
     def _heuristic(self, node: _Node, goal: PathPoint) -> float:
         distance = math.hypot(goal.x - node.x, goal.y - node.y)
@@ -423,21 +457,22 @@ class HybridAStarPlanner:
         col, row = self._map.world_to_cell(node.x, node.y)
         return bounds[0] <= col <= bounds[1] and bounds[2] <= row <= bounds[3]
 
-    def _point_is_navigable(self, x: float, y: float) -> bool:
+    def _point_is_navigable(self, x: float, y: float, yaw: float) -> bool:
         cell = self._map.world_to_cell(x, y)
-        return self._cell_is_navigable(cell, x=x, y=y)
+        return self._cell_is_navigable(cell, x=x, y=y, yaw=yaw)
 
-    def _point_navigation_cost(self, x: float, y: float) -> float | None:
+    def _point_navigation_cost(self, x: float, y: float, yaw: float) -> float | None:
         cell = self._map.world_to_cell(x, y)
-        cached = self._point_cost_cache.get(cell, _MISSING_POINT_COST)
+        cache_key = (*cell, self._yaw_bin(yaw) if self._footprint else 0)
+        cached = self._point_cost_cache.get(cache_key, _MISSING_POINT_COST)
         if cached is not _MISSING_POINT_COST:
             return cached
         cost = (
             self._obstacle_clearance_cost(cell)
-            if self._cell_is_navigable(cell, x=x, y=y)
+            if self._cell_is_navigable(cell, x=x, y=y, yaw=yaw)
             else None
         )
-        self._point_cost_cache[cell] = cost
+        self._point_cost_cache[cache_key] = cost
         return cost
 
     def _cell_is_navigable(
@@ -446,23 +481,76 @@ class HybridAStarPlanner:
         *,
         x: float,
         y: float,
+        yaw: float,
     ) -> bool:
-        cached = self._navigable_cell_cache.get(cell)
+        yaw_bin = self._yaw_bin(yaw) if self._footprint else 0
+        cache_key = (*cell, yaw_bin)
+        cached = self._navigable_cell_cache.get(cache_key)
         if cached is not None:
             return cached
         navigable = self._map.contains(cell) and not self._blocked[
             self._map.index(cell)
         ]
+        if navigable and self._footprint is not None:
+            navigable = self._footprint_is_clear(cell, yaw_bin)
         if navigable and self._corridor_half_width_sq is not None:
             navigable = (
                 self._reference_distance_squared(x, y)
                 <= self._corridor_half_width_sq
             )
-        self._navigable_cell_cache[cell] = navigable
+        self._navigable_cell_cache[cache_key] = navigable
         return navigable
 
-    def _require_navigable(self, x: float, y: float, label: str) -> None:
-        if not self._point_is_navigable(x, y):
+    def _footprint_is_clear(self, cell: tuple[int, int], yaw_bin: int) -> bool:
+        center_col, center_row = cell
+        for delta_col, delta_row in self._footprint_offsets(yaw_bin):
+            obstacle_cell = (center_col + delta_col, center_row + delta_row)
+            if not self._map.contains(obstacle_cell):
+                return False
+            if self._map.occupied[self._map.index(obstacle_cell)]:
+                return False
+        return True
+
+    def _footprint_offsets(self, yaw_bin: int) -> tuple[tuple[int, int], ...]:
+        cached = self._footprint_offsets_by_yaw.get(yaw_bin)
+        if cached is not None:
+            return cached
+        footprint = self._footprint
+        if footprint is None:
+            return ()
+        yaw = -math.pi + 2.0 * math.pi * yaw_bin / self._heading_bins
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+        half_length = 0.5 * footprint.vehicle_length_m
+        half_width = 0.5 * footprint.vehicle_width_m
+        footprint_radius = math.hypot(
+            half_length + max(footprint.front_clearance_m, footprint.rear_clearance_m),
+            half_width + max(footprint.left_clearance_m, footprint.right_clearance_m),
+        )
+        discretization_margin = (
+            self._map.resolution / math.sqrt(2.0)
+            + footprint_radius * math.sin(math.pi / self._heading_bins)
+        )
+        front = half_length + footprint.front_clearance_m + discretization_margin
+        rear = half_length + footprint.rear_clearance_m + discretization_margin
+        left = half_width + footprint.left_clearance_m + discretization_margin
+        right = half_width + footprint.right_clearance_m + discretization_margin
+        radius_cells = math.ceil(footprint_radius / self._map.resolution) + 2
+        offsets = []
+        for delta_row in range(-radius_cells, radius_cells + 1):
+            for delta_col in range(-radius_cells, radius_cells + 1):
+                delta_x = delta_col * self._map.resolution
+                delta_y = -delta_row * self._map.resolution
+                local_x = cos_yaw * delta_x + sin_yaw * delta_y
+                local_y = -sin_yaw * delta_x + cos_yaw * delta_y
+                if -rear <= local_x <= front and -right <= local_y <= left:
+                    offsets.append((delta_col, delta_row))
+        result = tuple(offsets)
+        self._footprint_offsets_by_yaw[yaw_bin] = result
+        return result
+
+    def _require_navigable(self, x: float, y: float, yaw: float, label: str) -> None:
+        if not self._point_is_navigable(x, y, yaw):
             raise GridPlanningError(f"{label} pose ({x:.3f}, {y:.3f}) is blocked")
 
 

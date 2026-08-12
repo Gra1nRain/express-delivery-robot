@@ -9,6 +9,16 @@ local_hybrid_astar_runtime:
   obstacle_y_half_width_m: 2.50
   max_obstacle_points: 2000
   inflation_radius_m: 0.04
+  # Precision docking starts near semantic pickup/drop poses. Normal driving
+  # continues to use the 0.44 m costmap plus 0.04 m planner inflation.
+  docking_activation_distance_m: 1.50
+  docking_costmap_occupancy_threshold: 100
+  docking_vehicle_length_m: 0.72
+  docking_vehicle_width_m: 0.50
+  docking_front_clearance_m: 0.10
+  docking_rear_clearance_m: 0.10
+  docking_work_side_clearance_m: 0.05
+  docking_non_work_side_clearance_m: 0.10
   lookahead_distance_m: 3.00
   search_padding_m: 1.50
   sample_spacing_m: 0.10

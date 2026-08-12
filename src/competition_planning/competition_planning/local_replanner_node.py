@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import math
 from pathlib import Path as FilePath
@@ -23,12 +24,17 @@ from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformException, TransformListener
 import yaml
 
-from competition_planning.hybrid_astar_planner import HybridAStarTimeout
+from competition_planning.hybrid_astar_planner import (
+    AsymmetricFootprint,
+    HybridAStarTimeout,
+)
 from competition_planning.local_trajectory_planner import (
     LocalReplanConfig,
     LocalTrajectoryPlanner,
     concatenate_reference_paths,
+    docking_mode_is_active,
     occupied_grid_cell_centers,
+    precision_docking_work_sides,
     reference_prefix_to_checkpoint,
 )
 from competition_planning.occupancy_grid_planner import (
@@ -72,6 +78,9 @@ class LocalReplannerNode(Node):
             )
             for ref_id, record in semantic_points.items()
         }
+        self._dock_work_sides = precision_docking_work_sides(
+            semantic_map.get("dock_poses", [])
+        )
         self._config = LocalReplanConfig(
             lookahead_distance_m=float(
                 self.declare_parameter("lookahead_distance_m", 3.00).value
@@ -186,6 +195,35 @@ class LocalReplannerNode(Node):
             ),
         )
         self._planner = LocalTrajectoryPlanner(self._static_map, self._config)
+        self._docking_activation_distance_m = float(
+            self.declare_parameter("docking_activation_distance_m", 1.5).value
+        )
+        self._docking_raw_occupancy_threshold = int(
+            self.declare_parameter("docking_costmap_occupancy_threshold", 100).value
+        )
+        self._docking_vehicle_length_m = float(
+            self.declare_parameter("docking_vehicle_length_m", 0.72).value
+        )
+        self._docking_vehicle_width_m = float(
+            self.declare_parameter("docking_vehicle_width_m", 0.50).value
+        )
+        self._docking_front_clearance_m = float(
+            self.declare_parameter("docking_front_clearance_m", 0.10).value
+        )
+        self._docking_rear_clearance_m = float(
+            self.declare_parameter("docking_rear_clearance_m", 0.10).value
+        )
+        self._docking_work_side_clearance_m = float(
+            self.declare_parameter("docking_work_side_clearance_m", 0.05).value
+        )
+        self._docking_non_work_side_clearance_m = float(
+            self.declare_parameter("docking_non_work_side_clearance_m", 0.10).value
+        )
+        if self._docking_activation_distance_m <= 0.0:
+            raise ValueError("docking_activation_distance_m must be positive")
+        if not 0 <= self._docking_raw_occupancy_threshold <= 100:
+            raise ValueError("docking_costmap_occupancy_threshold must be in [0, 100]")
+        self._docking_mode = False
 
         obstacle_source = str(
             self.declare_parameter("obstacle_source", "costmap").value
@@ -231,6 +269,7 @@ class LocalReplannerNode(Node):
         self._tf_buffer = Buffer(cache_time=Duration(seconds=5.0))
         self._tf_listener = TransformListener(self._tf_buffer, self)
         self._obstacle_points_map: tuple[tuple[float, float], ...] | None = None
+        self._raw_obstacle_points_map: tuple[tuple[float, float], ...] | None = None
         self._obstacle_frame = ""
         self._obstacle_received_s = 0.0
         self._obstacle_header_stamp_s = 0.0
@@ -338,6 +377,7 @@ class LocalReplannerNode(Node):
             and message.header.frame_id != self._expected_obstacle_frame
         ):
             self._obstacle_points_map = None
+            self._raw_obstacle_points_map = None
             self._publish_stop(
                 "COSTMAP_FRAME_MISMATCH",
                 detail=(
@@ -348,6 +388,7 @@ class LocalReplannerNode(Node):
         origin_yaw = _yaw_from_quaternion(message.info.origin.orientation)
         if abs(origin_yaw) > 1e-6:
             self._obstacle_points_map = None
+            self._raw_obstacle_points_map = None
             self._publish_stop(
                 "COSTMAP_ORIGIN_ROTATED",
                 detail=f"yaw={origin_yaw:.6f}",
@@ -374,8 +415,22 @@ class LocalReplannerNode(Node):
                 y_half_width_m=self._obstacle_y_half_width_m,
                 max_points=self._max_obstacle_points,
             )
+            raw_obstacle_points = occupied_grid_cell_centers(
+                message.data,
+                width=int(message.info.width),
+                height=int(message.info.height),
+                resolution_m=float(message.info.resolution),
+                origin_x_m=float(message.info.origin.position.x),
+                origin_y_m=float(message.info.origin.position.y),
+                occupancy_threshold=self._docking_raw_occupancy_threshold,
+                x_min_m=self._obstacle_x_min_m,
+                x_max_m=self._obstacle_x_max_m,
+                y_half_width_m=self._obstacle_y_half_width_m,
+                max_points=self._max_obstacle_points,
+            )
         except (TransformException, ValueError) as exc:
             self._obstacle_points_map = None
+            self._raw_obstacle_points_map = None
             self._publish_stop("COSTMAP_REJECTED", detail=str(exc))
             return
 
@@ -396,6 +451,17 @@ class LocalReplannerNode(Node):
             )
             for obstacle_x, obstacle_y in obstacle_points
         )
+        self._raw_obstacle_points_map = tuple(
+            (
+                float(translation.x)
+                + cos_yaw * obstacle_x
+                - sin_yaw * obstacle_y,
+                float(translation.y)
+                + sin_yaw * obstacle_x
+                + cos_yaw * obstacle_y,
+            )
+            for obstacle_x, obstacle_y in raw_obstacle_points
+        )
         self._obstacle_frame = message.header.frame_id
         self._obstacle_received_s = received_s
         self._obstacle_header_stamp_s = _stamp_to_seconds(message.header.stamp)
@@ -414,6 +480,7 @@ class LocalReplannerNode(Node):
             return
         self._previous_reference_index = 0
         self._planner = LocalTrajectoryPlanner(self._static_map, self._config)
+        self._docking_mode = False
         self._publish_stop("INITIAL_POSE_RESET")
 
     def _active_checkpoint_ref_callback(self, message: String) -> None:
@@ -422,6 +489,7 @@ class LocalReplannerNode(Node):
             return
         self._active_checkpoint_ref = checkpoint_ref
         self._planner = LocalTrajectoryPlanner(self._static_map, self._config)
+        self._docking_mode = False
         self._publish_stop(
             "ACTIVE_CHECKPOINT_UPDATED",
             detail=checkpoint_ref,
@@ -479,11 +547,37 @@ class LocalReplannerNode(Node):
                 y=float(map_from_base.transform.translation.y),
                 yaw=_yaw_from_quaternion(map_from_base.transform.rotation),
             )
+            docking_mode = docking_mode_is_active(
+                current_pose=current_pose,
+                checkpoint=(
+                    self._semantic_points.get(self._active_checkpoint_ref)
+                    if self._active_checkpoint_ref is not None
+                    else None
+                ),
+                active_checkpoint_ref=self._active_checkpoint_ref,
+                docking_refs=set(self._dock_work_sides),
+                activation_distance_m=self._docking_activation_distance_m,
+            )
+            if docking_mode != self._docking_mode:
+                self._docking_mode = docking_mode
+                self._planner = LocalTrajectoryPlanner(
+                    self._static_map,
+                    self._docking_config(self._active_checkpoint_ref)
+                    if docking_mode
+                    else self._config,
+                )
+            obstacle_points = (
+                self._raw_obstacle_points_map
+                if docking_mode
+                else self._obstacle_points_map
+            )
+            if obstacle_points is None:
+                raise ValueError("docking costmap has no raw occupied cells")
             started_at = time.perf_counter()
             result = self._planner.plan(
                 reference_path=reference_path,
                 current_pose=current_pose,
-                dynamic_obstacle_points=self._obstacle_points_map,
+                dynamic_obstacle_points=obstacle_points,
                 previous_reference_index=self._previous_reference_index,
             )
             planning_time_ms = (time.perf_counter() - started_at) * 1000.0
@@ -527,6 +621,34 @@ class LocalReplannerNode(Node):
             reference_start_index=result.reference_start_index,
             rejoin_index=result.rejoin_index,
             planning_grid_cell_count=result.planning_grid_cell_count,
+            docking_mode=self._docking_mode,
+        )
+
+    def _docking_config(self, checkpoint_ref: str | None) -> LocalReplanConfig:
+        work_side = self._dock_work_sides.get(str(checkpoint_ref), "RIGHT")
+        if work_side not in {"LEFT", "RIGHT"}:
+            raise ValueError(f"unsupported docking work_side: {work_side}")
+        left_clearance = (
+            self._docking_work_side_clearance_m
+            if work_side == "LEFT"
+            else self._docking_non_work_side_clearance_m
+        )
+        right_clearance = (
+            self._docking_work_side_clearance_m
+            if work_side == "RIGHT"
+            else self._docking_non_work_side_clearance_m
+        )
+        return replace(
+            self._config,
+            inflation_radius_m=0.0,
+            footprint=AsymmetricFootprint(
+                vehicle_length_m=self._docking_vehicle_length_m,
+                vehicle_width_m=self._docking_vehicle_width_m,
+                front_clearance_m=self._docking_front_clearance_m,
+                rear_clearance_m=self._docking_rear_clearance_m,
+                left_clearance_m=left_clearance,
+                right_clearance_m=right_clearance,
+            ),
         )
 
     def _publish_stop(self, status: str, **fields: object) -> None:
@@ -540,6 +662,7 @@ class LocalReplannerNode(Node):
                     {
                         "status": status,
                         "costmap_frame": self._obstacle_frame,
+                        "docking_mode": getattr(self, "_docking_mode", False),
                         **fields,
                     },
                     separators=(",", ":"),

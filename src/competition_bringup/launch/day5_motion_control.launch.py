@@ -255,6 +255,30 @@ def _launch_setup(context, *args, **kwargs):
                     "inflation_radius_m": local_runtime[
                         "inflation_radius_m"
                     ],
+                    "docking_activation_distance_m": local_runtime[
+                        "docking_activation_distance_m"
+                    ],
+                    "docking_costmap_occupancy_threshold": local_runtime[
+                        "docking_costmap_occupancy_threshold"
+                    ],
+                    "docking_vehicle_length_m": local_runtime[
+                        "docking_vehicle_length_m"
+                    ],
+                    "docking_vehicle_width_m": local_runtime[
+                        "docking_vehicle_width_m"
+                    ],
+                    "docking_front_clearance_m": local_runtime[
+                        "docking_front_clearance_m"
+                    ],
+                    "docking_rear_clearance_m": local_runtime[
+                        "docking_rear_clearance_m"
+                    ],
+                    "docking_work_side_clearance_m": local_runtime[
+                        "docking_work_side_clearance_m"
+                    ],
+                    "docking_non_work_side_clearance_m": local_runtime[
+                        "docking_non_work_side_clearance_m"
+                    ],
                     "lookahead_distance_m": local_runtime[
                         "lookahead_distance_m"
                     ],

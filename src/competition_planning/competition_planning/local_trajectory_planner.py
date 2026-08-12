@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from competition_planning.hybrid_astar_planner import (
+    AsymmetricFootprint,
     HybridAStarPlanner,
     HybridAStarTimeout,
 )
@@ -46,6 +47,7 @@ class LocalReplanConfig:
     obstacle_clearance_distance_m: float = 0.0
     obstacle_clearance_weight: float = 0.0
     search_heuristic_weight: float = 1.0
+    footprint: AsymmetricFootprint | None = None
 
     def __post_init__(self) -> None:
         if self.lookahead_distance_m <= 0.0:
@@ -780,6 +782,7 @@ class LocalTrajectoryPlanner:
             obstacle_clearance_distance_m=config.obstacle_clearance_distance_m,
             obstacle_clearance_weight=config.obstacle_clearance_weight,
             search_heuristic_weight=config.search_heuristic_weight,
+            footprint=config.footprint,
         )
 
 
@@ -800,6 +803,44 @@ def reference_prefix_to_checkpoint(
             )
         return tuple(reference_path[:index]) + (checkpoint,)
     raise ValueError(f"active checkpoint ref not found: {checkpoint.ref_id}")
+
+
+def docking_mode_is_active(
+    *,
+    current_pose: PathPoint,
+    checkpoint: PathPoint | None,
+    active_checkpoint_ref: str | None,
+    docking_refs: set[str],
+    activation_distance_m: float,
+) -> bool:
+    """Return whether precision docking collision geometry should be active."""
+
+    if activation_distance_m <= 0.0:
+        raise ValueError("docking activation distance must be positive")
+    if (
+        checkpoint is None
+        or active_checkpoint_ref is None
+        or active_checkpoint_ref not in docking_refs
+    ):
+        return False
+    return (
+        math.hypot(checkpoint.x - current_pose.x, checkpoint.y - current_pose.y)
+        <= activation_distance_m + 1e-9
+    )
+
+
+def precision_docking_work_sides(
+    dock_records: Iterable[Any],
+) -> dict[str, str]:
+    """Return only pickup/drop work-side semantics, excluding finish parking."""
+
+    return {
+        str(record["point_ref"]): str(record.get("work_side", "RIGHT")).upper()
+        for record in dock_records
+        if isinstance(record, Mapping)
+        and record.get("point_ref")
+        and str(record.get("dock_type", "")).upper() in {"PICKUP", "DROP"}
+    }
 
 
 def concatenate_reference_paths(
