@@ -165,6 +165,34 @@ class MPPIControlNode(Node):
                 5.0 if self._checkpoint_route_enabled else 180.0,
             ).value
         )
+        controller_goal_position_tolerance_m = float(
+            self.declare_parameter(
+                "controller_goal_position_tolerance_m",
+                0.03,
+            ).value
+        )
+        controller_goal_heading_tolerance_deg = float(
+            self.declare_parameter(
+                "controller_goal_heading_tolerance_deg",
+                2.0,
+            ).value
+        )
+        if not (
+            0.0 < controller_goal_position_tolerance_m < goal_position_tolerance_m
+        ):
+            raise ValueError(
+                "controller goal position tolerance must be positive and smaller "
+                "than checkpoint position tolerance"
+            )
+        if not (
+            0.0
+            < controller_goal_heading_tolerance_deg
+            < goal_heading_tolerance_deg
+        ):
+            raise ValueError(
+                "controller goal heading tolerance must be positive and smaller "
+                "than checkpoint heading tolerance"
+            )
         params = MPPIParams(
             control_dt_s=self._control_period_s,
             horizon_steps=int(self.declare_parameter("horizon_steps", 30).value),
@@ -196,9 +224,9 @@ class MPPIControlNode(Node):
                     0.05,
                 ).value
             ),
-            goal_position_tolerance_m=goal_position_tolerance_m,
+            goal_position_tolerance_m=controller_goal_position_tolerance_m,
             goal_heading_tolerance_rad=math.radians(
-                goal_heading_tolerance_deg
+                controller_goal_heading_tolerance_deg
             ),
             progress_search_window_points=int(
                 self.declare_parameter("progress_search_window_points", 40).value

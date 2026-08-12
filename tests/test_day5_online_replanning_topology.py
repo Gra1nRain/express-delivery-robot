@@ -110,6 +110,18 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             ],
             5.0,
         )
+        self.assertEqual(
+            control["trajectory_tracker"]["mppi"][
+                "controller_goal_position_tolerance_m"
+            ],
+            0.03,
+        )
+        self.assertEqual(
+            control["trajectory_tracker"]["mppi"][
+                "controller_goal_heading_tolerance_deg"
+            ],
+            2.0,
+        )
         alternate_control = yaml.safe_load(
             (
                 REPO_ROOT
@@ -203,6 +215,18 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         )
         self.assertIn(
             '"local_plan_reuse_heading_tolerance_deg": mppi[',
+            launch_text,
+        )
+        self.assertIn(
+            '"controller_goal_position_tolerance_m": mppi[',
+            launch_text,
+        )
+        self.assertIn(
+            '"controller_goal_heading_tolerance_deg": mppi[',
+            launch_text,
+        )
+        self.assertIn(
+            '"semantic_map_file": LaunchConfiguration("semantic_map_file")',
             launch_text,
         )
         self.assertIn('"trajectory_switch_improvement_ratio": local_runtime[', launch_text)

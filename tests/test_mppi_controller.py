@@ -104,6 +104,48 @@ class MPPIControllerTest(unittest.TestCase):
                 0.81,
             )
 
+    def test_field_stop_cannot_finish_before_entering_checkpoint_gate(self) -> None:
+        field_stop = VehicleState(
+            x=8.315,
+            y=0.015,
+            yaw=0.003,
+            linear_speed_mps=0.0,
+        )
+        exact_checkpoint_trajectory = ControlTrajectory(
+            frame_id="map",
+            route_name="pickup_front_gate",
+            points=(
+                ControlTrajectoryPoint(8.265, -0.053, 0.014, 0.0, 0.0, 0.06, 0.0),
+                ControlTrajectoryPoint(
+                    8.413,
+                    -0.081,
+                    0.015,
+                    0.1506,
+                    0.0,
+                    0.0,
+                    2.51,
+                    "pickup_front",
+                ),
+            ),
+        )
+        controller = MPPIController(
+            exact_checkpoint_trajectory,
+            replace(
+                self.params,
+                goal_position_tolerance_m=0.03,
+                goal_heading_tolerance_rad=math.radians(2.0),
+            ),
+            random_seed=43,
+        )
+
+        command = controller.compute_command(field_stop)
+
+        self.assertEqual(command.status, "TRACKING")
+        self.assertGreater(
+            math.hypot(field_stop.x - 8.413, field_stop.y + 0.081),
+            0.10,
+        )
+
     def test_lateral_error_generates_corrective_curvature(self) -> None:
         controller = MPPIController(_straight_trajectory(), self.params, random_seed=11)
 

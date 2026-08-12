@@ -167,6 +167,12 @@ def _launch_setup(context, *args, **kwargs):
                         "heading_feedback_gain_1pm_per_rad"
                     ],
                     "feedback_blend": mppi["feedback_blend"],
+                    "controller_goal_position_tolerance_m": mppi[
+                        "controller_goal_position_tolerance_m"
+                    ],
+                    "controller_goal_heading_tolerance_deg": mppi[
+                        "controller_goal_heading_tolerance_deg"
+                    ],
                     "max_speed_mps": motion["max_speed_mps"],
                     "max_acceleration_mps2": motion["max_acceleration_mps2"],
                     "max_deceleration_mps2": motion["max_deceleration_mps2"],
@@ -223,6 +229,7 @@ def _launch_setup(context, *args, **kwargs):
                 {
                     "trajectory_file": LaunchConfiguration("trajectory_file"),
                     "map_file": LaunchConfiguration("map_file"),
+                    "semantic_map_file": LaunchConfiguration("semantic_map_file"),
                     "map_frame": estimator["map_frame"],
                     "base_frame": tracking_base_frame,
                     "frequency_hz": local_runtime["frequency_hz"],

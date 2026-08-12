@@ -29,7 +29,7 @@ from competition_planning.local_trajectory_planner import (
     LocalTrajectoryPlanner,
     concatenate_reference_paths,
     occupied_grid_cell_centers,
-    reference_prefix_through_ref,
+    reference_prefix_to_checkpoint,
 )
 from competition_planning.occupancy_grid_planner import (
     GridPlanningError,
@@ -47,14 +47,31 @@ class LocalReplannerNode(Node):
         self._base_frame = str(self.declare_parameter("base_frame", "body").value)
         trajectory_file = str(self.declare_parameter("trajectory_file", "").value)
         map_file = str(self.declare_parameter("map_file", "").value)
-        if not trajectory_file or not map_file:
-            raise ValueError("trajectory_file and map_file parameters are required")
+        semantic_map_file = str(
+            self.declare_parameter("semantic_map_file", "").value
+        )
+        if not trajectory_file or not map_file or not semantic_map_file:
+            raise ValueError(
+                "trajectory_file, map_file, and semantic_map_file parameters are required"
+            )
         self._reference_paths = _load_reference_paths(
             trajectory_file,
             self._map_frame,
         )
         self._reference_path = concatenate_reference_paths(self._reference_paths)
         self._static_map = OccupancyGridMap.from_yaml(map_file)
+        with FilePath(semantic_map_file).open("r", encoding="utf-8") as stream:
+            semantic_map = yaml.safe_load(stream) or {}
+        semantic_points = semantic_map.get("points") or {}
+        self._semantic_points = {
+            str(ref_id): PathPoint(
+                x=float(record["x"]),
+                y=float(record["y"]),
+                yaw=float(record["yaw"]),
+                ref_id=str(ref_id),
+            )
+            for ref_id, record in semantic_points.items()
+        }
         self._config = LocalReplanConfig(
             lookahead_distance_m=float(
                 self.declare_parameter("lookahead_distance_m", 3.00).value
@@ -441,9 +458,15 @@ class LocalReplannerNode(Node):
         try:
             reference_path = self._reference_path
             if self._active_checkpoint_ref is not None:
-                reference_path = reference_prefix_through_ref(
+                checkpoint = self._semantic_points.get(self._active_checkpoint_ref)
+                if checkpoint is None:
+                    raise ValueError(
+                        "active checkpoint missing from semantic map: "
+                        f"{self._active_checkpoint_ref}"
+                    )
+                reference_path = reference_prefix_to_checkpoint(
                     reference_path,
-                    self._active_checkpoint_ref,
+                    checkpoint,
                 )
             map_from_base = self._tf_buffer.lookup_transform(
                 self._map_frame,
