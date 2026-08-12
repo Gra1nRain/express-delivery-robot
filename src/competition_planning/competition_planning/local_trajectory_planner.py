@@ -225,7 +225,19 @@ class LocalTrajectoryPlanner:
                     else segment_exit_index
                 )
         if rejoin_index <= start_index:
-            raise ValueError("global reference has no forward local replanning horizon")
+            if (
+                start_index == len(reference_path) - 1
+                and rejoin_index == start_index
+            ):
+                # A checkpoint-gated reference intentionally ends at the active
+                # checkpoint.  Keep its final segment available so the controller
+                # can capture and hold the endpoint while obstacle validation still
+                # runs through the normal planning path below.
+                start_index -= 1
+            else:
+                raise ValueError(
+                    "global reference has no forward local replanning horizon"
+                )
 
         local_reference = tuple(reference_path[start_index : rejoin_index + 1])
         planning_map = _crop_planning_map(

@@ -472,6 +472,40 @@ class LocalTrajectoryPlannerTest(unittest.TestCase):
         self.assertEqual(result.path, self.reference[:51])
         self.assertLess(result.planning_grid_cell_count, 100 * 80)
 
+    def test_checkpoint_endpoint_keeps_a_valid_terminal_tracking_segment(self) -> None:
+        checkpoint_reference = (
+            *self.reference[:50],
+            replace(self.reference[50], ref_id="pickup_front"),
+        )
+        planner = LocalTrajectoryPlanner(_empty_map(), self.config)
+
+        result = planner.plan(
+            reference_path=checkpoint_reference,
+            current_pose=checkpoint_reference[-1],
+            dynamic_obstacle_points=(),
+            previous_reference_index=len(checkpoint_reference) - 2,
+        )
+
+        self.assertEqual(result.status, "REFERENCE_CLEAR")
+        self.assertEqual(result.reference_start_index, 49)
+        self.assertEqual(result.rejoin_index, 50)
+        self.assertEqual(result.path, checkpoint_reference[-2:])
+
+    def test_checkpoint_endpoint_does_not_bypass_collision_validation(self) -> None:
+        checkpoint_reference = (
+            *self.reference[:50],
+            replace(self.reference[50], ref_id="pickup_front"),
+        )
+        planner = LocalTrajectoryPlanner(_empty_map(), self.config)
+
+        with self.assertRaises(GridPlanningError):
+            planner.plan(
+                reference_path=checkpoint_reference,
+                current_pose=checkpoint_reference[-1],
+                dynamic_obstacle_points=((5.0, 0.0),),
+                previous_reference_index=len(checkpoint_reference) - 2,
+            )
+
     def test_random_obstacle_segment_uses_rolling_goal_without_reusing_blue_line(
         self,
     ) -> None:
