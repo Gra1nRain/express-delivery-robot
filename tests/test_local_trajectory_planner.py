@@ -122,6 +122,58 @@ class DockingCollisionModeTest(unittest.TestCase):
 
         self.assertEqual(path[-1].ref_id, "pickup_front")
 
+    def test_all_measured_dock_poses_clear_the_static_map_footprint(self) -> None:
+        semantic_map = yaml.safe_load(
+            (REPO_ROOT / "maps" / "debug" / "semantic_map.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        runtime = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "planning"
+                / "local_hybrid_astar_runtime_params_day5.yaml"
+            ).read_text(encoding="utf-8")
+        )["local_hybrid_astar_runtime"]
+        planner = HybridAStarPlanner(
+            OccupancyGridMap.from_yaml(REPO_ROOT / semantic_map["source_map"]),
+            inflation_radius_m=0.0,
+            search_padding_m=1.0,
+            sample_spacing_m=0.05,
+            min_turning_radius_m=0.60,
+            step_length_m=0.10,
+            curvature_bins=9,
+            heading_bins=72,
+            goal_position_tolerance_m=0.10,
+            goal_heading_tolerance_rad=math.radians(5.0),
+            footprint=AsymmetricFootprint(
+                vehicle_length_m=runtime["docking_vehicle_length_m"],
+                vehicle_width_m=runtime["docking_vehicle_width_m"],
+                front_clearance_m=runtime["docking_front_clearance_m"],
+                rear_clearance_m=runtime["docking_rear_clearance_m"],
+                left_clearance_m=runtime["docking_non_work_side_clearance_m"],
+                right_clearance_m=runtime["docking_work_side_clearance_m"],
+            ),
+        )
+
+        points = semantic_map["points"]
+        for ref_id in ("pickup_front", "pickup_rear", "drop_front", "drop_rear"):
+            point = points[ref_id]
+            with self.subTest(ref_id=ref_id):
+                self.assertTrue(
+                    planner.path_is_navigable(
+                        (
+                            PathPoint(
+                                point["x"],
+                                point["y"],
+                                point["yaw"],
+                                ref_id,
+                            ),
+                        )
+                    )
+                )
+
     def test_non_work_side_keeps_larger_clearance(self) -> None:
         planner = _docking_planner(0.0, 0.25 + 0.08)
 

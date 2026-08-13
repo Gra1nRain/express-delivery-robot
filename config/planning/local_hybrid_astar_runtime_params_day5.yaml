@@ -17,7 +17,10 @@ local_hybrid_astar_runtime:
   docking_vehicle_width_m: 0.50
   docking_front_clearance_m: 0.10
   docking_rear_clearance_m: 0.10
-  docking_work_side_clearance_m: 0.05
+  # The measured pickup_rear pose grazes the rasterized shelf by 2-3 mm with
+  # 0.05 m plus the planner's grid-discretization margin.  A full 0.03 m map
+  # cell must be cleared; the measured physical work-side gap is about 0.28 m.
+  docking_work_side_clearance_m: 0.03
   docking_non_work_side_clearance_m: 0.10
   lookahead_distance_m: 3.00
   search_padding_m: 1.50

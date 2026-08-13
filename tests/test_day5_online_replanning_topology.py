@@ -159,7 +159,7 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertEqual(runtime["docking_costmap_occupancy_threshold"], 100)
         self.assertEqual(runtime["docking_vehicle_length_m"], 0.72)
         self.assertEqual(runtime["docking_vehicle_width_m"], 0.50)
-        self.assertEqual(runtime["docking_work_side_clearance_m"], 0.05)
+        self.assertEqual(runtime["docking_work_side_clearance_m"], 0.03)
         self.assertGreater(
             runtime["docking_non_work_side_clearance_m"],
             runtime["docking_work_side_clearance_m"],

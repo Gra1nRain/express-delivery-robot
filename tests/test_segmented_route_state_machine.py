@@ -114,6 +114,43 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
         self.assertTrue(decision.segment_changed)
         self.assertFalse(decision.allow_tracking)
 
+    def test_captures_dock_pose_before_vehicle_has_fully_stopped(self) -> None:
+        self.machine.update(self.observation(0.0))
+
+        decision = self.machine.update(
+            self.observation(
+                1.0,
+                position_error_m=0.08,
+                heading_error_rad=math.radians(4.0),
+                speed_mps=0.05,
+            )
+        )
+
+        self.assertEqual(decision.phase, SegmentedRoutePhase.DOCK_HOLD)
+        self.assertFalse(decision.allow_tracking)
+
+        decision = self.machine.update(
+            self.observation(
+                1.5,
+                position_error_m=0.07,
+                heading_error_rad=math.radians(4.0),
+                speed_mps=0.02,
+            )
+        )
+        self.assertEqual(decision.active_segment_index, 0)
+        self.assertFalse(decision.segment_changed)
+
+        decision = self.machine.update(
+            self.observation(
+                2.5,
+                position_error_m=0.07,
+                heading_error_rad=math.radians(4.0),
+                speed_mps=0.02,
+            )
+        )
+        self.assertEqual(decision.active_segment_index, 1)
+        self.assertTrue(decision.segment_changed)
+
     def test_dock_hold_returns_to_tracking_if_pose_drifts(self) -> None:
         self.machine.update(self.observation(0.0))
         self.machine.update(

@@ -116,31 +116,38 @@ class SegmentedRouteStateMachine:
         ):
             self._phase = SegmentedRoutePhase.TRACKING
 
-        at_goal = (
+        pose_at_goal = (
             math.isfinite(observation.position_error_m)
             and math.isfinite(observation.heading_error_rad)
-            and math.isfinite(observation.speed_mps)
             and observation.position_error_m
             <= self._config.goal_position_tolerance_m
             and abs(observation.heading_error_rad)
             <= self._config.goal_heading_tolerance_rad
+        )
+        stopped = (
+            math.isfinite(observation.speed_mps)
             and abs(observation.speed_mps)
             <= self._config.stop_speed_tolerance_mps
         )
 
         if self._phase == SegmentedRoutePhase.TRACKING:
-            if not at_goal:
+            if not pose_at_goal:
                 return self._decision(allow_tracking=True)
             self._phase = SegmentedRoutePhase.DOCK_HOLD
-            self._dock_hold_started_s = observation.now_s
+            self._dock_hold_started_s = observation.now_s if stopped else None
             return self._decision(allow_tracking=False)
 
         if self._phase == SegmentedRoutePhase.DOCK_HOLD:
-            if not at_goal:
+            if not pose_at_goal:
                 self._phase = SegmentedRoutePhase.TRACKING
                 self._dock_hold_started_s = None
                 return self._decision(allow_tracking=True)
-            assert self._dock_hold_started_s is not None
+            if not stopped:
+                self._dock_hold_started_s = None
+                return self._decision(allow_tracking=False)
+            if self._dock_hold_started_s is None:
+                self._dock_hold_started_s = observation.now_s
+                return self._decision(allow_tracking=False)
             if (
                 observation.now_s - self._dock_hold_started_s
                 < self._config.dock_hold_s

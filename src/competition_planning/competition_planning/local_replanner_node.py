@@ -214,7 +214,7 @@ class LocalReplannerNode(Node):
             self.declare_parameter("docking_rear_clearance_m", 0.10).value
         )
         self._docking_work_side_clearance_m = float(
-            self.declare_parameter("docking_work_side_clearance_m", 0.05).value
+            self.declare_parameter("docking_work_side_clearance_m", 0.03).value
         )
         self._docking_non_work_side_clearance_m = float(
             self.declare_parameter("docking_non_work_side_clearance_m", 0.10).value
