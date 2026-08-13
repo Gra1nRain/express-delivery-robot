@@ -101,6 +101,24 @@ points:
     yaw: -0.0167
     role: pickup_approach_alignment
     status: derived_from_measured_dock_pair
+  # Exact terminal anchor 0.50 m before pickup_front.  The outer 1.00 m
+  # approach point remains a soft guide; this anchor makes only the final
+  # docking tail coincide with the measured front-to-rear shelf axis.  The
+  # measured pickup_front yaw remains the exact final pose.
+  pickup_front_terminal_align:
+    x: 7.9131
+    y: -0.0727
+    yaw: -0.0167
+    role: pickup_front_terminal_alignment
+    status: derived_from_measured_dock_pair
+  # A 0.30 m rear tail leaves enough distance after pickup_front to respect
+  # the minimum turning radius while staying parallel for the second stop.
+  pickup_rear_terminal_align:
+    x: 8.7130
+    y: -0.0860
+    yaw: -0.0167
+    role: pickup_rear_terminal_alignment
+    status: derived_from_measured_dock_pair
   # Retired on 2026-08-09; replaced by drop_front and drop_rear.
   # drop_dock:
   #   x: 2.077
@@ -128,6 +146,21 @@ points:
     y: 3.4371
     yaw: 3.1227
     role: drop_approach_alignment
+    status: derived_from_measured_dock_pair
+  # Exact terminal anchors preserve the measured drop poses while preventing
+  # the planner from using the final precision segment to finish a residual
+  # turn.  They follow the measured front-to-rear shelf axis.
+  drop_front_terminal_align:
+    x: 2.7659
+    y: 3.4465
+    yaw: 3.1227
+    role: drop_front_terminal_alignment
+    status: derived_from_measured_dock_pair
+  drop_rear_terminal_align:
+    x: 1.9849
+    y: 3.4613
+    yaw: 3.1227
+    role: drop_rear_terminal_alignment
     status: derived_from_measured_dock_pair
   finish_park:
     x: -0.740
@@ -180,12 +213,14 @@ lane_centerlines:
       - random_obstacle_entry
       - random_obstacle_exit
       - pickup_approach_align
+      - pickup_front_terminal_align
       - pickup_front
   - id: pickup_front_to_rear_lane
     status: measured
     width_m: 2.40
     points:
       - pickup_front
+      - pickup_rear_terminal_align
       - pickup_rear
   - id: pickup_to_drop_lane
     status: draft
@@ -203,12 +238,14 @@ lane_centerlines:
       - cone_lane_change_entry
       - cone_lane_change_exit
       - drop_approach_align
+      - drop_front_terminal_align
       - drop_front
   - id: drop_front_to_rear_lane
     status: measured
     width_m: 2.40
     points:
       - drop_front
+      - drop_rear_terminal_align
       - drop_rear
   - id: drop_to_pickup_lane
     status: draft

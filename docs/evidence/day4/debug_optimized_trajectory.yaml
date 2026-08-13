@@ -794,6 +794,7 @@ trajectories:
     v: 0.4243
     yaw_rate: 0.0
     t: 1.4142
+    ref_id: pickup_rear_terminal_align
   - x: 8.813
     y: -0.075
     yaw: 0.015
@@ -1694,6 +1695,7 @@ trajectories:
     v: 0.3464
     yaw_rate: 0.0
     t: 1.1547
+    ref_id: drop_rear_terminal_align
   - x: 1.966
     y: 3.4543
     yaw: -3.136
@@ -2651,6 +2653,7 @@ trajectories:
     v: 0.4243
     yaw_rate: 0.0
     t: 1.4142
+    ref_id: pickup_rear_terminal_align
   - x: 8.813
     y: -0.075
     yaw: 0.015
@@ -3551,6 +3554,7 @@ trajectories:
     v: 0.3464
     yaw_rate: 0.0
     t: 1.1547
+    ref_id: drop_rear_terminal_align
   - x: 1.966
     y: 3.4543
     yaw: -3.136
@@ -3807,5 +3811,5 @@ source_manifest:
     sha256: 2b38b7c72583b680226488caafec5434c958e27c0dd0a508f5fadcc4847d11df
     size_bytes: 2910
   semantic_map:
-    sha256: 51c05e5753281c58fcad171db21685d9b83de12ccf55bd8a90271c725f5ccc19
-    size_bytes: 9517
+    sha256: 7b11e2946cec01445c541de2348718793ae3e9d1ae4e5bf5b5775711fba79d33
+    size_bytes: 10938

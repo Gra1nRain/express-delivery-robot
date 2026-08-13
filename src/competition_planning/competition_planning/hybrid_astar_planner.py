@@ -218,43 +218,66 @@ class HybridAStarPlanner:
                 and bool(goal.ref_id)
                 and goal.ref_id.endswith("_approach_align")
             )
-            segment, curvature_index = self._search(
-                segment_start,
-                goal,
-                start_curvature_index=curvature_index,
-                deadline_s=deadline_s,
-                goal_position_tolerance_m=(
-                    self._alignment_waypoint_position_tolerance_m
-                    if alignment_goal
-                    else (
-                        self._soft_waypoint_position_tolerance_m
-                        if soft_goal
-                        else self._goal_position_tolerance_m
-                    )
-                ),
-                goal_lateral_tolerance_m=(
-                    self._alignment_waypoint_position_tolerance_m
-                    if alignment_goal
-                    else (
-                        self._soft_waypoint_position_tolerance_m
-                        if soft_goal
-                        else self._goal_lateral_tolerance_m
-                    )
-                ),
-                goal_heading_tolerance_rad=(
-                    self._alignment_waypoint_heading_tolerance_rad
-                    if alignment_goal
-                    else (
-                        self._soft_waypoint_heading_tolerance_rad
-                        if soft_goal
-                        else self._goal_heading_tolerance_rad
-                    )
-                ),
-                exact_goal_connection=(
-                    self._exact_goal_connection and not soft_goal
-                ),
-                require_zero_curvature=not soft_goal or alignment_goal,
+            terminal_alignment_goal = (
+                goal_index < len(waypoints) - 1
+                and bool(goal.ref_id)
+                and goal.ref_id.endswith("_terminal_align")
             )
+            precision_alignment_goal = alignment_goal or terminal_alignment_goal
+            if terminal_alignment_goal and self._exact_goal_connection:
+                self._require_navigable(
+                    segment_start.x,
+                    segment_start.y,
+                    segment_start.yaw,
+                    "start",
+                )
+                self._require_navigable(goal.x, goal.y, goal.yaw, "goal")
+                segment = self._connect_smooth_exact_goal(segment_start, goal)
+                if segment is None:
+                    raise GridPlanningError(
+                        "hybrid_astar found no collision-free, curvature-constrained "
+                        f"terminal alignment from {segment_start.ref_id or 'start'} "
+                        f"to {goal.ref_id or 'goal'}"
+                    )
+                curvature_index = len(self._curvatures) // 2
+            else:
+                segment, curvature_index = self._search(
+                    segment_start,
+                    goal,
+                    start_curvature_index=curvature_index,
+                    deadline_s=deadline_s,
+                    goal_position_tolerance_m=(
+                        self._alignment_waypoint_position_tolerance_m
+                        if alignment_goal
+                        else (
+                            self._soft_waypoint_position_tolerance_m
+                            if soft_goal
+                            else self._goal_position_tolerance_m
+                        )
+                    ),
+                    goal_lateral_tolerance_m=(
+                        self._alignment_waypoint_position_tolerance_m
+                        if alignment_goal
+                        else (
+                            self._soft_waypoint_position_tolerance_m
+                            if soft_goal
+                            else self._goal_lateral_tolerance_m
+                        )
+                    ),
+                    goal_heading_tolerance_rad=(
+                        self._alignment_waypoint_heading_tolerance_rad
+                        if precision_alignment_goal
+                        else (
+                            self._soft_waypoint_heading_tolerance_rad
+                            if soft_goal
+                            else self._goal_heading_tolerance_rad
+                        )
+                    ),
+                    exact_goal_connection=(
+                        self._exact_goal_connection and not soft_goal
+                    ),
+                    require_zero_curvature=not soft_goal or precision_alignment_goal,
+                )
             if path:
                 path.extend(segment[1:])
             else:
@@ -563,6 +586,95 @@ class HybridAStarPlanner:
                 or node.curvature_index == len(self._curvatures) // 2
             )
         )
+
+    def _connect_smooth_exact_goal(
+        self,
+        start: PathPoint,
+        goal: PathPoint,
+    ) -> list[PathPoint] | None:
+        """Join a terminal alignment anchor with a zero-curvature quintic."""
+
+        chord_m = math.hypot(goal.x - start.x, goal.y - start.y)
+        if chord_m <= 1e-9:
+            return None
+        start_velocity = (
+            chord_m * math.cos(start.yaw),
+            chord_m * math.sin(start.yaw),
+        )
+        goal_velocity = (
+            chord_m * math.cos(goal.yaw),
+            chord_m * math.sin(goal.yaw),
+        )
+
+        def sample(fraction: float) -> PathPoint:
+            t2 = fraction * fraction
+            t3 = t2 * fraction
+            t4 = t3 * fraction
+            t5 = t4 * fraction
+            h00 = 1.0 - 10.0 * t3 + 15.0 * t4 - 6.0 * t5
+            h10 = fraction - 6.0 * t3 + 8.0 * t4 - 3.0 * t5
+            h01 = 10.0 * t3 - 15.0 * t4 + 6.0 * t5
+            h11 = -4.0 * t3 + 7.0 * t4 - 3.0 * t5
+            x = (
+                h00 * start.x
+                + h10 * start_velocity[0]
+                + h01 * goal.x
+                + h11 * goal_velocity[0]
+            )
+            y = (
+                h00 * start.y
+                + h10 * start_velocity[1]
+                + h01 * goal.y
+                + h11 * goal_velocity[1]
+            )
+            dh00 = -30.0 * t2 + 60.0 * t3 - 30.0 * t4
+            dh10 = 1.0 - 18.0 * t2 + 32.0 * t3 - 15.0 * t4
+            dh01 = 30.0 * t2 - 60.0 * t3 + 30.0 * t4
+            dh11 = -12.0 * t2 + 28.0 * t3 - 15.0 * t4
+            dx = (
+                dh00 * start.x
+                + dh10 * start_velocity[0]
+                + dh01 * goal.x
+                + dh11 * goal_velocity[0]
+            )
+            dy = (
+                dh00 * start.y
+                + dh10 * start_velocity[1]
+                + dh01 * goal.y
+                + dh11 * goal_velocity[1]
+            )
+            return PathPoint(x, y, math.atan2(dy, dx))
+
+        validation_count = max(
+            2,
+            math.ceil(chord_m / (self._map.resolution * 0.5)),
+        )
+        validation_path = [
+            sample(index / validation_count)
+            for index in range(validation_count + 1)
+        ]
+        validation_path[0] = start
+        validation_path[-1] = goal
+        if not all(
+            self._point_is_navigable(point.x, point.y, point.yaw)
+            for point in validation_path
+        ):
+            return None
+        if any(
+            abs(_three_point_curvature(*triple)) > self._max_curvature + 1e-6
+            for triple in zip(
+                validation_path,
+                validation_path[1:],
+                validation_path[2:],
+            )
+        ):
+            return None
+
+        output_count = max(2, math.ceil(chord_m / self._sample_spacing_m))
+        output = [sample(index / output_count) for index in range(output_count + 1)]
+        output[0] = start
+        output[-1] = goal
+        return output
 
     def _connect_exact_goal(
         self,

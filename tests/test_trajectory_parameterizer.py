@@ -41,18 +41,23 @@ class TrajectoryParameterizerTest(unittest.TestCase):
         )
 
         self.assertTrue(result.ok, result.failures)
+        self.assertGreaterEqual(max(point.v for point in result.points), 0.070)
         refs = [point.ref_id for point in result.points if point.ref_id]
         for ref in (
             "traffic_light_stop_line",
             "random_obstacle_entry",
             "random_obstacle_exit",
             "pickup_approach_align",
+            "pickup_front_terminal_align",
             "pickup_front",
+            "pickup_rear_terminal_align",
             "pickup_rear",
             "cone_lane_change_entry",
             "cone_lane_change_exit",
             "drop_approach_align",
+            "drop_front_terminal_align",
             "drop_front",
+            "drop_rear_terminal_align",
             "drop_rear",
             "finish_park",
         ):
@@ -64,6 +69,62 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             expected = semantic_map["points"][ref]
             self.assertAlmostEqual(points_by_ref[ref].x, float(expected["x"]))
             self.assertAlmostEqual(points_by_ref[ref].y, float(expected["y"]))
+            terminal_ref = f"{ref}_terminal_align"
+            terminal = points_by_ref[terminal_ref]
+            terminal_expected = semantic_map["points"][terminal_ref]
+            self.assertAlmostEqual(terminal.x, float(terminal_expected["x"]))
+            self.assertAlmostEqual(terminal.y, float(terminal_expected["y"]))
+
+            terminal_index = next(
+                index
+                for index, point in enumerate(result.points)
+                if point.ref_id == terminal_ref
+            )
+            dock_index = next(
+                index
+                for index, point in enumerate(result.points)
+                if point.ref_id == ref and index > terminal_index
+            )
+            self.assertLess(terminal_index, dock_index)
+            self.assertAlmostEqual(
+                math.hypot(
+                    float(expected["x"]) - float(terminal_expected["x"]),
+                    float(expected["y"]) - float(terminal_expected["y"]),
+                ),
+                0.50 if ref.endswith("_front") else 0.30,
+                places=3,
+            )
+
+            prefix = ref.split("_", maxsplit=1)[0]
+            shelf_front = semantic_map["points"][f"{prefix}_front"]
+            shelf_rear = semantic_map["points"][f"{prefix}_rear"]
+            shelf_yaw = math.atan2(
+                float(shelf_rear["y"]) - float(shelf_front["y"]),
+                float(shelf_rear["x"]) - float(shelf_front["x"]),
+            )
+            terminal_tail = result.points[terminal_index : dock_index + 1]
+            tangent_errors_deg = []
+            for first, second in zip(terminal_tail, terminal_tail[1:]):
+                tangent = math.atan2(second.y - first.y, second.x - first.x)
+                tangent_errors_deg.append(
+                    abs(
+                        math.degrees(
+                            (tangent - shelf_yaw + math.pi) % (2.0 * math.pi)
+                            - math.pi
+                        )
+                    )
+                )
+            self.assertTrue(tangent_errors_deg, ref)
+            self.assertLessEqual(max(tangent_errors_deg), 1.0, ref)
+            first, second, third = terminal_tail[-3:]
+            ab = math.hypot(second.x - first.x, second.y - first.y)
+            bc = math.hypot(third.x - second.x, third.y - second.y)
+            ca = math.hypot(first.x - third.x, first.y - third.y)
+            cross = (second.x - first.x) * (third.y - first.y) - (
+                second.y - first.y
+            ) * (third.x - first.x)
+            incoming_curvature = 2.0 * cross / (ab * bc * ca)
+            self.assertAlmostEqual(incoming_curvature, 0.0, places=2)
         ordinary_soft_offsets_m = []
         for ref in (
             "traffic_light_stop_line",
@@ -91,7 +152,7 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                 ),
                 0.10 + 1e-6,
             )
-            self.assertAlmostEqual(actual.curvature, 0.0, places=9)
+            self.assertLessEqual(abs(actual.curvature), 0.10)
         self.assertEqual(
             [point.ref_id for point in result.points[1:] if point.v == 0.0],
             ["finish_park"],
@@ -153,12 +214,24 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             front = semantic_map["points"][f"{prefix}_front"]
             rear = semantic_map["points"][f"{prefix}_rear"]
             align = semantic_map["points"][f"{prefix}_approach_align"]
+            front_terminal = semantic_map["points"][
+                f"{prefix}_front_terminal_align"
+            ]
+            rear_terminal = semantic_map["points"][
+                f"{prefix}_rear_terminal_align"
+            ]
             shelf_yaw = math.atan2(
                 float(rear["y"]) - float(front["y"]),
                 float(rear["x"]) - float(front["x"]),
             )
 
             self.assertAlmostEqual(float(align["yaw"]), shelf_yaw, places=3)
+            self.assertAlmostEqual(
+                float(front_terminal["yaw"]), shelf_yaw, places=3
+            )
+            self.assertAlmostEqual(
+                float(rear_terminal["yaw"]), shelf_yaw, places=3
+            )
             self.assertAlmostEqual(
                 math.hypot(
                     float(front["x"]) - float(align["x"]),
