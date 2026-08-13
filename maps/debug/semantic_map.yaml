@@ -119,6 +119,15 @@ points:
     yaw: -0.0167
     role: pickup_rear_terminal_alignment
     status: derived_from_measured_dock_pair
+  # Non-stop egress guide 0.60 m beyond pickup_rear along the measured shelf
+  # axis.  It keeps the chassis parallel until it has cleared the rack before
+  # the ordinary-radius route turn begins.
+  pickup_departure_align:
+    x: 9.6129
+    y: -0.1010
+    yaw: -0.0167
+    role: pickup_departure_alignment
+    status: derived_from_measured_dock_pair
   # Retired on 2026-08-09; replaced by drop_front and drop_rear.
   # drop_dock:
   #   x: 2.077
@@ -240,6 +249,13 @@ lane_centerlines:
       - drop_approach_align
       - drop_front_terminal_align
       - drop_front
+  - id: pickup_departure_wide_lane
+    status: debug_lab_only
+    width_m: 2.40
+    points:
+      - pickup_rear
+      - pickup_departure_align
+      - cone_lane_change_entry
   - id: drop_front_to_rear_lane
     status: measured
     width_m: 2.40
@@ -386,6 +402,9 @@ route_corridors:
   - id: pickup_to_drop_aligned
     centerline_ref: pickup_to_drop_aligned_lane
     allowed_steps: [drop_transit_1]
+  - id: pickup_departure_wide
+    centerline_ref: pickup_departure_wide_lane
+    allowed_steps: [pickup_departure_wide]
   - id: drop_front_to_rear
     centerline_ref: drop_front_to_rear_lane
     allowed_steps: [drop_1_rear, drop_2_rear]

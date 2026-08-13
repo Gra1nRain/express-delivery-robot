@@ -4,6 +4,10 @@ trajectory_optimizer:
   max_acceleration_mps2: 0.30
   max_deceleration_mps2: 0.50
   max_lateral_acceleration_mps2: 0.20
+  # Local replans preserve normal straight-line speed, but tight Ackermann
+  # turns are capped so measured yaw response can follow the reference.
+  high_curvature_threshold_1pm: 0.80
+  high_curvature_speed_limit_mps: 0.07
   obstacle_zone_speed_limits_mps:
     RANDOM_OBSTACLE: 0.30
     CONE_LANE_CHANGE: 0.30

@@ -9,9 +9,15 @@ local_hybrid_astar_runtime:
   obstacle_y_half_width_m: 2.50
   max_obstacle_points: 2000
   inflation_radius_m: 0.04
+  # Normal travel uses the wider global-route envelope. Precision docking
+  # switches back to the chassis-verified radius inside its activation zone.
+  min_turning_radius_m: 0.81
+  docking_min_turning_radius_m: 0.60
   # Precision docking starts near semantic pickup/drop poses. Normal driving
   # continues to use the 0.44 m costmap plus 0.04 m planner inflation.
-  docking_activation_distance_m: 1.50
+  # The precision footprint starts only after the 1 m shelf-alignment guide.
+  # Earlier activation made a still-turning reference sample appear blocked.
+  docking_activation_distance_m: 1.00
   docking_costmap_occupancy_threshold: 100
   docking_vehicle_length_m: 0.72
   docking_vehicle_width_m: 0.50

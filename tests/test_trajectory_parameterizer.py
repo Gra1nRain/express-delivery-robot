@@ -52,6 +52,7 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             "pickup_front",
             "pickup_rear_terminal_align",
             "pickup_rear",
+            "pickup_departure_align",
             "cone_lane_change_entry",
             "cone_lane_change_exit",
             "drop_approach_align",
@@ -152,7 +153,10 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                 ),
                 0.10 + 1e-6,
             )
-            self.assertLessEqual(abs(actual.curvature), 0.10)
+            # The 1 m marker is a soft pose-shaping guide, not a stop or a
+            # zero-curvature hard waypoint. The exact final 0.5 m tail above
+            # still guarantees a straight dock entry.
+            self.assertLessEqual(abs(actual.curvature), 0.20)
         self.assertEqual(
             [point.ref_id for point in result.points[1:] if point.v == 0.0],
             ["finish_park"],
@@ -160,6 +164,48 @@ class TrajectoryParameterizerTest(unittest.TestCase):
         self.assertLessEqual(
             max(abs(point.curvature) for point in result.points),
             1.0 / 0.60 + 1e-6,
+        )
+
+        pickup_rear_index = next(
+            index
+            for index, point in enumerate(result.points)
+            if point.ref_id == "pickup_rear"
+        )
+        departure_align_index = next(
+            index
+            for index, point in enumerate(result.points)
+            if point.ref_id == "pickup_departure_align"
+            and index > pickup_rear_index
+        )
+        cone_entry_index = next(
+            index
+            for index, point in enumerate(result.points)
+            if point.ref_id == "cone_lane_change_entry"
+            and index > departure_align_index
+        )
+        pickup_front = semantic_map["points"]["pickup_front"]
+        pickup_rear = semantic_map["points"]["pickup_rear"]
+        shelf_yaw = math.atan2(
+            float(pickup_rear["y"]) - float(pickup_front["y"]),
+            float(pickup_rear["x"]) - float(pickup_front["x"]),
+        )
+        departure_tail = result.points[pickup_rear_index : departure_align_index + 1]
+        self.assertGreaterEqual(
+            departure_tail[-1].s - departure_tail[0].s,
+            0.50,
+        )
+        for first, second in zip(departure_tail, departure_tail[1:]):
+            tangent = math.atan2(second.y - first.y, second.x - first.x)
+            heading_error = abs(
+                math.degrees(
+                    (tangent - shelf_yaw + math.pi) % (2.0 * math.pi) - math.pi
+                )
+            )
+            self.assertLessEqual(heading_error, 3.0)
+        departure_turn = result.points[departure_align_index : cone_entry_index + 1]
+        self.assertLessEqual(
+            max(abs(point.curvature) for point in departure_turn),
+            1.0 / 0.81 + 1e-6,
         )
         for prefix, distance_band_m, max_heading_error_deg in (
             ("pickup", (0.55, 0.70), 5.0),
@@ -430,6 +476,51 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             expected_cap = math.sqrt(0.20 / abs(point.curvature))
             self.assertLessEqual(point.v, expected_cap + 1e-9)
             self.assertAlmostEqual(point.yaw_rate, point.v * point.curvature)
+
+    def test_high_curvature_speed_cap_does_not_slow_straight_paths(self) -> None:
+        optimizer = {
+            "trajectory_optimizer": {
+                "max_speed_mps": 0.12,
+                "max_acceleration_mps2": 0.30,
+                "max_deceleration_mps2": 0.50,
+                "max_lateral_acceleration_mps2": 0.20,
+                "high_curvature_threshold_1pm": 0.80,
+                "high_curvature_speed_limit_mps": 0.07,
+            }
+        }
+        straight = StepPlan(
+            step_id="straight",
+            step_type="RUN_SEGMENT",
+            corridor_ref="test",
+            target_ref="end",
+            target_source="test",
+            path=tuple(PathPoint(0.2 * index, 0.0, 0.0) for index in range(8)),
+            planning_time_ms=0.0,
+            planner_plugin="test",
+            smoother_plugin="none",
+        )
+        curve = StepPlan(
+            step_id="curve",
+            step_type="RUN_SEGMENT",
+            corridor_ref="test",
+            target_ref="end",
+            target_source="test",
+            path=(
+                PathPoint(0.0, 0.0, 0.0),
+                PathPoint(0.1, 0.0, 0.0),
+                PathPoint(0.2, 0.1, math.pi / 4.0),
+                PathPoint(0.2, 0.2, math.pi / 2.0),
+            ),
+            planning_time_ms=0.0,
+            planner_plugin="test",
+            smoother_plugin="none",
+        )
+
+        straight_result = parameterize_step_plan(straight, {}, optimizer)
+        curve_result = parameterize_step_plan(curve, {}, optimizer)
+
+        self.assertGreater(max(point.v for point in straight_result.points), 0.09)
+        self.assertLessEqual(max(point.v for point in curve_result.points), 0.07 + 1e-9)
 
     def test_public_route_optimizer_generates_stop_bounded_trajectories(self) -> None:
         route = load_yaml_file(REPO_ROOT / "config" / "routes" / "debug_route.yaml")

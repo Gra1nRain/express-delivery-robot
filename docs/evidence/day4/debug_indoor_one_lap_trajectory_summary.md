@@ -5,7 +5,7 @@
 - route_name: debug_indoor_one_lap_route
 - frame_id: map
 - ok: True
-- trajectory_count: 5
+- trajectory_count: 6
 - failure_count: 0
 
 ## 配置限值
@@ -22,7 +22,8 @@
 |---|---:|---:|---:|---:|---:|
 | pickup_transit_1 | 89 | 8.821 | 23.798 | 0.500 | 0.625011 |
 | pickup_1_rear | 8 | 0.600 | 2.538 | 0.447 | 0.359323 |
-| drop_transit_1 | 95 | 9.428 | 26.640 | 0.500 | 1.666667 |
+| pickup_departure_wide | 60 | 5.899 | 33.355 | 0.500 | 1.234568 |
+| drop_transit_1 | 53 | 5.286 | 20.806 | 0.493 | 0.833333 |
 | drop_1_rear | 6 | 0.581 | 2.497 | 0.447 | 0.251077 |
 | finish_park | 25 | 2.400 | 6.141 | 0.500 | 0.462968 |
 

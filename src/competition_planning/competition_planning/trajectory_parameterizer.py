@@ -698,6 +698,21 @@ def parameterize_step_plan(
         0.20,
     )
     max_curvature_1pm = _optional_positive_float(params, "max_curvature_1pm")
+    high_curvature_threshold_1pm = _optional_positive_float(
+        params,
+        "high_curvature_threshold_1pm",
+    )
+    high_curvature_speed_limit_mps = _optional_positive_float(
+        params,
+        "high_curvature_speed_limit_mps",
+    )
+    if (high_curvature_threshold_1pm is None) != (
+        high_curvature_speed_limit_mps is None
+    ):
+        raise ValueError(
+            "trajectory_optimizer high-curvature threshold and speed limit "
+            "must be configured together"
+        )
     curvature_overshoot_tolerance_ratio = _nonnegative_float(
         params,
         "curvature_overshoot_tolerance_ratio",
@@ -730,6 +745,8 @@ def parameterize_step_plan(
             obstacle_zones,
             zone_speed_limits,
             ref_speed_limits,
+            high_curvature_threshold_1pm,
+            high_curvature_speed_limit_mps,
         )
         for point, curvature in zip(plan.path, curvatures)
     ]
@@ -919,6 +936,8 @@ def _speed_cap_for_point(
     obstacle_zones: list[tuple[str, list[tuple[float, float]]]],
     zone_speed_limits: dict[str, float],
     ref_speed_limits: dict[str, float],
+    high_curvature_threshold_1pm: float | None,
+    high_curvature_speed_limit_mps: float | None,
 ) -> float:
     if point.ref_id in stop_refs:
         return 0.0
@@ -929,6 +948,12 @@ def _speed_cap_for_point(
     for semantic_type, polygon in obstacle_zones:
         if semantic_type in zone_speed_limits and _point_in_polygon(point.x, point.y, polygon):
             cap = min(cap, zone_speed_limits[semantic_type])
+    if (
+        high_curvature_threshold_1pm is not None
+        and high_curvature_speed_limit_mps is not None
+        and abs(curvature) >= high_curvature_threshold_1pm
+    ):
+        cap = min(cap, high_curvature_speed_limit_mps)
     if abs(curvature) > 1e-9:
         cap = min(cap, math.sqrt(max_lateral_acceleration_mps2 / abs(curvature)))
     return max(0.0, cap)

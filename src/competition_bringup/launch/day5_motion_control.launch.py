@@ -305,7 +305,10 @@ def _launch_setup(context, *args, **kwargs):
                     ],
                     "search_padding_m": local_runtime["search_padding_m"],
                     "sample_spacing_m": local_runtime["sample_spacing_m"],
-                    "min_turning_radius_m": motion["min_turning_radius_m"],
+                    "min_turning_radius_m": local_runtime["min_turning_radius_m"],
+                    "docking_min_turning_radius_m": local_runtime[
+                        "docking_min_turning_radius_m"
+                    ],
                     "step_length_m": local_runtime["step_length_m"],
                     "curvature_bins": local_runtime["curvature_bins"],
                     "heading_bins": local_runtime["heading_bins"],

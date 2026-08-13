@@ -33,6 +33,13 @@ steps:
     dock_type: PICKUP
     cycle_index: 1
     dock_pose_ref: pickup_rear
+  # Route-shaping interval only: leave the shelf parallel, then take the
+  # ordinary 0.81 m-radius turn.  It is not a mission checkpoint or stop.
+  - id: pickup_departure_wide
+    type: RUN_SEGMENT
+    docking_approach: false
+    corridor_ref: pickup_departure_wide
+    target_ref: cone_lane_change_entry
   - id: drop_transit_1
     type: CONE_LANE_CHANGE
     docking_approach: true

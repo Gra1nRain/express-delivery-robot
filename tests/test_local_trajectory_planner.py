@@ -577,6 +577,95 @@ def _relaxed_config(**changes: object) -> LocalReplanConfig:
 
 
 class LocalTrajectoryPlannerTest(unittest.TestCase):
+    def test_pickup_front_docking_mode_waits_for_the_alignment_zone(self) -> None:
+        runtime = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "planning"
+                / "local_hybrid_astar_runtime_params_day5.yaml"
+            ).read_text(encoding="utf-8")
+        )["local_hybrid_astar_runtime"]
+        semantic_map = yaml.safe_load(
+            (REPO_ROOT / "maps" / "debug" / "semantic_map.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        artifact = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "docs"
+                / "evidence"
+                / "day5"
+                / "debug_indoor_one_lap_continuous_trajectory.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        reference = tuple(
+            PathPoint(
+                float(point["x"]),
+                float(point["y"]),
+                float(point["yaw"]),
+                point.get("ref_id"),
+            )
+            for point in artifact["points"]
+        )
+        record = semantic_map["points"]["pickup_front"]
+        checkpoint = PathPoint(
+            float(record["x"]),
+            float(record["y"]),
+            float(record["yaw"]),
+            "pickup_front",
+        )
+        current_pose = PathPoint(7.019, -0.075, -0.116)
+
+        self.assertFalse(
+            docking_mode_is_active(
+                current_pose=current_pose,
+                checkpoint=checkpoint,
+                active_checkpoint_ref="pickup_front",
+                docking_refs={"pickup_front", "pickup_rear"},
+                activation_distance_m=runtime["docking_activation_distance_m"],
+            )
+        )
+
+        planner = LocalTrajectoryPlanner(
+            OccupancyGridMap.from_yaml(REPO_ROOT / semantic_map["source_map"]),
+            LocalReplanConfig(
+                lookahead_distance_m=runtime["lookahead_distance_m"],
+                inflation_radius_m=runtime["inflation_radius_m"],
+                search_padding_m=runtime["search_padding_m"],
+                sample_spacing_m=runtime["sample_spacing_m"],
+                min_turning_radius_m=runtime["min_turning_radius_m"],
+                step_length_m=runtime["step_length_m"],
+                curvature_bins=runtime["curvature_bins"],
+                heading_bins=runtime["heading_bins"],
+                goal_position_tolerance_m=runtime["goal_position_tolerance_m"],
+                goal_heading_tolerance_rad=math.radians(
+                    runtime["goal_heading_tolerance_deg"]
+                ),
+                reference_deviation_weight=runtime[
+                    "reference_deviation_weight"
+                ],
+                max_expansions=runtime["max_expansions"],
+                planning_timeout_s=runtime["planning_timeout_s"],
+                reference_search_window_points=runtime[
+                    "reference_search_window_points"
+                ],
+            ),
+        )
+        result = planner.plan(
+            reference_path=reference_prefix_to_checkpoint(
+                reference,
+                checkpoint,
+                exact_pose=True,
+            ),
+            current_pose=current_pose,
+            dynamic_obstacle_points=(),
+        )
+
+        self.assertEqual(result.status, "REFERENCE_CLEAR")
+        self.assertTrue(result.path_is_navigable)
+
     def setUp(self) -> None:
         self.config = LocalReplanConfig(
             lookahead_distance_m=5.0,

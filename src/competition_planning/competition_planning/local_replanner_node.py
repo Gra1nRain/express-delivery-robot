@@ -200,6 +200,12 @@ class LocalReplannerNode(Node):
         self._docking_activation_distance_m = float(
             self.declare_parameter("docking_activation_distance_m", 1.5).value
         )
+        self._docking_min_turning_radius_m = float(
+            self.declare_parameter(
+                "docking_min_turning_radius_m",
+                self._config.min_turning_radius_m,
+            ).value
+        )
         self._docking_raw_occupancy_threshold = int(
             self.declare_parameter("docking_costmap_occupancy_threshold", 100).value
         )
@@ -229,6 +235,8 @@ class LocalReplannerNode(Node):
         )
         if self._docking_activation_distance_m <= 0.0:
             raise ValueError("docking_activation_distance_m must be positive")
+        if self._docking_min_turning_radius_m <= 0.0:
+            raise ValueError("docking_min_turning_radius_m must be positive")
         if not 0 <= self._docking_raw_occupancy_threshold <= 100:
             raise ValueError("docking_costmap_occupancy_threshold must be in [0, 100]")
         if self._docking_shelf_filter_distance_m <= 0.0:
@@ -690,6 +698,7 @@ class LocalReplannerNode(Node):
         return replace(
             self._config,
             inflation_radius_m=0.0,
+            min_turning_radius_m=self._docking_min_turning_radius_m,
             footprint=AsymmetricFootprint(
                 vehicle_length_m=self._docking_vehicle_length_m,
                 vehicle_width_m=self._docking_vehicle_width_m,

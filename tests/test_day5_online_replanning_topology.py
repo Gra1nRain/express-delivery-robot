@@ -83,6 +83,8 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertEqual(runtime["max_obstacle_age_s"], 2.0)
         self.assertEqual(runtime["max_odom_age_s"], 0.50)
         self.assertEqual(runtime["inflation_radius_m"], 0.04)
+        self.assertEqual(runtime["min_turning_radius_m"], 0.81)
+        self.assertEqual(runtime["docking_min_turning_radius_m"], 0.60)
         self.assertEqual(runtime["lookahead_distance_m"], 3.00)
         self.assertEqual(runtime["search_padding_m"], 1.50)
         self.assertEqual(runtime["goal_heading_tolerance_deg"], 5.0)
@@ -177,7 +179,7 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             effective_hard_clearance_m,
             vehicle_corner_radius_m + 0.03,
         )
-        self.assertEqual(runtime["docking_activation_distance_m"], 1.5)
+        self.assertEqual(runtime["docking_activation_distance_m"], 1.0)
         self.assertEqual(runtime["docking_costmap_occupancy_threshold"], 100)
         self.assertEqual(runtime["docking_vehicle_length_m"], 0.72)
         self.assertEqual(runtime["docking_vehicle_width_m"], 0.50)
@@ -209,7 +211,11 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertNotIn("dwa_runtime", launch_text)
         self.assertIn('"map_file": LaunchConfiguration("map_file")', launch_text)
         self.assertIn(
-            '"min_turning_radius_m": motion["min_turning_radius_m"]',
+            '"min_turning_radius_m": local_runtime["min_turning_radius_m"]',
+            launch_text,
+        )
+        self.assertIn(
+            '"docking_min_turning_radius_m": local_runtime[',
             launch_text,
         )
         self.assertIn('"local_planner_runtime_params_file"', launch_text)
