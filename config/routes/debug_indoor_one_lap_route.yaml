@@ -9,6 +9,14 @@ mission_checkpoints:
   - drop_front
   - drop_rear
   - finish_park
+# Only semantic assignments live in the route. Geometry and tuning are selected
+# from config/docking/debug_dock_params.yaml so a field swap needs no code edit.
+precision_docking:
+  checkpoints:
+    pickup_front: shelf_dock
+    pickup_rear: shelf_dock
+    drop_front: shelf_dock
+    drop_rear: shelf_dock
 steps:
   - id: pickup_transit_1
     type: RUN_SEGMENT

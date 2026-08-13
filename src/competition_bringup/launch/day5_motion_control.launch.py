@@ -145,6 +145,9 @@ def _launch_setup(context, *args, **kwargs):
                     "optimizer_params_file": LaunchConfiguration(
                         "optimizer_params_file"
                     ),
+                    "precision_docking_config_file": LaunchConfiguration(
+                        "dock_params_file"
+                    ),
                     "map_frame": estimator["map_frame"],
                     "base_frame": tracking_base_frame,
                     "frequency_hz": tracker["frequency_hz"],
@@ -507,6 +510,22 @@ def _launch_setup(context, *args, **kwargs):
                         "tracking_error_timeout_s",
                         1.0,
                     ),
+                    "max_spin_yaw_rate_radps": safety.get(
+                        "max_spin_yaw_rate_radps",
+                        0.15,
+                    ),
+                    "max_parallel_speed_mps": safety.get(
+                        "max_parallel_speed_mps",
+                        0.06,
+                    ),
+                    "motion_mode_transition_speed_mps": safety.get(
+                        "motion_mode_transition_speed_mps",
+                        0.03,
+                    ),
+                    "motion_mode_transition_timeout_s": safety.get(
+                        "motion_mode_transition_timeout_s",
+                        0.50,
+                    ),
                     "avoidance_stop_topic": safety["avoidance_stop_topic"],
                     "require_avoidance_source": safety["require_avoidance_source"],
                     "avoidance_timeout_s": safety["avoidance_timeout_s"],
@@ -603,6 +622,19 @@ def generate_launch_description():
                     "config",
                     "safety",
                     "safety_params.yaml",
+                ),
+            ),
+            DeclareLaunchArgument(
+                "dock_params_file",
+                default_value=os.path.join(
+                    competition_ws,
+                    "config",
+                    "docking",
+                    "debug_dock_params.yaml",
+                ),
+                description=(
+                    "Site-specific precision docking profiles; route files only "
+                    "map semantic checkpoint refs to these profiles."
                 ),
             ),
             DeclareLaunchArgument(

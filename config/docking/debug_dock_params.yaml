@@ -7,3 +7,23 @@ max_speed_mps: 0.20
 min_speed_mps: 0.05
 max_retries: 2
 arm_max_retries: 3
+precision_profiles:
+  shelf_dock:
+    # Enter before ordinary inflated-costmap rejection can block the exact pose.
+    activation_distance_m: 1.50
+    trim_entry_distance_m: 0.10
+    final_position_tolerance_m: 0.03
+    heading_realign_tolerance_deg: 4.0
+    heading_trim_target_deg: 2.0
+    settle_time_s: 0.30
+    stable_time_s: 0.50
+    stopped_speed_tolerance_mps: 0.02
+    stopped_yaw_rate_tolerance_radps: 0.03
+    max_spin_correction_deg: 10.0
+    max_parallel_correction_m: 0.08
+    spin_gain: 1.0
+    spin_min_yaw_rate_radps: 0.06
+    spin_max_yaw_rate_radps: 0.15
+    parallel_gain: 0.8
+    parallel_min_speed_mps: 0.04
+    parallel_max_speed_mps: 0.06

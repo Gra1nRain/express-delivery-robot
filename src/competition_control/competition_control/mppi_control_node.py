@@ -48,6 +48,13 @@ from competition_control.mppi_controller import (
     control_trajectories_from_dict,
     shape_checkpoint_approach_command,
 )
+from competition_control.precision_docking import (
+    PrecisionDockingController,
+    PrecisionDockingPhase,
+    RequestedMotionMode,
+    fixed_reference_to_checkpoint,
+    precision_docking_configs_from_dict,
+)
 from competition_control.segmented_route_state_machine import (
     SegmentedRouteConfig,
     SegmentedRouteObservation,
@@ -74,7 +81,9 @@ class MPPIControlNode(Node):
         with Path(trajectory_file).open("r", encoding="utf-8") as stream:
             artifact = yaml.safe_load(stream)
         if not isinstance(artifact, dict):
-            raise ValueError(f"trajectory_file is not a YAML mapping: {trajectory_file}")
+            raise ValueError(
+                f"trajectory_file is not a YAML mapping: {trajectory_file}"
+            )
         source_paths = resolve_trajectory_source_paths(
             route_file=str(self.declare_parameter("route_file", "").value),
             semantic_map_file=str(
@@ -89,7 +98,9 @@ class MPPIControlNode(Node):
         )
         validate_source_manifest(artifact, source_paths)
         if not artifact.get("ok", False):
-            raise ValueError(f"trajectory_file is not a successful artifact: {trajectory_file}")
+            raise ValueError(
+                f"trajectory_file is not a successful artifact: {trajectory_file}"
+            )
 
         self._map_frame = str(self.declare_parameter("map_frame", "map").value)
         self._base_frame = str(self.declare_parameter("base_frame", "body").value)
@@ -99,6 +110,16 @@ class MPPIControlNode(Node):
             self._semantic_map
         )
         self._local_optimizer_config = _load_yaml(source_paths["optimizer_params"])
+        precision_config_file = str(
+            self.declare_parameter("precision_docking_config_file", "").value
+        )
+        precision_config = (
+            _load_yaml(precision_config_file) if precision_config_file else {}
+        )
+        self._precision_configs = precision_docking_configs_from_dict(
+            self._route,
+            precision_config,
+        )
         self._replanning_enabled = bool(
             self.declare_parameter("replanning_enabled", False).value
         )
@@ -151,6 +172,19 @@ class MPPIControlNode(Node):
         )
         self._checkpoint_route_enabled = bool(self._mission_checkpoints)
         self._active_checkpoint_index = 0
+        checkpoint_refs = {
+            checkpoint.ref_id for checkpoint in self._mission_checkpoints
+        }
+        unknown_precision_refs = set(self._precision_configs) - checkpoint_refs
+        if unknown_precision_refs:
+            raise ValueError(
+                "precision docking refs are not mission checkpoints: "
+                + ", ".join(sorted(unknown_precision_refs))
+            )
+        self._precision_controller: PrecisionDockingController | None = None
+        self._precision_active = False
+        self._precision_phase = PrecisionDockingPhase.NORMAL_NAV.value
+        self._requested_motion_mode = RequestedMotionMode.DUAL_ACKERMANN.value
         trajectory = self._global_trajectory
         if trajectory.frame_id != self._map_frame:
             raise ValueError(
@@ -183,11 +217,8 @@ class MPPIControlNode(Node):
             self.declare_parameter("checkpoint_max_speed_mps", 0.08).value
         )
         if not (
-            self._checkpoint_slowdown_distance_m
-            > goal_position_tolerance_m
-            and 0.0
-            < self._checkpoint_min_speed_mps
-            <= self._checkpoint_max_speed_mps
+            self._checkpoint_slowdown_distance_m > goal_position_tolerance_m
+            and 0.0 < self._checkpoint_min_speed_mps <= self._checkpoint_max_speed_mps
         ):
             raise ValueError("invalid checkpoint approach speed limits")
         controller_goal_position_tolerance_m = float(
@@ -202,17 +233,13 @@ class MPPIControlNode(Node):
                 2.0,
             ).value
         )
-        if not (
-            0.0 < controller_goal_position_tolerance_m < goal_position_tolerance_m
-        ):
+        if not (0.0 < controller_goal_position_tolerance_m < goal_position_tolerance_m):
             raise ValueError(
                 "controller goal position tolerance must be positive and smaller "
                 "than checkpoint position tolerance"
             )
         if not (
-            0.0
-            < controller_goal_heading_tolerance_deg
-            < goal_heading_tolerance_deg
+            0.0 < controller_goal_heading_tolerance_deg < goal_heading_tolerance_deg
         ):
             raise ValueError(
                 "controller goal heading tolerance must be positive and smaller "
@@ -275,19 +302,16 @@ class MPPIControlNode(Node):
         self._route_enabled = False
         self._avoidance_stop_requested = self._checkpoint_route_enabled
         self._mission_phase = (
-            "MISSION_DISARMED"
-            if self._checkpoint_route_enabled
-            else "CONTINUOUS_ROUTE"
+            "MISSION_DISARMED" if self._checkpoint_route_enabled else "CONTINUOUS_ROUTE"
         )
+        self._reset_precision_controller()
         self._segmented_state_machine = None
         if self._checkpoint_route_enabled:
             self._segmented_state_machine = SegmentedRouteStateMachine(
                 segment_count=len(self._mission_checkpoints),
                 config=SegmentedRouteConfig(
                     goal_position_tolerance_m=goal_position_tolerance_m,
-                    goal_heading_tolerance_rad=math.radians(
-                        goal_heading_tolerance_deg
-                    ),
+                    goal_heading_tolerance_rad=math.radians(goal_heading_tolerance_deg),
                     goal_overshoot_tolerance_m=float(
                         self.declare_parameter(
                             "checkpoint_overshoot_tolerance_m",
@@ -319,7 +343,9 @@ class MPPIControlNode(Node):
         )
         self._state_estimator = StateEstimator(
             StateEstimatorLimits(
-                pose_timeout_s=float(self.declare_parameter("pose_timeout_s", 0.20).value),
+                pose_timeout_s=float(
+                    self.declare_parameter("pose_timeout_s", 0.20).value
+                ),
                 velocity_timeout_s=float(
                     self.declare_parameter("velocity_timeout_s", 0.20).value
                 ),
@@ -354,7 +380,9 @@ class MPPIControlNode(Node):
         )
         self._command_publisher = self.create_publisher(
             TwistStamped,
-            str(self.declare_parameter("body_command_topic", "/control/body_cmd").value),
+            str(
+                self.declare_parameter("body_command_topic", "/control/body_cmd").value
+            ),
             10,
         )
         self._error_publisher = self.create_publisher(
@@ -369,7 +397,11 @@ class MPPIControlNode(Node):
         )
         self._valid_publisher = self.create_publisher(
             Bool,
-            str(self.declare_parameter("state_valid_topic", "/control/state_valid").value),
+            str(
+                self.declare_parameter(
+                    "state_valid_topic", "/control/state_valid"
+                ).value
+            ),
             10,
         )
         self._status_publisher = self.create_publisher(
@@ -537,6 +569,8 @@ class MPPIControlNode(Node):
             self._segmented_state_machine.reset()
             self._controller.replace_trajectory(self._global_trajectory)
             self._activate_checkpoint(0)
+        else:
+            self._reset_precision_controller()
         self._accepted_local_geometry = None
         self._local_plan_update_mode = "waiting"
         self._executed_poses.clear()
@@ -546,6 +580,9 @@ class MPPIControlNode(Node):
         )
 
     def _local_trajectory_callback(self, message: NavPath) -> None:
+        if self._precision_active:
+            self._local_plan_update_mode = "precision_fixed_reference"
+            return
         if message.header.frame_id != self._map_frame:
             self._local_plan_error = (
                 f"frame_mismatch:{message.header.frame_id}->{self._map_frame}"
@@ -568,12 +605,15 @@ class MPPIControlNode(Node):
                 for pose in message.poses
             )
             geometry = self._annotate_active_checkpoint(geometry)
+            # Keep the condition prefix stable for the topology regression test.
+            # fmt: off
             if self._accepted_local_geometry is not None and local_paths_are_equivalent(
                 self._accepted_local_geometry,
                 geometry,
                 position_tolerance_m=self._local_plan_reuse_position_tolerance_m,
                 heading_tolerance_rad=self._local_plan_reuse_heading_tolerance_rad,
             ):
+                # fmt: on
                 self._latest_local_plan_stamp_s = _stamp_to_seconds(
                     message.header.stamp
                 )
@@ -661,13 +701,14 @@ class MPPIControlNode(Node):
         self._active_checkpoint_index = checkpoint_index
         self._accepted_local_geometry = None
         self._latest_local_plan_stamp_s = None
+        self._precision_active = False
+        self._controller.replace_trajectory(self._global_trajectory)
+        self._reset_precision_controller()
         if self._replanning_enabled:
             self._local_stop_requested = True
         self._active_checkpoint_publisher.publish(UInt32(data=checkpoint_index))
         checkpoint = self._mission_checkpoints[checkpoint_index]
-        self._active_checkpoint_ref_publisher.publish(
-            String(data=checkpoint.ref_id)
-        )
+        self._active_checkpoint_ref_publisher.publish(String(data=checkpoint.ref_id))
         self.get_logger().info(
             f"Activated mission checkpoint {checkpoint_index + 1}/"
             f"{len(self._mission_checkpoints)}: {checkpoint.ref_id}"
@@ -687,11 +728,90 @@ class MPPIControlNode(Node):
             stop_line_length_m=self._stop_line_lengths_by_ref.get(goal.ref_id),
         )
         longitudinal_error_m = checkpoint_longitudinal_error(state, goal)
-        local_plan_unavailable = self._replanning_enabled and (
-            self._local_stop_requested
-            or local_plan_age_s is None
-            or local_plan_age_s > self._local_trajectory_timeout_s
+        precision_decision = None
+        if self._route_enabled and self._precision_controller is not None:
+            precision_decision = self._precision_controller.update(
+                now_s=now_s,
+                state=state,
+                checkpoint=goal,
+                yaw_rate_radps=(
+                    self._latest_velocity.yaw_rate_radps
+                    if self._latest_velocity is not None
+                    else 0.0
+                ),
+            )
+            self._precision_phase = precision_decision.phase.value
+            self._requested_motion_mode = precision_decision.motion_mode.value
+            if precision_decision.use_fixed_reference and not self._precision_active:
+                self._controller.replace_trajectory(
+                    fixed_reference_to_checkpoint(
+                        self._global_trajectory,
+                        state,
+                        goal.ref_id,
+                    )
+                )
+                self._accepted_local_geometry = None
+                self._precision_active = True
+                self._local_plan_update_mode = "precision_fixed_reference"
+            elif not precision_decision.use_fixed_reference and self._precision_active:
+                self._precision_active = False
+                self._controller.replace_trajectory(self._global_trajectory)
+                self._latest_local_plan_stamp_s = None
+                self._local_stop_requested = self._replanning_enabled
+                self._local_plan_update_mode = "waiting"
+        else:
+            self._precision_phase = PrecisionDockingPhase.NORMAL_NAV.value
+            self._requested_motion_mode = RequestedMotionMode.DUAL_ACKERMANN.value
+
+        local_plan_unavailable = (
+            self._replanning_enabled
+            and not self._precision_active
+            and (
+                self._local_stop_requested
+                or local_plan_age_s is None
+                or local_plan_age_s > self._local_trajectory_timeout_s
+            )
         )
+        if (
+            precision_decision is not None
+            and self._precision_active
+            and not self._avoidance_stop_requested
+            and not precision_decision.pose_ready
+        ):
+            self._mission_phase = precision_decision.phase.value
+            if precision_decision.phase == PrecisionDockingPhase.PRECISION_APPROACH:
+                return shape_checkpoint_approach_command(
+                    self._controller.compute_command(state),
+                    longitudinal_error_m=longitudinal_error_m,
+                    checkpoint_heading_error_rad=heading_error_rad,
+                    checkpoint_heading_tolerance_rad=(
+                        self._checkpoint_heading_tolerance_rad
+                    ),
+                    capture_distance_m=self._checkpoint_match_tolerance_m,
+                    slowdown_distance_m=self._checkpoint_slowdown_distance_m,
+                    min_speed_mps=self._checkpoint_min_speed_mps,
+                    max_speed_mps=self._checkpoint_max_speed_mps,
+                )
+            if precision_decision.motion_mode in (
+                RequestedMotionMode.SPIN,
+                RequestedMotionMode.PARALLEL,
+            ):
+                return BodyCommand(
+                    linear_x_mps=precision_decision.linear_x_mps,
+                    linear_y_mps=precision_decision.linear_y_mps,
+                    yaw_rate_radps=precision_decision.yaw_rate_radps,
+                    curvature_1pm=0.0,
+                    target_index=0,
+                    lateral_error_m=precision_decision.position_error_m,
+                    heading_error_rad=precision_decision.heading_error_rad,
+                    status="TRACKING",
+                )
+            return BodyCommand.hold(
+                target_index=0,
+                lateral_error_m=precision_decision.position_error_m,
+                heading_error_rad=precision_decision.heading_error_rad,
+                status=precision_decision.phase.value,
+            )
         decision = self._segmented_state_machine.update(
             SegmentedRouteObservation(
                 now_s=now_s,
@@ -741,9 +861,7 @@ class MPPIControlNode(Node):
                 now_s=now_s,
                 enabled=self._route_enabled,
                 state_valid=not requires_rearm,
-                stop_requested=(
-                    self._avoidance_stop_requested or not requires_rearm
-                ),
+                stop_requested=(self._avoidance_stop_requested or not requires_rearm),
                 position_error_m=math.inf,
                 heading_error_rad=math.inf,
                 speed_mps=math.inf,
@@ -874,6 +992,7 @@ class MPPIControlNode(Node):
         command_message.header.stamp = now.to_msg()
         command_message.header.frame_id = self._base_frame
         command_message.twist.linear.x = command.linear_x_mps
+        command_message.twist.linear.y = command.linear_y_mps
         command_message.twist.angular.z = command.yaw_rate_radps
         self._command_publisher.publish(command_message)
 
@@ -910,6 +1029,9 @@ class MPPIControlNode(Node):
                             else None
                         ),
                         "checkpoint_count": len(self._mission_checkpoints),
+                        "precision_phase": self._precision_phase,
+                        "precision_fixed_reference": self._precision_active,
+                        "requested_motion_mode": self._requested_motion_mode,
                     },
                     separators=(",", ":"),
                 )
@@ -920,6 +1042,19 @@ class MPPIControlNode(Node):
         if self._latest_local_plan_stamp_s is None:
             return None
         return now_s - self._latest_local_plan_stamp_s
+
+    def _reset_precision_controller(self) -> None:
+        self._precision_active = False
+        self._precision_phase = PrecisionDockingPhase.NORMAL_NAV.value
+        self._requested_motion_mode = RequestedMotionMode.DUAL_ACKERMANN.value
+        if not self._mission_checkpoints:
+            self._precision_controller = None
+            return
+        checkpoint = self._mission_checkpoints[self._active_checkpoint_index]
+        config = self._precision_configs.get(checkpoint.ref_id)
+        self._precision_controller = (
+            PrecisionDockingController(config) if config is not None else None
+        )
 
     def _publish_executed_pose(self, state: VehicleState, stamp) -> None:
         if self._executed_poses:

@@ -25,6 +25,10 @@ class SafetyLimits:
     max_heading_error_rad: float = math.radians(45.0)
     tracking_error_timeout_s: float = 1.0
     nominal_period_s: float = 0.05
+    max_spin_yaw_rate_radps: float = 0.15
+    max_parallel_speed_mps: float = 0.06
+    motion_mode_transition_speed_mps: float = 0.03
+    motion_mode_transition_timeout_s: float = 0.50
 
 
 @dataclass(frozen=True)
@@ -41,6 +45,8 @@ class SafetyContext:
     chassis_fault: bool
     system_ready: bool = True
     ackermann_mode: bool = True
+    motion_mode: str = "dual_ackermann"
+    precision_motion_allowed: bool = False
 
 
 @dataclass(frozen=True)
@@ -49,6 +55,7 @@ class SafeCommand:
     yaw_rate_radps: float
     status: str
     reasons: tuple[str, ...]
+    linear_y_mps: float = 0.0
 
 
 class SafetySupervisor:
@@ -75,17 +82,27 @@ class SafetySupervisor:
             raise ValueError("recovery_speed_mps must be positive")
         if limits.tracking_error_timeout_s < 0.0:
             raise ValueError("tracking_error_timeout_s must be non-negative")
+        if limits.max_spin_yaw_rate_radps <= 0.0:
+            raise ValueError("max_spin_yaw_rate_radps must be positive")
+        if limits.max_parallel_speed_mps <= 0.0:
+            raise ValueError("max_parallel_speed_mps must be positive")
+        if limits.motion_mode_transition_timeout_s <= 0.0:
+            raise ValueError("motion_mode_transition_timeout_s must be positive")
         self._limits = limits
         self._last_output_speed_mps: float | None = None
         self._last_output_time_s: float | None = None
         self._tracking_recovery_active = False
         self._hard_tracking_error_since_s: float | None = None
+        self._pending_motion_mode: str | None = None
+        self._motion_mode_transition_started_s: float | None = None
 
     def reset(self) -> None:
         self._last_output_speed_mps = None
         self._last_output_time_s = None
         self._tracking_recovery_active = False
         self._hard_tracking_error_since_s = None
+        self._pending_motion_mode = None
+        self._motion_mode_transition_started_s = None
 
     def filter_command(
         self,
@@ -93,6 +110,7 @@ class SafetySupervisor:
         context: SafetyContext,
     ) -> SafeCommand:
         fault_reasons = self._fault_reasons(command, context)
+        fault_reasons.extend(self._motion_mode_faults(command, context))
         if fault_reasons:
             self._record_output(0.0, context.now_s)
             return SafeCommand(0.0, 0.0, "SAFE_HOLD", tuple(fault_reasons))
@@ -125,9 +143,60 @@ class SafetySupervisor:
             self._record_output(0.0, context.now_s)
             return SafeCommand(0.0, 0.0, "SAFE_HOLD", tuple(tracking_faults))
 
+        requested_mode = _requested_motion_mode(command)
         reasons: list[str] = []
+        if requested_mode != _actual_motion_mode(context):
+            reasons.append("motion_mode_transition")
         speed = command.linear_x_mps
+        lateral_speed = command.linear_y_mps
         yaw_rate = command.yaw_rate_radps
+        if requested_mode == "spin":
+            bounded_yaw_rate = min(
+                self._limits.max_spin_yaw_rate_radps,
+                max(-self._limits.max_spin_yaw_rate_radps, yaw_rate),
+            )
+            if abs(bounded_yaw_rate - yaw_rate) > 1e-12:
+                reasons.append("spin_rate_limited")
+            self._record_output(0.0, context.now_s)
+            return SafeCommand(
+                linear_x_mps=0.0,
+                yaw_rate_radps=bounded_yaw_rate,
+                status="SAFE_LIMITED" if reasons else "SAFE_ACTIVE",
+                reasons=tuple(reasons),
+                linear_y_mps=0.0,
+            )
+
+        if requested_mode == "parallel":
+            requested_speed = math.hypot(speed, lateral_speed)
+            bounded_speed = min(
+                self._limits.max_parallel_speed_mps,
+                self._limits.max_speed_mps,
+                requested_speed,
+            )
+            if bounded_speed + 1e-12 < requested_speed:
+                reasons.append("parallel_speed_limited")
+            if self._tracking_recovery_active:
+                bounded_speed = min(bounded_speed, self._limits.recovery_speed_mps)
+                reasons.append("tracking_recovery")
+            bounded_speed = self._bounded_translational_speed(
+                bounded_speed,
+                context,
+                reasons,
+            )
+            scale = bounded_speed / requested_speed if requested_speed > 1e-12 else 0.0
+            self._record_output(bounded_speed, context.now_s)
+            return SafeCommand(
+                linear_x_mps=speed * scale,
+                yaw_rate_radps=0.0,
+                status=(
+                    "SAFE_RECOVERY"
+                    if self._tracking_recovery_active
+                    else "SAFE_LIMITED" if reasons else "SAFE_ACTIVE"
+                ),
+                reasons=tuple(reasons),
+                linear_y_mps=lateral_speed * scale,
+            )
+
         bounded_speed = min(self._limits.max_speed_mps, max(0.0, speed))
         if abs(bounded_speed - speed) > 1e-12:
             reasons.append("speed_limited")
@@ -166,7 +235,30 @@ class SafetySupervisor:
                 else "SAFE_LIMITED" if reasons else "SAFE_ACTIVE"
             ),
             reasons=tuple(reasons),
+            linear_y_mps=0.0,
         )
+
+    def _bounded_translational_speed(
+        self,
+        speed_mps: float,
+        context: SafetyContext,
+        reasons: list[str],
+    ) -> float:
+        period = self._period(context.now_s)
+        previous_speed = (
+            self._last_output_speed_mps
+            if self._last_output_speed_mps is not None
+            else max(0.0, context.measured_speed_mps)
+        )
+        upper_speed = previous_speed + self._limits.max_acceleration_mps2 * period
+        lower_speed = max(
+            0.0,
+            previous_speed - self._limits.max_deceleration_mps2 * period,
+        )
+        bounded = min(upper_speed, max(lower_speed, speed_mps))
+        if abs(bounded - speed_mps) > 1e-12:
+            reasons.append("acceleration_limited")
+        return bounded
 
     def _update_tracking_policy(
         self,
@@ -219,6 +311,7 @@ class SafetySupervisor:
             context.state_stamp_s,
             context.measured_speed_mps,
             command.linear_x_mps,
+            command.linear_y_mps,
             command.yaw_rate_radps,
             command.lateral_error_m,
             command.heading_error_rad,
@@ -239,7 +332,16 @@ class SafetySupervisor:
             reasons.append("chassis_fault")
         if not context.system_ready:
             reasons.append("system_state_unavailable")
-        if not context.ackermann_mode:
+        if (
+            _requested_motion_mode(command) != "dual_ackermann"
+            and not context.precision_motion_allowed
+        ):
+            reasons.append("non_ackermann_outside_precision")
+        if (
+            _requested_motion_mode(command) != _actual_motion_mode(context)
+            and abs(context.measured_speed_mps)
+            > self._limits.motion_mode_transition_speed_mps
+        ):
             reasons.append("unexpected_motion_mode")
         if context.now_s - context.command_stamp_s > self._limits.command_timeout_s:
             reasons.append("stale_command")
@@ -249,9 +351,37 @@ class SafetySupervisor:
             reasons.append("future_command")
         if context.state_stamp_s > context.now_s + 1e-6:
             reasons.append("future_state")
-        if self._last_output_time_s is not None and context.now_s < self._last_output_time_s:
+        if (
+            self._last_output_time_s is not None
+            and context.now_s < self._last_output_time_s
+        ):
             reasons.append("safety_time_reversed")
         return reasons
+
+    def _motion_mode_faults(
+        self,
+        command: BodyCommand,
+        context: SafetyContext,
+    ) -> list[str]:
+        requested = _requested_motion_mode(command)
+        actual = _actual_motion_mode(context)
+        if requested == actual:
+            self._pending_motion_mode = None
+            self._motion_mode_transition_started_s = None
+            return []
+        if self._pending_motion_mode != requested:
+            self._pending_motion_mode = requested
+            self._motion_mode_transition_started_s = context.now_s
+            return []
+        if self._motion_mode_transition_started_s is None:
+            self._motion_mode_transition_started_s = context.now_s
+            return []
+        if (
+            context.now_s - self._motion_mode_transition_started_s
+            >= self._limits.motion_mode_transition_timeout_s
+        ):
+            return ["motion_mode_transition_timeout"]
+        return []
 
     def _period(self, now_s: float) -> float:
         if self._last_output_time_s is None:
@@ -264,3 +394,17 @@ class SafetySupervisor:
     def _record_output(self, speed_mps: float, now_s: float) -> None:
         self._last_output_speed_mps = speed_mps
         self._last_output_time_s = now_s
+
+
+def _requested_motion_mode(command: BodyCommand) -> str:
+    if abs(command.linear_y_mps) > 1e-9:
+        return "parallel"
+    if abs(command.linear_x_mps) <= 1e-9 and abs(command.yaw_rate_radps) > 1e-9:
+        return "spin"
+    return "dual_ackermann"
+
+
+def _actual_motion_mode(context: SafetyContext) -> str:
+    if context.ackermann_mode:
+        return "dual_ackermann"
+    return context.motion_mode

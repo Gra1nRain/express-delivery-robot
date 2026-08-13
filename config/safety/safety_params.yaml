@@ -18,6 +18,12 @@ safety:
   require_can_control_mode: true
   require_system_state: true
   require_dual_ackermann_mode: true
+  # Non-Ackermann modes are accepted only for precision commands and only after
+  # the vehicle has settled; every command still passes through this safety exit.
+  max_spin_yaw_rate_radps: 0.15
+  max_parallel_speed_mps: 0.06
+  motion_mode_transition_speed_mps: 0.03
+  motion_mode_transition_timeout_s: 0.50
   avoidance_stop_topic: /avoidance/stop_request
   require_avoidance_source: true
   avoidance_timeout_s: 2.0

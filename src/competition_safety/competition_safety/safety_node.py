@@ -41,7 +41,9 @@ class SafetyNode(Node):
                 state_timeout_s=float(
                     self.declare_parameter("state_timeout_s", 0.15).value
                 ),
-                max_speed_mps=float(self.declare_parameter("max_speed_mps", 0.20).value),
+                max_speed_mps=float(
+                    self.declare_parameter("max_speed_mps", 0.20).value
+                ),
                 max_acceleration_mps2=float(
                     self.declare_parameter("max_acceleration_mps2", 0.20).value
                 ),
@@ -89,11 +91,30 @@ class SafetyNode(Node):
                     self.declare_parameter("tracking_error_timeout_s", 1.0).value
                 ),
                 nominal_period_s=self._period_s,
+                max_spin_yaw_rate_radps=float(
+                    self.declare_parameter("max_spin_yaw_rate_radps", 0.15).value
+                ),
+                max_parallel_speed_mps=float(
+                    self.declare_parameter("max_parallel_speed_mps", 0.06).value
+                ),
+                motion_mode_transition_speed_mps=float(
+                    self.declare_parameter(
+                        "motion_mode_transition_speed_mps",
+                        0.03,
+                    ).value
+                ),
+                motion_mode_transition_timeout_s=float(
+                    self.declare_parameter(
+                        "motion_mode_transition_timeout_s",
+                        0.50,
+                    ).value
+                ),
             )
         )
         self._latest_command: TwistStamped | None = None
         self._latest_error: Vector3Stamped | None = None
         self._controller_status = "NO_COMMAND"
+        self._precision_phase = "NORMAL_NAV"
         self._state_valid = False
         self._avoidance_stop = False
         self._avoidance_seen = False
@@ -104,7 +125,9 @@ class SafetyNode(Node):
         self._motion_mode: MotionState | None = None
         self._motion_received_s = 0.0
 
-        self.create_subscription(TwistStamped, "/control/body_cmd", self._command_callback, 20)
+        self.create_subscription(
+            TwistStamped, "/control/body_cmd", self._command_callback, 20
+        )
         self.create_subscription(
             Vector3Stamped,
             "/control/tracking_error",
@@ -125,8 +148,12 @@ class SafetyNode(Node):
             20,
         )
         self.create_subscription(Odometry, "/odom", self._odom_callback, 20)
-        self.create_subscription(SystemState, "/system_state", self._system_callback, 20)
-        self.create_subscription(MotionState, "/motion_state", self._motion_callback, 20)
+        self.create_subscription(
+            SystemState, "/system_state", self._system_callback, 20
+        )
+        self.create_subscription(
+            MotionState, "/motion_state", self._motion_callback, 20
+        )
         self._command_publisher = self.create_publisher(
             Twist,
             str(
@@ -159,8 +186,10 @@ class SafetyNode(Node):
         try:
             payload = json.loads(message.data)
             self._controller_status = str(payload.get("status", "INVALID_STATUS"))
+            self._precision_phase = str(payload.get("precision_phase", "NORMAL_NAV"))
         except (json.JSONDecodeError, AttributeError):
             self._controller_status = "INVALID_STATUS"
+            self._precision_phase = "NORMAL_NAV"
 
     def _avoidance_callback(self, message: Bool) -> None:
         self._avoidance_stop = bool(message.data)
@@ -168,7 +197,10 @@ class SafetyNode(Node):
         self._avoidance_received_s = self._now_s()
 
     def _odom_callback(self, message: Odometry) -> None:
-        self._measured_speed_mps = float(message.twist.twist.linear.x)
+        self._measured_speed_mps = math.hypot(
+            float(message.twist.twist.linear.x),
+            float(message.twist.twist.linear.y),
+        )
 
     def _system_callback(self, message: SystemState) -> None:
         self._system_state = message
@@ -228,6 +260,14 @@ class SafetyNode(Node):
             and self._motion_mode is not None
             and self._motion_mode.motion_mode == MotionState.MOTION_MODE_DUAL_ACKERMAN
         )
+        motion_mode = "unknown"
+        if motion_fresh and self._motion_mode is not None:
+            if self._motion_mode.motion_mode == MotionState.MOTION_MODE_DUAL_ACKERMAN:
+                motion_mode = "dual_ackermann"
+            elif self._motion_mode.motion_mode == MotionState.MOTION_MODE_PARALLEL:
+                motion_mode = "parallel"
+            elif self._motion_mode.motion_mode == MotionState.MOTION_MODE_SPINNING:
+                motion_mode = "spin"
         output = self._supervisor.filter_command(
             command,
             SafetyContext(
@@ -243,10 +283,17 @@ class SafetyNode(Node):
                 chassis_fault=chassis_fault,
                 system_ready=system_fresh and motion_fresh,
                 ackermann_mode=ackermann_mode,
+                motion_mode=motion_mode,
+                precision_motion_allowed=self._precision_phase
+                in {
+                    "HEADING_TRIM",
+                    "POSITION_TRIM",
+                },
             ),
         )
         message = Twist()
         message.linear.x = output.linear_x_mps
+        message.linear.y = output.linear_y_mps
         message.angular.z = output.yaw_rate_radps
         self._command_publisher.publish(message)
         self._status_publisher.publish(
@@ -267,6 +314,7 @@ class SafetyNode(Node):
                 status="NO_COMMAND",
             )
         speed = float(self._latest_command.twist.linear.x)
+        lateral_speed = float(self._latest_command.twist.linear.y)
         yaw_rate = float(self._latest_command.twist.angular.z)
         curvature = yaw_rate / speed if abs(speed) > 1e-9 else 0.0
         return BodyCommand(
@@ -277,6 +325,7 @@ class SafetyNode(Node):
             lateral_error_m=float(self._latest_error.vector.x),
             heading_error_rad=float(self._latest_error.vector.y),
             status=self._controller_status,
+            linear_y_mps=lateral_speed,
         )
 
 

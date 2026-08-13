@@ -94,6 +94,7 @@ class BodyCommand:
     lateral_error_m: float
     heading_error_rad: float
     status: str
+    linear_y_mps: float = 0.0
 
     @classmethod
     def hold(
@@ -112,6 +113,7 @@ class BodyCommand:
             lateral_error_m=lateral_error_m,
             heading_error_rad=heading_error_rad,
             status=status,
+            linear_y_mps=0.0,
         )
 
 

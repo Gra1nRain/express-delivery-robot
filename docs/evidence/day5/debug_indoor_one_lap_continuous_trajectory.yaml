@@ -2400,8 +2400,8 @@ source_manifest:
     sha256: 66a7483910a82323201caf9a593967a9c1c2b5008a44f3e838a37dd0f9123f7e
     size_bytes: 2785
   route:
-    sha256: 75f1a442cfef1b28fed153de9a02676bfdfe920b0b173c39f95d85f999f2e0f0
-    size_bytes: 1937
+    sha256: bcd71b68cbb83dfbbeff0882c8e0f476082ccd52e63599bc8e8542d9a1977618
+    size_bytes: 2242
   semantic_map:
     sha256: ddc21b226b665eacc9b4cb2d17595f99195ff9a4ebea96f5ff1a4615736dc690
     size_bytes: 11583

@@ -18,6 +18,7 @@ def _command(
     yaw_rate: float = 0.05,
     lateral_error_m: float = 0.02,
     heading_error_deg: float = 2.0,
+    lateral_speed: float = 0.0,
 ) -> BodyCommand:
     curvature = yaw_rate / speed if abs(speed) > 1e-9 else 0.0
     return BodyCommand(
@@ -28,6 +29,7 @@ def _command(
         lateral_error_m=lateral_error_m,
         heading_error_rad=math.radians(heading_error_deg),
         status="TRACKING",
+        linear_y_mps=lateral_speed,
     )
 
 
@@ -215,6 +217,111 @@ class SafetySupervisorTest(unittest.TestCase):
         self.assertAlmostEqual(first.linear_x_mps, 0.185)
         self.assertEqual(first.yaw_rate_radps, 0.0)
         self.assertIn("goal_decelerating", first.reasons)
+
+    def test_parallel_trim_is_bounded_and_keeps_hard_obstacle_stop(self) -> None:
+        parallel = _command(speed=0.06, yaw_rate=0.0, lateral_speed=0.08)
+        output = self.supervisor.filter_command(
+            parallel,
+            _healthy_context(
+                measured_speed_mps=0.0,
+                ackermann_mode=False,
+                motion_mode="parallel",
+                precision_motion_allowed=True,
+            ),
+        )
+        stopped = self.supervisor.filter_command(
+            parallel,
+            _healthy_context(
+                now_s=10.05,
+                command_stamp_s=10.03,
+                state_stamp_s=10.03,
+                measured_speed_mps=0.0,
+                avoidance_stop=True,
+                ackermann_mode=False,
+                motion_mode="parallel",
+                precision_motion_allowed=True,
+            ),
+        )
+
+        self.assertGreater(output.linear_y_mps, 0.0)
+        self.assertLessEqual(math.hypot(output.linear_x_mps, output.linear_y_mps), 0.20)
+        self.assertEqual(stopped.status, "SAFE_HOLD")
+        self.assertEqual(stopped.linear_y_mps, 0.0)
+        self.assertIn("avoidance_stop", stopped.reasons)
+
+    def test_spin_trim_is_allowed_only_for_matching_motion_mode(self) -> None:
+        spin = _command(speed=0.0, yaw_rate=0.12)
+
+        matching = self.supervisor.filter_command(
+            spin,
+            _healthy_context(
+                measured_speed_mps=0.0,
+                ackermann_mode=False,
+                motion_mode="spin",
+                precision_motion_allowed=True,
+            ),
+        )
+        moving_mismatch = self.supervisor.filter_command(
+            spin,
+            _healthy_context(
+                now_s=10.05,
+                command_stamp_s=10.03,
+                state_stamp_s=10.03,
+                measured_speed_mps=0.10,
+                ackermann_mode=True,
+                motion_mode="dual_ackermann",
+                precision_motion_allowed=True,
+            ),
+        )
+
+        self.assertEqual(matching.linear_x_mps, 0.0)
+        self.assertGreater(matching.yaw_rate_radps, 0.0)
+        self.assertEqual(moving_mismatch.status, "SAFE_HOLD")
+        self.assertIn("unexpected_motion_mode", moving_mismatch.reasons)
+
+    def test_motion_mode_transition_must_complete_within_timeout(self) -> None:
+        spin = _command(speed=0.0, yaw_rate=0.12)
+
+        entering = self.supervisor.filter_command(
+            spin,
+            _healthy_context(
+                now_s=10.00,
+                command_stamp_s=9.98,
+                state_stamp_s=9.98,
+                measured_speed_mps=0.0,
+                precision_motion_allowed=True,
+            ),
+        )
+        timed_out = self.supervisor.filter_command(
+            spin,
+            _healthy_context(
+                now_s=10.60,
+                command_stamp_s=10.58,
+                state_stamp_s=10.58,
+                measured_speed_mps=0.0,
+                precision_motion_allowed=True,
+            ),
+        )
+
+        self.assertIn("motion_mode_transition", entering.reasons)
+        self.assertEqual(timed_out.status, "SAFE_HOLD")
+        self.assertIn("motion_mode_transition_timeout", timed_out.reasons)
+
+    def test_non_ackermann_command_is_rejected_outside_precision_phase(self) -> None:
+        spin = _command(speed=0.0, yaw_rate=0.12)
+
+        output = self.supervisor.filter_command(
+            spin,
+            _healthy_context(
+                measured_speed_mps=0.0,
+                ackermann_mode=False,
+                motion_mode="spin",
+                precision_motion_allowed=False,
+            ),
+        )
+
+        self.assertEqual(output.status, "SAFE_HOLD")
+        self.assertIn("non_ackermann_outside_precision", output.reasons)
 
 
 if __name__ == "__main__":

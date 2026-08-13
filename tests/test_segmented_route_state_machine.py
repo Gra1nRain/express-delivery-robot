@@ -499,6 +499,24 @@ class SegmentedRouteLaunchTopologyTest(unittest.TestCase):
         self.assertTrue(steps["pickup_transit_1"]["soft_intermediate_refs"])
         self.assertTrue(steps["drop_transit_1"]["soft_intermediate_refs"])
 
+        precision_refs = set(route["precision_docking"]["checkpoints"])
+        self.assertEqual(
+            precision_refs,
+            {"pickup_front", "pickup_rear", "drop_front", "drop_rear"},
+        )
+
+    def test_precision_docking_is_loaded_from_a_site_specific_config_file(self) -> None:
+        launch_text = (
+            REPO_ROOT
+            / "src"
+            / "competition_bringup"
+            / "launch"
+            / "day5_motion_control.launch.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"dock_params_file"', launch_text)
+        self.assertIn('"precision_docking_config_file"', launch_text)
+
 
 if __name__ == "__main__":
     unittest.main()
