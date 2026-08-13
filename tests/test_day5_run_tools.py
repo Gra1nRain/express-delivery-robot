@@ -71,6 +71,19 @@ class Day5RunPolicyTest(unittest.TestCase):
 
         self.assertEqual(timeout_s, 720.0)
 
+    def test_zero_explicit_watchdog_disables_wall_clock_deadline(self) -> None:
+        module = _load_policy_module()
+
+        timeout_s = module.resolve_watchdog_timeout_s(0.0, 217.482)
+
+        self.assertIsNone(timeout_s)
+
+    def test_negative_explicit_watchdog_is_rejected(self) -> None:
+        module = _load_policy_module()
+
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            module.resolve_watchdog_timeout_s(-1.0, 217.482)
+
     def test_missing_duration_uses_legacy_fallback(self) -> None:
         module = _load_policy_module()
 
@@ -170,7 +183,18 @@ class Day5RunScriptTest(unittest.TestCase):
 
         self.assertIn("resolve_watchdog_timeout_s(", text)
         self.assertIn("default=None", text)
+        self.assertIn("watchdog_timeout_s is not None", text)
         self.assertIn("elapsed_s >= watchdog_timeout_s", text)
+        self.assertIn('"--no-progress-timeout-s"', text)
+        self.assertIn('stop_reason = "no_route_progress_timeout"', text)
+
+    def test_manual_one_lap_command_disables_wall_clock_deadline(self) -> None:
+        text = (
+            REPO_ROOT / "docs" / "day5_continuous_one_lap_manual_test.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("--watchdog-timeout-s 0", text)
+        self.assertIn("--no-progress-timeout-s 120", text)
 
     def test_relay_accepts_dwa_ready_states(self) -> None:
         module = _load_policy_module()

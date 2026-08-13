@@ -312,11 +312,12 @@ else
     --route-file /home/agilex/competition_ws/docs/evidence/day5/debug_indoor_one_lap_continuous_trajectory.yaml \
     --enable-segmented-route \
     --adapt-ranger-twist \
-    --watchdog-timeout-s 420
+    --watchdog-timeout-s 0 \
+    --no-progress-timeout-s 120
 fi
 ```
 
-说明：脚本中的 `--route-file` 参数用于读取待执行轨迹的点数、终点和预计时长，因此这里传入连续轨迹YAML。
+说明：脚本中的 `--route-file` 参数用于读取待执行轨迹的点数和终点，因此这里传入连续轨迹YAML。`--watchdog-timeout-s 0` 关闭固定总运行时长，整圈以状态机报告 `route_complete` 为正常结束条件；已有的传感器新鲜度、控制故障、近障和速度上限保护仍然生效。若检查点没有推进且里程计累计位移不足 `0.05 m` 的状态持续 `120 s`，中继仍会以 `no_route_progress_timeout` 安全停车。
 
 发车期间保持终端8运行，不要启动第二个中继或 `ranger_twist_adapter_node`。
 

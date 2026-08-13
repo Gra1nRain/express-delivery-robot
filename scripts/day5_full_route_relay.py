@@ -266,6 +266,13 @@ class RelayMonitor(Node):
             self.data["control_state_reasons"] = parsed.get("state_reasons")
             self.data["pose_delay_s"] = parsed.get("pose_delay_s")
             self.data["local_plan_age_s"] = parsed.get("local_plan_age_s")
+            self.data["active_checkpoint_index"] = parsed.get(
+                "active_checkpoint_index"
+            )
+            self.data["active_checkpoint_ref"] = parsed.get(
+                "active_checkpoint_ref"
+            )
+            self.data["precision_phase"] = parsed.get("precision_phase")
         elif key == "local_status" and parsed is not None:
             self.data["local_status_value"] = parsed.get("status")
             self.data["local_reference_start_index"] = parsed.get("reference_start_index")
@@ -686,6 +693,9 @@ def run(args: argparse.Namespace) -> int:
             node.relay_active = True
             run_start = time.time()
             last_status_write_s = 0.0
+            last_progress_s = run_start
+            last_progress_checkpoint: int | None = None
+            last_progress_xy: tuple[float, float] | None = None
             jsonl.write(json.dumps({"event": "relay_start", "snapshot": node.snapshot("relay_start", 0.0)}, ensure_ascii=False) + "\n")
 
             while True:
@@ -693,6 +703,30 @@ def run(args: argparse.Namespace) -> int:
                 node.relay_or_zero()
                 now_s = time.time()
                 elapsed_s = now_s - run_start
+                checkpoint_index = node.data.get("active_checkpoint_index")
+                if (
+                    isinstance(checkpoint_index, int)
+                    and checkpoint_index != last_progress_checkpoint
+                ):
+                    last_progress_checkpoint = checkpoint_index
+                    last_progress_s = now_s
+                if "odom_x" in node.data and "odom_y" in node.data:
+                    current_progress_xy = (
+                        float(node.data["odom_x"]),
+                        float(node.data["odom_y"]),
+                    )
+                    if last_progress_xy is None:
+                        last_progress_xy = current_progress_xy
+                        last_progress_s = now_s
+                    elif (
+                        math.dist(current_progress_xy, last_progress_xy)
+                        >= args.progress_distance_m
+                    ):
+                        last_progress_xy = current_progress_xy
+                        last_progress_s = now_s
+                node.data["route_progress_age_s"] = max(
+                    0.0, now_s - last_progress_s
+                )
                 snapshot = node.snapshot("run", elapsed_s)
                 jsonl.write(json.dumps(snapshot, ensure_ascii=False) + "\n")
                 samples += 1
@@ -793,7 +827,16 @@ def run(args: argparse.Namespace) -> int:
                 if elapsed_s > 6.0 and abs(float(node.data.get("lateral_error_m", 0.0))) > args.max_lateral_error_m:
                     stop_reason = "tracking_lateral_error_over_limit"
                     break
-                if elapsed_s >= watchdog_timeout_s:
+                if (
+                    node.data["route_progress_age_s"]
+                    >= args.no_progress_timeout_s
+                ):
+                    stop_reason = "no_route_progress_timeout"
+                    break
+                if (
+                    watchdog_timeout_s is not None
+                    and elapsed_s >= watchdog_timeout_s
+                ):
                     stop_reason = "watchdog_timeout_route_not_complete"
                     break
 
@@ -840,7 +883,11 @@ def run(args: argparse.Namespace) -> int:
         f"stop_reason={stop_reason}",
         f"route_point_count={route_point_count}",
         f"planned_duration_s={route_metadata.duration_s}",
-        f"watchdog_timeout_s={watchdog_timeout_s:.3f}",
+        "watchdog_timeout_s=disabled"
+        if watchdog_timeout_s is None
+        else f"watchdog_timeout_s={watchdog_timeout_s:.3f}",
+        f"no_progress_timeout_s={args.no_progress_timeout_s:.3f}",
+        f"progress_distance_m={args.progress_distance_m:.3f}",
         f"finish_xy={finish_xy}",
         f"samples={samples}",
         "initialpose=skipped_existing_map_tf"
@@ -909,12 +956,28 @@ def main() -> int:
         type=float,
         default=None,
         help=(
-            "Explicit watchdog timeout. By default use trajectory duration * "
-            "watchdog-duration-scale + watchdog-margin-s."
+            "Explicit wall-clock watchdog timeout; 0 disables it. By default "
+            "use trajectory duration * watchdog-duration-scale + "
+            "watchdog-margin-s."
         ),
     )
     parser.add_argument("--watchdog-duration-scale", type=float, default=2.5)
     parser.add_argument("--watchdog-margin-s", type=float, default=60.0)
+    parser.add_argument(
+        "--no-progress-timeout-s",
+        type=float,
+        default=120.0,
+        help=(
+            "Stop if neither the mission checkpoint nor odometry position makes "
+            "meaningful progress for this duration."
+        ),
+    )
+    parser.add_argument(
+        "--progress-distance-m",
+        type=float,
+        default=0.05,
+        help="Odometry displacement counted as route progress.",
+    )
     parser.add_argument("--sustained-error-s", type=float, default=4.0)
     parser.add_argument(
         "--scan-stop-m",
@@ -948,6 +1011,10 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    if args.no_progress_timeout_s <= 0.0:
+        parser.error("--no-progress-timeout-s must be positive")
+    if args.progress_distance_m <= 0.0:
+        parser.error("--progress-distance-m must be positive")
     if not args.skip_initialpose and (
         args.initial_x is None or args.initial_y is None or args.initial_yaw is None
     ):

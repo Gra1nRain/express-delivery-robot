@@ -72,10 +72,12 @@ def resolve_watchdog_timeout_s(
     margin_s: float = DEFAULT_WATCHDOG_MARGIN_S,
     minimum_s: float = DEFAULT_WATCHDOG_MINIMUM_S,
     fallback_s: float = DEFAULT_WATCHDOG_FALLBACK_S,
-) -> float:
+) -> float | None:
     if explicit_timeout_s is not None:
-        if explicit_timeout_s <= 0.0:
-            raise ValueError("explicit watchdog timeout must be positive")
+        if explicit_timeout_s < 0.0:
+            raise ValueError("explicit watchdog timeout must be non-negative")
+        if explicit_timeout_s == 0.0:
+            return None
         return explicit_timeout_s
     if planned_duration_s is None:
         return fallback_s
