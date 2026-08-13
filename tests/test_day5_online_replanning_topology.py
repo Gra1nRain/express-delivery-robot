@@ -137,7 +137,7 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         )
         self.assertEqual(control["motion"]["docking_speed_min_mps"], 0.05)
         self.assertEqual(control["motion"]["docking_speed_max_mps"], 0.08)
-        self.assertEqual(control["motion"]["docking_slowdown_distance_m"], 1.00)
+        self.assertEqual(control["motion"]["docking_slowdown_distance_m"], 0.50)
         alternate_control = yaml.safe_load(
             (
                 REPO_ROOT

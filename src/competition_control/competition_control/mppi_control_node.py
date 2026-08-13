@@ -173,7 +173,7 @@ class MPPIControlNode(Node):
         self._checkpoint_slowdown_distance_m = float(
             self.declare_parameter(
                 "checkpoint_slowdown_distance_m",
-                1.0,
+                0.5,
             ).value
         )
         self._checkpoint_min_speed_mps = float(
