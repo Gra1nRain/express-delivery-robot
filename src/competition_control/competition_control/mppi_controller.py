@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 from typing import Any, Sequence
 
@@ -113,6 +113,67 @@ class BodyCommand:
             heading_error_rad=heading_error_rad,
             status=status,
         )
+
+
+def shape_checkpoint_approach_command(
+    command: BodyCommand,
+    *,
+    longitudinal_error_m: float,
+    checkpoint_heading_error_rad: float,
+    checkpoint_heading_tolerance_rad: float,
+    capture_distance_m: float,
+    slowdown_distance_m: float,
+    min_speed_mps: float,
+    max_speed_mps: float,
+) -> BodyCommand:
+    """Keep a forward-only checkpoint approach executable and bounded."""
+
+    if capture_distance_m < 0.0:
+        raise ValueError("capture_distance_m must be non-negative")
+    if checkpoint_heading_tolerance_rad < 0.0:
+        raise ValueError("checkpoint heading tolerance must be non-negative")
+    if slowdown_distance_m <= capture_distance_m:
+        raise ValueError("slowdown_distance_m must exceed capture_distance_m")
+    if not 0.0 < min_speed_mps <= max_speed_mps:
+        raise ValueError("checkpoint speeds must satisfy 0 < min <= max")
+    if command.status != "TRACKING" or not math.isfinite(longitudinal_error_m):
+        return command
+    if longitudinal_error_m >= 0.0:
+        return BodyCommand.hold(
+            target_index=command.target_index,
+            lateral_error_m=command.lateral_error_m,
+            heading_error_rad=command.heading_error_rad,
+            status="CHECKPOINT_PLANE_HOLD",
+        )
+
+    remaining_distance_m = -longitudinal_error_m
+    if remaining_distance_m > slowdown_distance_m:
+        return command
+    blend = min(
+        1.0,
+        max(
+            0.0,
+            (remaining_distance_m - capture_distance_m)
+            / (slowdown_distance_m - capture_distance_m),
+        ),
+    )
+    speed_limit_mps = min_speed_mps + blend * (
+        max_speed_mps - min_speed_mps
+    )
+    if (
+        math.isfinite(checkpoint_heading_error_rad)
+        and abs(checkpoint_heading_error_rad) > checkpoint_heading_tolerance_rad
+    ):
+        speed_limit_mps = min_speed_mps
+    speed_mps = min(
+        speed_limit_mps,
+        max(min_speed_mps, command.linear_x_mps),
+    )
+    return replace(
+        command,
+        linear_x_mps=speed_mps,
+        yaw_rate_radps=speed_mps * command.curvature_1pm,
+    )
 
 
 @dataclass(frozen=True)

@@ -46,14 +46,29 @@ def local_paths_are_equivalent(
 ) -> bool:
     """Return whether ``current`` keeps a geometrically identical future path.
 
-    Local replans prepend the latest vehicle pose, so point zero is deliberately
-    ignored.  A consumed suffix is reusable only when at least two future points,
-    including the endpoint, still match.  Real bypass, rejoin, or extension changes
-    therefore continue to replace the controller trajectory.
+    Local replans prepend the latest vehicle pose, so multi-point paths compare
+    their future suffix.  A two-point checkpoint path is reused only when both
+    poses still match.  Real bypass, rejoin, or extension changes therefore
+    continue to replace the controller trajectory.
     """
 
     if position_tolerance_m < 0.0 or heading_tolerance_rad < 0.0:
         raise ValueError("path equivalence tolerances must be non-negative")
+    if len(previous) == 2 or len(current) == 2:
+        return (
+            len(previous) == len(current) == 2
+            and _finite_path(previous)
+            and _finite_path(current)
+            and all(
+                _poses_match(
+                    old,
+                    new,
+                    position_tolerance_m=position_tolerance_m,
+                    heading_tolerance_rad=heading_tolerance_rad,
+                )
+                for old, new in zip(previous, current)
+            )
+        )
     if len(previous) < 3 or len(current) < 3:
         return False
 
@@ -162,6 +177,18 @@ def checkpoint_errors(
             math.cos(float(pose.yaw) - float(checkpoint.yaw)),
         ),
     )
+
+
+def checkpoint_longitudinal_error(
+    pose: PathPose,
+    checkpoint: PathPose,
+) -> float:
+    """Return signed checkpoint-axis error; positive means the goal was passed."""
+
+    if not _finite_path((pose, checkpoint)):
+        return math.nan
+    longitudinal_m, _ = _checkpoint_frame_offsets(pose, checkpoint)
+    return longitudinal_m
 
 
 def _checkpoint_frame_offsets(

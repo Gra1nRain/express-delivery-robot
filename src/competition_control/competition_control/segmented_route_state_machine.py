@@ -22,6 +22,7 @@ class SegmentedRoutePhase(str, Enum):
     TRACKING = "SEGMENT_TRACKING"
     DOCK_HOLD = "DOCK_HOLD"
     SAFETY_HOLD = "SAFETY_HOLD"
+    OVERSHOOT_HOLD = "DOCK_OVERSHOOT_HOLD"
     FAULT_HOLD = "FAULT_HOLD"
     COMPLETED = "ROUTE_COMPLETED"
 
@@ -30,6 +31,7 @@ class SegmentedRoutePhase(str, Enum):
 class SegmentedRouteConfig:
     goal_position_tolerance_m: float = 0.10
     goal_heading_tolerance_rad: float = math.radians(4.0)
+    goal_overshoot_tolerance_m: float = 0.02
     stop_speed_tolerance_mps: float = 0.03
     dock_hold_s: float = 2.0
 
@@ -38,6 +40,8 @@ class SegmentedRouteConfig:
             raise ValueError("goal_position_tolerance_m must be positive")
         if self.goal_heading_tolerance_rad < 0.0:
             raise ValueError("goal_heading_tolerance_rad must be non-negative")
+        if self.goal_overshoot_tolerance_m < 0.0:
+            raise ValueError("goal_overshoot_tolerance_m must be non-negative")
         if self.stop_speed_tolerance_mps < 0.0:
             raise ValueError("stop_speed_tolerance_mps must be non-negative")
         if self.dock_hold_s < 0.0:
@@ -53,6 +57,7 @@ class SegmentedRouteObservation:
     position_error_m: float
     heading_error_rad: float
     speed_mps: float
+    longitudinal_error_m: float = math.nan
 
 
 @dataclass(frozen=True)
@@ -97,7 +102,10 @@ class SegmentedRouteStateMachine:
 
         if self._phase == SegmentedRoutePhase.COMPLETED:
             return self._decision(allow_tracking=False)
-        if self._phase == SegmentedRoutePhase.FAULT_HOLD:
+        if self._phase in (
+            SegmentedRoutePhase.OVERSHOOT_HOLD,
+            SegmentedRoutePhase.FAULT_HOLD,
+        ):
             return self._decision(allow_tracking=False)
 
         if not observation.state_valid:
@@ -129,16 +137,29 @@ class SegmentedRouteStateMachine:
             and abs(observation.speed_mps)
             <= self._config.stop_speed_tolerance_mps
         )
+        overshot = (
+            math.isfinite(observation.longitudinal_error_m)
+            and observation.longitudinal_error_m
+            > self._config.goal_overshoot_tolerance_m
+        )
 
         if self._phase == SegmentedRoutePhase.TRACKING:
-            if not pose_at_goal:
-                return self._decision(allow_tracking=True)
-            self._phase = SegmentedRoutePhase.DOCK_HOLD
-            self._dock_hold_started_s = observation.now_s if stopped else None
-            return self._decision(allow_tracking=False)
+            if pose_at_goal:
+                self._phase = SegmentedRoutePhase.DOCK_HOLD
+                self._dock_hold_started_s = observation.now_s if stopped else None
+                return self._decision(allow_tracking=False)
+            if overshot:
+                self._phase = SegmentedRoutePhase.OVERSHOOT_HOLD
+                self._dock_hold_started_s = None
+                return self._decision(allow_tracking=False)
+            return self._decision(allow_tracking=True)
 
         if self._phase == SegmentedRoutePhase.DOCK_HOLD:
             if not pose_at_goal:
+                if overshot:
+                    self._phase = SegmentedRoutePhase.OVERSHOOT_HOLD
+                    self._dock_hold_started_s = None
+                    return self._decision(allow_tracking=False)
                 self._phase = SegmentedRoutePhase.TRACKING
                 self._dock_hold_started_s = None
                 return self._decision(allow_tracking=True)

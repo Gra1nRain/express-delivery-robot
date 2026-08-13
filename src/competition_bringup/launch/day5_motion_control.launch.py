@@ -176,6 +176,18 @@ def _launch_setup(context, *args, **kwargs):
                     "goal_heading_tolerance_deg": mppi[
                         "checkpoint_goal_heading_tolerance_deg"
                     ],
+                    "checkpoint_overshoot_tolerance_m": mppi[
+                        "checkpoint_overshoot_tolerance_m"
+                    ],
+                    "checkpoint_slowdown_distance_m": motion[
+                        "docking_slowdown_distance_m"
+                    ],
+                    "checkpoint_min_speed_mps": motion[
+                        "docking_speed_min_mps"
+                    ],
+                    "checkpoint_max_speed_mps": motion[
+                        "docking_speed_max_mps"
+                    ],
                     "max_speed_mps": motion["max_speed_mps"],
                     "max_acceleration_mps2": motion["max_acceleration_mps2"],
                     "max_deceleration_mps2": motion["max_deceleration_mps2"],

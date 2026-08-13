@@ -129,6 +129,15 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             ],
             4.0,
         )
+        self.assertEqual(
+            control["trajectory_tracker"]["mppi"][
+                "checkpoint_overshoot_tolerance_m"
+            ],
+            0.02,
+        )
+        self.assertEqual(control["motion"]["docking_speed_min_mps"], 0.05)
+        self.assertEqual(control["motion"]["docking_speed_max_mps"], 0.08)
+        self.assertEqual(control["motion"]["docking_slowdown_distance_m"], 1.00)
         alternate_control = yaml.safe_load(
             (
                 REPO_ROOT

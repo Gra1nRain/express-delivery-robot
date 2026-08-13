@@ -31,6 +31,7 @@ from competition_planning.semantic_planner import PathPoint
 from competition_planning.trajectory_parameterizer import parameterize_local_path
 from competition_control.local_plan_continuity import (
     checkpoint_errors,
+    checkpoint_longitudinal_error,
     local_paths_are_equivalent,
     nearest_path_point_index,
     nearest_stop_line_path_point_index,
@@ -45,6 +46,7 @@ from competition_control.mppi_controller import (
     MPPIParams,
     VehicleState,
     control_trajectories_from_dict,
+    shape_checkpoint_approach_command,
 )
 from competition_control.segmented_route_state_machine import (
     SegmentedRouteConfig,
@@ -165,6 +167,29 @@ class MPPIControlNode(Node):
                 4.0 if self._checkpoint_route_enabled else 180.0,
             ).value
         )
+        self._checkpoint_heading_tolerance_rad = math.radians(
+            goal_heading_tolerance_deg
+        )
+        self._checkpoint_slowdown_distance_m = float(
+            self.declare_parameter(
+                "checkpoint_slowdown_distance_m",
+                1.0,
+            ).value
+        )
+        self._checkpoint_min_speed_mps = float(
+            self.declare_parameter("checkpoint_min_speed_mps", 0.05).value
+        )
+        self._checkpoint_max_speed_mps = float(
+            self.declare_parameter("checkpoint_max_speed_mps", 0.08).value
+        )
+        if not (
+            self._checkpoint_slowdown_distance_m
+            > goal_position_tolerance_m
+            and 0.0
+            < self._checkpoint_min_speed_mps
+            <= self._checkpoint_max_speed_mps
+        ):
+            raise ValueError("invalid checkpoint approach speed limits")
         controller_goal_position_tolerance_m = float(
             self.declare_parameter(
                 "controller_goal_position_tolerance_m",
@@ -262,6 +287,12 @@ class MPPIControlNode(Node):
                     goal_position_tolerance_m=goal_position_tolerance_m,
                     goal_heading_tolerance_rad=math.radians(
                         goal_heading_tolerance_deg
+                    ),
+                    goal_overshoot_tolerance_m=float(
+                        self.declare_parameter(
+                            "checkpoint_overshoot_tolerance_m",
+                            0.02,
+                        ).value
                     ),
                     stop_speed_tolerance_mps=float(
                         self.declare_parameter(
@@ -655,6 +686,7 @@ class MPPIControlNode(Node):
             goal,
             stop_line_length_m=self._stop_line_lengths_by_ref.get(goal.ref_id),
         )
+        longitudinal_error_m = checkpoint_longitudinal_error(state, goal)
         local_plan_unavailable = self._replanning_enabled and (
             self._local_stop_requested
             or local_plan_age_s is None
@@ -671,13 +703,25 @@ class MPPIControlNode(Node):
                 position_error_m=position_error_m,
                 heading_error_rad=heading_error_rad,
                 speed_mps=state.linear_speed_mps,
+                longitudinal_error_m=longitudinal_error_m,
             )
         )
         self._mission_phase = decision.phase.value
         if decision.segment_changed:
             self._activate_checkpoint(decision.active_segment_index)
         if decision.allow_tracking:
-            return self._controller.compute_command(state)
+            return shape_checkpoint_approach_command(
+                self._controller.compute_command(state),
+                longitudinal_error_m=longitudinal_error_m,
+                checkpoint_heading_error_rad=heading_error_rad,
+                checkpoint_heading_tolerance_rad=(
+                    self._checkpoint_heading_tolerance_rad
+                ),
+                capture_distance_m=self._checkpoint_match_tolerance_m,
+                slowdown_distance_m=self._checkpoint_slowdown_distance_m,
+                min_speed_mps=self._checkpoint_min_speed_mps,
+                max_speed_mps=self._checkpoint_max_speed_mps,
+            )
         return BodyCommand.hold(
             target_index=0,
             lateral_error_m=0.0,

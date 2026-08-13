@@ -10,6 +10,7 @@ sys.path.insert(0, str(REPO_ROOT / "src" / "competition_control"))
 
 from competition_control.local_plan_continuity import (
     checkpoint_errors,
+    checkpoint_longitudinal_error,
     local_paths_are_equivalent,
     nearest_path_point_index,
     nearest_stop_line_path_point_index,
@@ -116,9 +117,15 @@ class LocalPlanContinuityTest(unittest.TestCase):
 
         self.assertFalse(local_paths_are_equivalent(previous, current))
 
-    def test_does_not_reuse_a_two_point_plan(self) -> None:
+    def test_reuses_an_identical_two_point_checkpoint_plan(self) -> None:
         previous = (_Point(0.00, 0.00), _Point(0.30, 0.00))
-        current = (_Point(0.01, 0.00), _Point(0.30, 0.00))
+        current = (_Point(0.00, 0.00), _Point(0.30, 0.00))
+
+        self.assertTrue(local_paths_are_equivalent(previous, current))
+
+    def test_replaces_a_changed_two_point_checkpoint_plan(self) -> None:
+        previous = (_Point(0.00, 0.00), _Point(0.30, 0.00))
+        current = (_Point(0.01, 0.06), _Point(0.30, 0.00))
 
         self.assertFalse(local_paths_are_equivalent(previous, current))
 
@@ -184,6 +191,18 @@ class LocalPlanContinuityTest(unittest.TestCase):
 
         self.assertLess(position_error_m, 0.01)
         self.assertEqual(heading_error_rad, 0.0)
+
+    def test_checkpoint_longitudinal_error_changes_sign_after_goal(self) -> None:
+        pickup = _Point(8.413, -0.081, 0.015)
+
+        self.assertLess(
+            checkpoint_longitudinal_error(_Point(8.313, -0.081), pickup),
+            0.0,
+        )
+        self.assertGreater(
+            checkpoint_longitudinal_error(_Point(8.676, -0.081), pickup),
+            0.0,
+        )
 
     def test_stop_line_goal_rejects_pose_beyond_line_width(self) -> None:
         position_error_m, _ = checkpoint_errors(

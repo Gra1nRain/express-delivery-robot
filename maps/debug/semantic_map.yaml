@@ -302,35 +302,35 @@ dock_poses:
     dock_type: PICKUP
     work_side: RIGHT
     position_tolerance_m: 0.10
-    yaw_tolerance_deg: 5.0
+    yaw_tolerance_deg: 4.0
     status: measured
   - id: pickup_rear
     point_ref: pickup_rear
     dock_type: PICKUP
     work_side: RIGHT
     position_tolerance_m: 0.10
-    yaw_tolerance_deg: 5.0
+    yaw_tolerance_deg: 4.0
     status: measured
   - id: drop_front
     point_ref: drop_front
     dock_type: DROP
     work_side: RIGHT
     position_tolerance_m: 0.10
-    yaw_tolerance_deg: 5.0
+    yaw_tolerance_deg: 4.0
     status: measured
   - id: drop_rear
     point_ref: drop_rear
     dock_type: DROP
     work_side: RIGHT
     position_tolerance_m: 0.10
-    yaw_tolerance_deg: 5.0
+    yaw_tolerance_deg: 4.0
     status: measured
   - id: finish_park
     point_ref: finish_park
     dock_type: FINISH
     work_side: RIGHT
     position_tolerance_m: 0.10
-    yaw_tolerance_deg: 5.0
+    yaw_tolerance_deg: 4.0
     status: measured
 
 route_corridors:

@@ -24,6 +24,10 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
             SegmentedRouteConfig().goal_heading_tolerance_rad,
             math.radians(4.0),
         )
+        self.assertAlmostEqual(
+            SegmentedRouteConfig().goal_overshoot_tolerance_m,
+            0.02,
+        )
 
     def setUp(self) -> None:
         self.machine = SegmentedRouteStateMachine(
@@ -46,6 +50,7 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
         position_error_m: float = 1.0,
         heading_error_rad: float = 0.0,
         speed_mps: float = 0.0,
+        longitudinal_error_m: float = -1.0,
     ) -> SegmentedRouteObservation:
         return SegmentedRouteObservation(
             now_s=now_s,
@@ -55,7 +60,52 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
             position_error_m=position_error_m,
             heading_error_rad=heading_error_rad,
             speed_mps=speed_mps,
+            longitudinal_error_m=longitudinal_error_m,
         )
+
+    def test_overshot_checkpoint_holds_instead_of_micro_crawling(self) -> None:
+        machine = SegmentedRouteStateMachine(
+            segment_count=2,
+            config=SegmentedRouteConfig(
+                goal_position_tolerance_m=0.10,
+                goal_heading_tolerance_rad=math.radians(4.0),
+                goal_overshoot_tolerance_m=0.02,
+            ),
+        )
+        machine.update(self.observation(0.0))
+
+        in_window = machine.update(
+            self.observation(
+                1.0,
+                position_error_m=0.09,
+                heading_error_rad=math.radians(4.6),
+                longitudinal_error_m=-0.02,
+            )
+        )
+        self.assertEqual(in_window.phase, SegmentedRoutePhase.TRACKING)
+        self.assertTrue(in_window.allow_tracking)
+
+        overshot = machine.update(
+            self.observation(
+                2.0,
+                position_error_m=0.263,
+                heading_error_rad=math.radians(3.39),
+                longitudinal_error_m=0.263,
+            )
+        )
+        self.assertEqual(overshot.phase, SegmentedRoutePhase.OVERSHOOT_HOLD)
+        self.assertFalse(overshot.allow_tracking)
+
+        still_held = machine.update(
+            self.observation(
+                3.0,
+                position_error_m=0.263,
+                heading_error_rad=math.radians(3.39),
+                longitudinal_error_m=0.263,
+            )
+        )
+        self.assertEqual(still_held.phase, SegmentedRoutePhase.OVERSHOOT_HOLD)
+        self.assertFalse(still_held.allow_tracking)
 
     def test_requires_explicit_enable_before_tracking(self) -> None:
         decision = self.machine.update(self.observation(0.0, enabled=False))
@@ -231,6 +281,21 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
 
 
 class SegmentedTrajectoryArtifactTest(unittest.TestCase):
+    def test_semantic_dock_heading_tolerances_match_final_gate(self) -> None:
+        import yaml
+
+        semantic_map = yaml.safe_load(
+            (REPO_ROOT / "maps" / "debug" / "semantic_map.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        self.assertTrue(semantic_map["dock_poses"])
+        self.assertEqual(
+            {float(dock["yaw_tolerance_deg"]) for dock in semantic_map["dock_poses"]},
+            {4.0},
+        )
+
     def test_indoor_route_stops_only_at_task_checkpoints(self) -> None:
         import yaml
 
