@@ -173,6 +173,9 @@ def _launch_setup(context, *args, **kwargs):
                     "controller_goal_heading_tolerance_deg": mppi[
                         "controller_goal_heading_tolerance_deg"
                     ],
+                    "goal_heading_tolerance_deg": mppi[
+                        "checkpoint_goal_heading_tolerance_deg"
+                    ],
                     "max_speed_mps": motion["max_speed_mps"],
                     "max_acceleration_mps2": motion["max_acceleration_mps2"],
                     "max_deceleration_mps2": motion["max_deceleration_mps2"],

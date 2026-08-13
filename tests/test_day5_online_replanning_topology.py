@@ -85,6 +85,7 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         self.assertEqual(runtime["inflation_radius_m"], 0.04)
         self.assertEqual(runtime["lookahead_distance_m"], 3.00)
         self.assertEqual(runtime["search_padding_m"], 1.50)
+        self.assertEqual(runtime["goal_heading_tolerance_deg"], 5.0)
         self.assertEqual(runtime["reference_deviation_weight"], 2.0)
         self.assertEqual(runtime["relaxed_segment_entry_ref"], "random_obstacle_entry")
         self.assertEqual(runtime["relaxed_segment_exit_ref"], "random_obstacle_exit")
@@ -122,6 +123,12 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             ],
             2.0,
         )
+        self.assertEqual(
+            control["trajectory_tracker"]["mppi"][
+                "checkpoint_goal_heading_tolerance_deg"
+            ],
+            4.0,
+        )
         alternate_control = yaml.safe_load(
             (
                 REPO_ROOT
@@ -135,6 +142,12 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
                 "local_plan_reuse_position_tolerance_m"
             ],
             0.05,
+        )
+        self.assertEqual(
+            alternate_control["trajectory_tracker"]["mppi"][
+                "checkpoint_goal_heading_tolerance_deg"
+            ],
+            4.0,
         )
         self.assertEqual(
             alternate_control["trajectory_tracker"]["mppi"][

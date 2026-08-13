@@ -19,6 +19,12 @@ from competition_control.segmented_route_state_machine import (
 
 
 class SegmentedRouteStateMachineTest(unittest.TestCase):
+    def test_default_final_heading_tolerance_is_four_degrees(self) -> None:
+        self.assertAlmostEqual(
+            SegmentedRouteConfig().goal_heading_tolerance_rad,
+            math.radians(4.0),
+        )
+
     def setUp(self) -> None:
         self.machine = SegmentedRouteStateMachine(
             segment_count=2,

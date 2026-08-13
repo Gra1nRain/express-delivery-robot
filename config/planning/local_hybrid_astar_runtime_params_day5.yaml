@@ -29,7 +29,7 @@ local_hybrid_astar_runtime:
   curvature_bins: 9
   heading_bins: 72
   goal_position_tolerance_m: 0.15
-  goal_heading_tolerance_deg: 8.0
+  goal_heading_tolerance_deg: 5.0
   reference_deviation_weight: 2.0
   relaxed_segment_entry_ref: random_obstacle_entry
   relaxed_segment_exit_ref: random_obstacle_exit

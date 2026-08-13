@@ -162,7 +162,7 @@ class MPPIControlNode(Node):
         goal_heading_tolerance_deg = float(
             self.declare_parameter(
                 "goal_heading_tolerance_deg",
-                5.0 if self._checkpoint_route_enabled else 180.0,
+                4.0 if self._checkpoint_route_enabled else 180.0,
             ).value
         )
         controller_goal_position_tolerance_m = float(

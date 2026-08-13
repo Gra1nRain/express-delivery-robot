@@ -253,7 +253,7 @@ class HybridAStarPlanner:
                 exact_goal_connection=(
                     self._exact_goal_connection and not soft_goal
                 ),
-                require_zero_curvature=not soft_goal,
+                require_zero_curvature=not soft_goal or alignment_goal,
             )
             if path:
                 path.extend(segment[1:])

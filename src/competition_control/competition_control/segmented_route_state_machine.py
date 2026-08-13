@@ -29,7 +29,7 @@ class SegmentedRoutePhase(str, Enum):
 @dataclass(frozen=True)
 class SegmentedRouteConfig:
     goal_position_tolerance_m: float = 0.10
-    goal_heading_tolerance_rad: float = math.radians(5.0)
+    goal_heading_tolerance_rad: float = math.radians(4.0)
     stop_speed_tolerance_mps: float = 0.03
     dock_hold_s: float = 2.0
 

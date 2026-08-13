@@ -25,10 +25,11 @@ global_planner:
   dock_approach_goal_lateral_tolerance_m: 0.03
   dock_approach_exact_goal_connection: true
   hybrid_goal_heading_tolerance_deg: 5.0
-  hybrid_soft_waypoint_position_tolerance_m: 0.50
+  # Entry/exit refs are route hints; permit early departure to prepare docks.
+  hybrid_soft_waypoint_position_tolerance_m: 1.20
   hybrid_soft_waypoint_heading_tolerance_deg: 45.0
-  hybrid_alignment_waypoint_position_tolerance_m: 0.25
-  hybrid_alignment_waypoint_heading_tolerance_deg: 12.0
+  hybrid_alignment_waypoint_position_tolerance_m: 0.10
+  hybrid_alignment_waypoint_heading_tolerance_deg: 5.0
   hybrid_reference_deviation_weight: 1.0
   hybrid_max_expansions: 250000
 

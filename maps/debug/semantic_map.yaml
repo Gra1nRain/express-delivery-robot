@@ -93,11 +93,11 @@ points:
     role: pickup_area_rear
     status: measured
   # Derived from the measured pickup_front -> pickup_rear shelf axis.  This
-  # soft guide starts 0.65 m before the front dock so the chassis is nearly
+  # soft guide starts 1.00 m before the front dock so the chassis is nearly
   # parallel before entering the close shelf clearance.
   pickup_approach_align:
-    x: 7.7631
-    y: -0.0702
+    x: 7.4131
+    y: -0.0643
     yaw: -0.0167
     role: pickup_approach_alignment
     status: derived_from_measured_dock_pair
@@ -121,11 +121,11 @@ points:
     role: drop_area_rear
     status: measured
   # Derived from the measured drop_front -> drop_rear shelf axis.  This is a
-  # soft heading guide, not a mandatory pose; 0.80 m gives the chassis room to
+  # soft heading guide, not a mandatory pose; 1.00 m gives the chassis room to
   # settle parallel after leaving the cone region.
   drop_approach_align:
-    x: 3.0659
-    y: 3.4409
+    x: 3.2658
+    y: 3.4371
     yaw: 3.1227
     role: drop_approach_alignment
     status: derived_from_measured_dock_pair

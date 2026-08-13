@@ -64,25 +64,34 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             expected = semantic_map["points"][ref]
             self.assertAlmostEqual(points_by_ref[ref].x, float(expected["x"]))
             self.assertAlmostEqual(points_by_ref[ref].y, float(expected["y"]))
-        soft_offsets_m = []
+        ordinary_soft_offsets_m = []
         for ref in (
             "traffic_light_stop_line",
             "random_obstacle_entry",
             "random_obstacle_exit",
-            "pickup_approach_align",
             "cone_lane_change_entry",
             "cone_lane_change_exit",
-            "drop_approach_align",
         ):
             expected = semantic_map["points"][ref]
-            soft_offsets_m.append(
+            ordinary_soft_offsets_m.append(
                 math.hypot(
                     points_by_ref[ref].x - float(expected["x"]),
                     points_by_ref[ref].y - float(expected["y"]),
                 )
             )
-        self.assertLessEqual(max(soft_offsets_m), 0.50 + 1e-6)
-        self.assertGreater(max(soft_offsets_m), 0.15)
+        self.assertLessEqual(max(ordinary_soft_offsets_m), 1.20 + 1e-6)
+        self.assertGreater(max(ordinary_soft_offsets_m), 0.80)
+        for ref in ("pickup_approach_align", "drop_approach_align"):
+            expected = semantic_map["points"][ref]
+            actual = points_by_ref[ref]
+            self.assertLessEqual(
+                math.hypot(
+                    actual.x - float(expected["x"]),
+                    actual.y - float(expected["y"]),
+                ),
+                0.10 + 1e-6,
+            )
+            self.assertAlmostEqual(actual.curvature, 0.0, places=9)
         self.assertEqual(
             [point.ref_id for point in result.points[1:] if point.v == 0.0],
             ["finish_park"],
@@ -92,8 +101,8 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             1.0 / 0.60 + 1e-6,
         )
         for prefix, distance_band_m, max_heading_error_deg in (
-            ("pickup", (0.55, 0.70), 6.0),
-            ("drop", (0.52, 0.68), 27.0),
+            ("pickup", (0.55, 0.70), 5.0),
+            ("drop", (0.52, 0.68), 5.0),
         ):
             front = semantic_map["points"][f"{prefix}_front"]
             rear = semantic_map["points"][f"{prefix}_rear"]
@@ -140,7 +149,7 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
         )
 
-        for prefix, expected_distance_m in (("pickup", 0.65), ("drop", 0.80)):
+        for prefix in ("pickup", "drop"):
             front = semantic_map["points"][f"{prefix}_front"]
             rear = semantic_map["points"][f"{prefix}_rear"]
             align = semantic_map["points"][f"{prefix}_approach_align"]
@@ -155,9 +164,25 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                     float(front["x"]) - float(align["x"]),
                     float(front["y"]) - float(align["y"]),
                 ),
-                expected_distance_m,
+                1.00,
                 places=3,
             )
+
+        planning = load_yaml_file(
+            REPO_ROOT / "config" / "planning" / "planning_params.yaml"
+        )["global_planner"]
+        self.assertEqual(
+            planning["hybrid_alignment_waypoint_heading_tolerance_deg"],
+            5.0,
+        )
+        self.assertEqual(
+            planning["hybrid_alignment_waypoint_position_tolerance_m"],
+            0.10,
+        )
+        self.assertEqual(
+            planning["hybrid_soft_waypoint_position_tolerance_m"],
+            1.20,
+        )
 
     def test_continuous_control_validation_route_uses_only_final_stop(self) -> None:
         route = load_yaml_file(
