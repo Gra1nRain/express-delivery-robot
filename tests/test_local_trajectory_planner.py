@@ -211,6 +211,7 @@ class ReferencePathConcatenationTest(unittest.TestCase):
                 REPO_ROOT / "config" / "planning" / "optimizer_params.yaml"
             ).read_text(encoding="utf-8")
         )
+        optimizer["trajectory_optimizer"]["max_curvature_1pm"] = 1.0 / 0.60
 
         for checkpoint_ref in (
             "pickup_front",
@@ -226,10 +227,23 @@ class ReferencePathConcatenationTest(unittest.TestCase):
                 float(record["yaw"]),
                 checkpoint_ref,
             )
-            prefix = reference_prefix_to_checkpoint(reference, semantic_checkpoint)
+            prefix = reference_prefix_to_checkpoint(
+                reference,
+                semantic_checkpoint,
+                exact_pose=checkpoint_ref != "finish_park",
+            )
             trajectory = parameterize_local_path(prefix, semantic_map, optimizer)
 
-            self.assertEqual(prefix[-1], semantic_checkpoint)
+            if checkpoint_ref != "finish_park":
+                self.assertEqual(prefix[-1], semantic_checkpoint)
+            else:
+                self.assertLessEqual(
+                    math.hypot(
+                        prefix[-1].x - semantic_checkpoint.x,
+                        prefix[-1].y - semantic_checkpoint.y,
+                    ),
+                    0.10,
+                )
             self.assertEqual(trajectory.points[-1].ref_id, checkpoint_ref)
             self.assertEqual(trajectory.points[-1].v, 0.0)
 

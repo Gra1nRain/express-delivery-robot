@@ -10,19 +10,12 @@ mission_checkpoints:
   - drop_rear
   - finish_park
 steps:
-  - id: go_traffic_light_1
+  - id: pickup_transit_1
     type: RUN_SEGMENT
     traffic_light_guard: false
-    corridor_ref: go_to_pickup_aligned
-    target_ref: traffic_light_stop_line
-  - id: random_obstacle_1
-    type: RUN_SEGMENT
     avoidance_required: true
-    corridor_ref: go_to_pickup_aligned
-    target_ref: random_obstacle_exit
-  - id: pickup_approach_1
-    type: RUN_SEGMENT
     docking_approach: true
+    soft_intermediate_refs: true
     corridor_ref: go_to_pickup_aligned
     target_ref: pickup_front
   - id: pickup_1_dock
@@ -32,6 +25,7 @@ steps:
     dock_pose_ref: pickup_front
   - id: pickup_1_rear
     type: RUN_SEGMENT
+    docking_approach: true
     corridor_ref: pickup_front_to_rear
     target_ref: pickup_rear
   - id: pickup_1_rear_dock
@@ -39,16 +33,13 @@ steps:
     dock_type: PICKUP
     cycle_index: 1
     dock_pose_ref: pickup_rear
-  - id: cone_lane_change_1
+  - id: drop_transit_1
     type: CONE_LANE_CHANGE
+    docking_approach: true
+    soft_intermediate_refs: true
     corridor_ref: pickup_to_drop_aligned
     entry_ref: cone_lane_change_entry
     exit_ref: cone_lane_change_exit
-    target_ref: cone_lane_change_exit
-  - id: drop_approach_1
-    type: RUN_SEGMENT
-    docking_approach: true
-    corridor_ref: pickup_to_drop_aligned
     target_ref: drop_front
   - id: drop_1_dock
     type: DOCK
@@ -57,6 +48,7 @@ steps:
     dock_pose_ref: drop_front
   - id: drop_1_rear
     type: RUN_SEGMENT
+    docking_approach: true
     corridor_ref: drop_front_to_rear
     target_ref: drop_rear
   - id: drop_1_rear_dock

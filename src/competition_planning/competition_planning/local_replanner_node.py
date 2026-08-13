@@ -535,6 +535,9 @@ class LocalReplannerNode(Node):
                 reference_path = reference_prefix_to_checkpoint(
                     reference_path,
                     checkpoint,
+                    exact_pose=(
+                        self._active_checkpoint_ref in self._dock_work_sides
+                    ),
                 )
             map_from_base = self._tf_buffer.lookup_transform(
                 self._map_frame,

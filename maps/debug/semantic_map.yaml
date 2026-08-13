@@ -93,11 +93,11 @@ points:
     role: pickup_area_rear
     status: measured
   # Derived from the measured pickup_front -> pickup_rear shelf axis.  This
-  # anchor makes the chassis finish its turn before entering the close shelf
-  # clearance used for pickup docking.
+  # soft guide starts 0.65 m before the front dock so the chassis is nearly
+  # parallel before entering the close shelf clearance.
   pickup_approach_align:
-    x: 7.8631
-    y: -0.0718
+    x: 7.7631
+    y: -0.0702
     yaw: -0.0167
     role: pickup_approach_alignment
     status: derived_from_measured_dock_pair
@@ -120,12 +120,12 @@ points:
     yaw: -3.115
     role: drop_area_rear
     status: measured
-  # Derived from the measured drop_front -> drop_rear shelf axis.  The cone
-  # exit leaves less longitudinal room here, so this is the farthest alignment
-  # anchor that remains feasible with the verified 0.60 m turning radius.
+  # Derived from the measured drop_front -> drop_rear shelf axis.  This is a
+  # soft heading guide, not a mandatory pose; 0.80 m gives the chassis room to
+  # settle parallel after leaving the cone region.
   drop_approach_align:
-    x: 2.5160
-    y: 3.4513
+    x: 3.0659
+    y: 3.4409
     yaw: 3.1227
     role: drop_approach_alignment
     status: derived_from_measured_dock_pair
@@ -339,7 +339,7 @@ route_corridors:
     allowed_steps: [go_traffic_light_1, random_obstacle_1]
   - id: go_to_pickup_aligned
     centerline_ref: start_to_pickup_aligned_lane
-    allowed_steps: [go_traffic_light_1, random_obstacle_1, pickup_approach_1]
+    allowed_steps: [pickup_transit_1]
   - id: pickup_front_to_rear
     centerline_ref: pickup_front_to_rear_lane
     allowed_steps: [pickup_1_rear, pickup_2_rear]
@@ -348,7 +348,7 @@ route_corridors:
     allowed_steps: [cone_lane_change_1, cone_lane_change_2]
   - id: pickup_to_drop_aligned
     centerline_ref: pickup_to_drop_aligned_lane
-    allowed_steps: [cone_lane_change_1, drop_approach_1]
+    allowed_steps: [drop_transit_1]
   - id: drop_front_to_rear
     centerline_ref: drop_front_to_rear_lane
     allowed_steps: [drop_1_rear, drop_2_rear]

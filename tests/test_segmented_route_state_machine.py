@@ -306,12 +306,9 @@ class SegmentedTrajectoryArtifactTest(unittest.TestCase):
         self.assertEqual(
             [trajectory.route_name for trajectory in trajectories],
             [
-                "go_traffic_light_1",
-                "random_obstacle_1",
-                "pickup_approach_1",
+                "pickup_transit_1",
                 "pickup_1_rear",
-                "cone_lane_change_1",
-                "drop_approach_1",
+                "drop_transit_1",
                 "drop_1_rear",
                 "finish_park",
             ],
@@ -389,7 +386,9 @@ class SegmentedRouteLaunchTopologyTest(unittest.TestCase):
         )
         steps = {step["id"]: step for step in route["steps"]}
 
-        self.assertTrue(steps["random_obstacle_1"]["avoidance_required"])
+        self.assertTrue(steps["pickup_transit_1"]["avoidance_required"])
+        self.assertTrue(steps["pickup_transit_1"]["soft_intermediate_refs"])
+        self.assertTrue(steps["drop_transit_1"]["soft_intermediate_refs"])
 
 
 if __name__ == "__main__":

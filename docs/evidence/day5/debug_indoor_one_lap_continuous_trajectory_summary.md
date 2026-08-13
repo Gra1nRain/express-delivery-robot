@@ -7,13 +7,13 @@
 - ok: True
 - planner_plugin: hybrid_astar
 - optimizer_plugin: jerk_limited_s_curve
-- point_count: 224
-- path_length_m: 22.573
-- duration_s: 281.314
-- max_speed_mps: 0.080
+- point_count: 219
+- path_length_m: 21.986
+- duration_s: 552.440
+- max_speed_mps: 0.040
 - max_abs_acceleration_mps2: 0.000
 - max_abs_jerk_mps3: 0.000
-- max_abs_curvature_1pm: 1.420410
+- max_abs_curvature_1pm: 1.666667
 - max_abs_curvature_rate_1pmps: 0.800000
 - stopped_refs_after_start: ['finish_park']
 

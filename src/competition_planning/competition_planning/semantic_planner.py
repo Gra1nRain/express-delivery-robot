@@ -181,6 +181,14 @@ def plan_route(
                 dock_params["min_turning_radius_m"] = params[
                     "dock_approach_min_turning_radius_m"
                 ]
+                if "dock_approach_goal_lateral_tolerance_m" in params:
+                    dock_params["hybrid_goal_lateral_tolerance_m"] = params[
+                        "dock_approach_goal_lateral_tolerance_m"
+                    ]
+                if "dock_approach_exact_goal_connection" in params:
+                    dock_params["hybrid_exact_goal_connection"] = params[
+                        "dock_approach_exact_goal_connection"
+                    ]
                 dock_approach_grid_planner = _load_hybrid_planner(
                     semantic_map,
                     dock_params,
@@ -549,7 +557,8 @@ def _plan_step(
         return None, _failure(step, "unknown_point_ref", "segment contains unknown point"), current_ref
 
     is_dock_approach = bool(step.get("docking_approach", False))
-    semantic_path = tuple(_interpolate_path([point for point in points if point], sample_spacing_m))
+    semantic_points = [point for point in points if point]
+    semantic_path = tuple(_interpolate_path(semantic_points, sample_spacing_m))
     path = semantic_path
     used_plugin = "semantic_corridor"
     if planner_plugin in {"occupancy_grid_astar", "hybrid_astar"}:
@@ -572,7 +581,22 @@ def _plan_step(
                 )
         else:
             try:
-                path = active_grid_planner.plan([point for point in points if point])
+                if (
+                    planner_plugin == "hybrid_astar"
+                    and bool(step.get("soft_intermediate_refs", False))
+                ):
+                    corridor_half_width_m = max(
+                        sample_spacing_m,
+                        0.5 * float(centerline.get("width_m", 0.0)),
+                    )
+                    path = active_grid_planner.plan(
+                        semantic_points,
+                        reference_path=semantic_path,
+                        corridor_half_width_m=corridor_half_width_m,
+                        soft_intermediate_waypoints=True,
+                    )
+                else:
+                    path = active_grid_planner.plan(semantic_points)
                 used_plugin = planner_plugin
             except Exception as exc:
                 if fallback_plugin != "semantic_corridor":
@@ -834,7 +858,30 @@ def _load_hybrid_planner(semantic_map: dict[str, Any], params: dict[str, Any]) -
         goal_heading_tolerance_rad=math.radians(
             float(params.get("hybrid_goal_heading_tolerance_deg", 8.0))
         ),
+        goal_lateral_tolerance_m=(
+            float(params["hybrid_goal_lateral_tolerance_m"])
+            if "hybrid_goal_lateral_tolerance_m" in params
+            else None
+        ),
+        exact_goal_connection=bool(
+            params.get("hybrid_exact_goal_connection", False)
+        ),
+        soft_waypoint_position_tolerance_m=float(
+            params.get("hybrid_soft_waypoint_position_tolerance_m", 0.50)
+        ),
+        soft_waypoint_heading_tolerance_rad=math.radians(
+            float(params.get("hybrid_soft_waypoint_heading_tolerance_deg", 45.0))
+        ),
+        alignment_waypoint_position_tolerance_m=float(
+            params.get("hybrid_alignment_waypoint_position_tolerance_m", 0.25)
+        ),
+        alignment_waypoint_heading_tolerance_rad=math.radians(
+            float(params.get("hybrid_alignment_waypoint_heading_tolerance_deg", 15.0))
+        ),
         max_expansions=int(params.get("hybrid_max_expansions", 250_000)),
+        reference_deviation_weight=float(
+            params.get("hybrid_reference_deviation_weight", 0.0)
+        ),
     )
 
 

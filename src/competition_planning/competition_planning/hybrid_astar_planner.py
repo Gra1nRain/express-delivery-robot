@@ -75,6 +75,12 @@ class HybridAStarPlanner:
         heading_bins: int,
         goal_position_tolerance_m: float,
         goal_heading_tolerance_rad: float,
+        goal_lateral_tolerance_m: float | None = None,
+        exact_goal_connection: bool = False,
+        soft_waypoint_position_tolerance_m: float = 0.50,
+        soft_waypoint_heading_tolerance_rad: float = math.radians(45.0),
+        alignment_waypoint_position_tolerance_m: float = 0.25,
+        alignment_waypoint_heading_tolerance_rad: float = math.radians(15.0),
         max_expansions: int = 250_000,
         planning_timeout_s: float | None = None,
         reference_path: Sequence[PathPoint] = (),
@@ -102,6 +108,31 @@ class HybridAStarPlanner:
         self._goal_heading_tolerance_rad = max(
             math.pi / self._heading_bins,
             goal_heading_tolerance_rad,
+        )
+        self._goal_lateral_tolerance_m = max(
+            grid_map.resolution * 0.5,
+            (
+                goal_position_tolerance_m
+                if goal_lateral_tolerance_m is None
+                else goal_lateral_tolerance_m
+            ),
+        )
+        self._exact_goal_connection = exact_goal_connection
+        self._soft_waypoint_position_tolerance_m = max(
+            self._goal_position_tolerance_m,
+            soft_waypoint_position_tolerance_m,
+        )
+        self._soft_waypoint_heading_tolerance_rad = max(
+            self._goal_heading_tolerance_rad,
+            soft_waypoint_heading_tolerance_rad,
+        )
+        self._alignment_waypoint_position_tolerance_m = max(
+            self._goal_position_tolerance_m,
+            alignment_waypoint_position_tolerance_m,
+        )
+        self._alignment_waypoint_heading_tolerance_rad = max(
+            self._goal_heading_tolerance_rad,
+            alignment_waypoint_heading_tolerance_rad,
         )
         self._max_expansions = max(1, max_expansions)
         if planning_timeout_s is not None and planning_timeout_s <= 0.0:
@@ -138,6 +169,7 @@ class HybridAStarPlanner:
             int, tuple[tuple[int, int], ...]
         ] = {}
         max_curvature = 1.0 / min_turning_radius_m
+        self._max_curvature = max_curvature
         if curvature_bins < 3 or curvature_bins % 2 == 0:
             raise GridPlanningError(
                 "hybrid_astar curvature_bins must be an odd integer >= 3"
@@ -147,9 +179,27 @@ class HybridAStarPlanner:
             for index in range(curvature_bins)
         )
 
-    def plan(self, waypoints: Sequence[PathPoint]) -> tuple[PathPoint, ...]:
+    def plan(
+        self,
+        waypoints: Sequence[PathPoint],
+        *,
+        reference_path: Sequence[PathPoint] | None = None,
+        corridor_half_width_m: float | None = None,
+        soft_intermediate_waypoints: bool = False,
+    ) -> tuple[PathPoint, ...]:
         if len(waypoints) < 2:
             return tuple(waypoints)
+        if reference_path is not None:
+            if corridor_half_width_m is not None and corridor_half_width_m <= 0.0:
+                raise GridPlanningError("corridor_half_width_m must be positive")
+            self._reference_xy = tuple(
+                (point.x, point.y) for point in reference_path
+            )
+            if corridor_half_width_m is not None:
+                self._corridor_half_width_sq = corridor_half_width_m**2
+            self._reference_distance_sq_cache.clear()
+            self._navigable_cell_cache.clear()
+            self._point_cost_cache.clear()
 
         deadline_s = (
             None
@@ -159,12 +209,51 @@ class HybridAStarPlanner:
         path: list[PathPoint] = []
         segment_start = waypoints[0]
         curvature_index = len(self._curvatures) // 2
-        for goal in waypoints[1:]:
+        for goal_index, goal in enumerate(waypoints[1:], start=1):
+            soft_goal = (
+                soft_intermediate_waypoints and goal_index < len(waypoints) - 1
+            )
+            alignment_goal = (
+                soft_goal
+                and bool(goal.ref_id)
+                and goal.ref_id.endswith("_approach_align")
+            )
             segment, curvature_index = self._search(
                 segment_start,
                 goal,
                 start_curvature_index=curvature_index,
                 deadline_s=deadline_s,
+                goal_position_tolerance_m=(
+                    self._alignment_waypoint_position_tolerance_m
+                    if alignment_goal
+                    else (
+                        self._soft_waypoint_position_tolerance_m
+                        if soft_goal
+                        else self._goal_position_tolerance_m
+                    )
+                ),
+                goal_lateral_tolerance_m=(
+                    self._alignment_waypoint_position_tolerance_m
+                    if alignment_goal
+                    else (
+                        self._soft_waypoint_position_tolerance_m
+                        if soft_goal
+                        else self._goal_lateral_tolerance_m
+                    )
+                ),
+                goal_heading_tolerance_rad=(
+                    self._alignment_waypoint_heading_tolerance_rad
+                    if alignment_goal
+                    else (
+                        self._soft_waypoint_heading_tolerance_rad
+                        if soft_goal
+                        else self._goal_heading_tolerance_rad
+                    )
+                ),
+                exact_goal_connection=(
+                    self._exact_goal_connection and not soft_goal
+                ),
+                require_zero_curvature=not soft_goal,
             )
             if path:
                 path.extend(segment[1:])
@@ -192,6 +281,11 @@ class HybridAStarPlanner:
         *,
         start_curvature_index: int,
         deadline_s: float | None,
+        goal_position_tolerance_m: float,
+        goal_lateral_tolerance_m: float,
+        goal_heading_tolerance_rad: float,
+        exact_goal_connection: bool,
+        require_zero_curvature: bool,
     ) -> tuple[list[PathPoint], int]:
         self._require_navigable(start.x, start.y, start.yaw, "start")
         self._require_navigable(goal.x, goal.y, goal.yaw, "goal")
@@ -235,17 +329,30 @@ class HybridAStarPlanner:
             if current_key in closed:
                 continue
             current = states[current_key]
-            if self._at_goal(current, goal):
-                return (
-                    self._reconstruct(
-                        came_from,
-                        states,
-                        current_key,
-                        start_ref=start.ref_id,
-                        goal_ref=goal.ref_id,
-                    ),
-                    current.curvature_index,
+            if self._at_goal(
+                current,
+                goal,
+                position_tolerance_m=goal_position_tolerance_m,
+                lateral_tolerance_m=goal_lateral_tolerance_m,
+                heading_tolerance_rad=goal_heading_tolerance_rad,
+                require_zero_curvature=require_zero_curvature,
+            ):
+                reconstructed = self._reconstruct(
+                    came_from,
+                    states,
+                    current_key,
+                    start_ref=start.ref_id,
+                    goal_ref=goal.ref_id,
                 )
+                if not exact_goal_connection:
+                    return reconstructed, current.curvature_index
+                exact_path = self._connect_exact_goal(
+                    reconstructed,
+                    goal,
+                    heading_tolerance_rad=goal_heading_tolerance_rad,
+                )
+                if exact_path is not None:
+                    return exact_path, current.curvature_index
             closed.add(current_key)
 
             for curvature_index in self._successor_curvatures(current.curvature_index):
@@ -430,14 +537,70 @@ class HybridAStarPlanner:
         min_radius = 1.0 / abs(self._curvatures[-1])
         return distance + 0.25 * min_radius * heading
 
-    def _at_goal(self, node: _Node, goal: PathPoint) -> bool:
-        return (
-            math.hypot(goal.x - node.x, goal.y - node.y)
-            <= self._goal_position_tolerance_m
-            and abs(_wrap_angle(goal.yaw - node.yaw))
-            <= self._goal_heading_tolerance_rad
-            and node.curvature_index == len(self._curvatures) // 2
+    def _at_goal(
+        self,
+        node: _Node,
+        goal: PathPoint,
+        *,
+        position_tolerance_m: float,
+        lateral_tolerance_m: float,
+        heading_tolerance_rad: float,
+        require_zero_curvature: bool,
+    ) -> bool:
+        delta_x = goal.x - node.x
+        delta_y = goal.y - node.y
+        lateral_error_m = abs(
+            -math.sin(goal.yaw) * delta_x + math.cos(goal.yaw) * delta_y
         )
+        return (
+            math.hypot(delta_x, delta_y)
+            <= position_tolerance_m
+            and lateral_error_m <= lateral_tolerance_m
+            and abs(_wrap_angle(goal.yaw - node.yaw))
+            <= heading_tolerance_rad
+            and (
+                not require_zero_curvature
+                or node.curvature_index == len(self._curvatures) // 2
+            )
+        )
+
+    def _connect_exact_goal(
+        self,
+        reconstructed: Sequence[PathPoint],
+        goal: PathPoint,
+        *,
+        heading_tolerance_rad: float,
+    ) -> list[PathPoint] | None:
+        """Replace the tolerance-band terminal node with the exact hard pose."""
+
+        if len(reconstructed) < 2:
+            return None
+        previous = reconstructed[-2]
+        if (
+            abs(_wrap_angle(goal.yaw - previous.yaw))
+            > heading_tolerance_rad + 1e-9
+        ):
+            return None
+        exact_path = [*reconstructed[:-1], goal]
+        if len(exact_path) >= 3:
+            curvature = _three_point_curvature(*exact_path[-3:])
+            if abs(curvature) > self._max_curvature + 1e-6:
+                return None
+        distance_m = math.hypot(goal.x - previous.x, goal.y - previous.y)
+        sample_count = max(
+            2,
+            math.ceil(distance_m / (self._map.resolution * 0.5)),
+        )
+        yaw_delta = _wrap_angle(goal.yaw - previous.yaw)
+        for index in range(1, sample_count + 1):
+            fraction = index / sample_count
+            if not self._point_is_navigable(
+                previous.x + (goal.x - previous.x) * fraction,
+                previous.y + (goal.y - previous.y) * fraction,
+                _wrap_angle(previous.yaw + yaw_delta * fraction),
+            ):
+                return None
+        return exact_path
 
     def _bounds(
         self,
@@ -556,6 +719,23 @@ class HybridAStarPlanner:
 
 def _wrap_angle(value: float) -> float:
     return (value + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def _three_point_curvature(
+    first: PathPoint,
+    second: PathPoint,
+    third: PathPoint,
+) -> float:
+    ab = math.hypot(second.x - first.x, second.y - first.y)
+    bc = math.hypot(third.x - second.x, third.y - second.y)
+    ca = math.hypot(first.x - third.x, first.y - third.y)
+    denominator = ab * bc * ca
+    if denominator <= 1e-12:
+        return 0.0
+    cross = (second.x - first.x) * (third.y - first.y) - (
+        second.y - first.y
+    ) * (third.x - first.x)
+    return 2.0 * cross / denominator
 
 
 def _clearance_distance_field(
