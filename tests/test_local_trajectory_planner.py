@@ -28,6 +28,8 @@ from competition_planning.local_trajectory_planner import (
     LocalTrajectoryPlanner,
     concatenate_reference_paths,
     docking_mode_is_active,
+    docking_shelf_filter_is_active,
+    filter_expected_docking_shelf_points,
     occupied_grid_cell_centers,
     precision_docking_work_sides,
     reference_prefix_to_checkpoint,
@@ -90,6 +92,75 @@ def _docking_planner(obstacle_x: float, obstacle_y: float) -> HybridAStarPlanner
 
 
 class DockingCollisionModeTest(unittest.TestCase):
+    def test_shelf_filter_requires_final_distance_and_aligned_heading(self) -> None:
+        checkpoint = PathPoint(8.413, -0.081, 0.0, "pickup_front")
+
+        self.assertTrue(
+            docking_shelf_filter_is_active(
+                current_pose=PathPoint(7.90, -0.081, math.radians(4.9)),
+                checkpoint=checkpoint,
+                activation_distance_m=1.00,
+                heading_tolerance_rad=math.radians(5.0),
+            )
+        )
+        self.assertFalse(
+            docking_shelf_filter_is_active(
+                current_pose=PathPoint(7.90, -0.081, math.radians(5.1)),
+                checkpoint=checkpoint,
+                activation_distance_m=1.00,
+                heading_tolerance_rad=math.radians(5.0),
+            )
+        )
+        self.assertFalse(
+            docking_shelf_filter_is_active(
+                current_pose=PathPoint(7.40, -0.081, 0.0),
+                checkpoint=checkpoint,
+                activation_distance_m=1.00,
+                heading_tolerance_rad=math.radians(5.0),
+            )
+        )
+
+    def test_aligned_final_approach_filters_only_expected_right_shelf_echoes(self) -> None:
+        checkpoint = PathPoint(8.413, -0.081, 0.0, "pickup_front")
+        points = (
+            (8.10, -0.611),  # Expected shelf face, 0.53 m right of centerline.
+            (8.10, -0.361),  # Too close to the physical body; must remain blocked.
+            (8.10, 0.449),  # Non-work side obstacle; must remain blocked.
+            (9.10, -0.611),  # Beyond the final approach corridor; must remain.
+        )
+
+        filtered, removed_count = filter_expected_docking_shelf_points(
+            points,
+            checkpoint=checkpoint,
+            work_side="RIGHT",
+            vehicle_length_m=0.72,
+            vehicle_width_m=0.50,
+            front_clearance_m=0.10,
+            approach_distance_m=1.00,
+            physical_guard_m=0.05,
+        )
+
+        self.assertEqual(removed_count, 1)
+        self.assertEqual(filtered, points[1:])
+
+    def test_left_work_side_filter_is_mirrored(self) -> None:
+        checkpoint = PathPoint(0.0, 0.0, 0.0, "drop_front")
+        points = ((-0.20, 0.53), (-0.20, -0.53))
+
+        filtered, removed_count = filter_expected_docking_shelf_points(
+            points,
+            checkpoint=checkpoint,
+            work_side="LEFT",
+            vehicle_length_m=0.72,
+            vehicle_width_m=0.50,
+            front_clearance_m=0.10,
+            approach_distance_m=1.00,
+            physical_guard_m=0.05,
+        )
+
+        self.assertEqual(removed_count, 1)
+        self.assertEqual(filtered, (points[1],))
+
     def test_only_pickup_and_drop_semantics_enable_precision_docking(self) -> None:
         semantic_map = yaml.safe_load(
             (REPO_ROOT / "maps" / "debug" / "semantic_map.yaml").read_text(

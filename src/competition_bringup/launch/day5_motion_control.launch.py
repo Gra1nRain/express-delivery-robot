@@ -294,6 +294,12 @@ def _launch_setup(context, *args, **kwargs):
                     "docking_non_work_side_clearance_m": local_runtime[
                         "docking_non_work_side_clearance_m"
                     ],
+                    "docking_shelf_filter_distance_m": local_runtime[
+                        "docking_shelf_filter_distance_m"
+                    ],
+                    "docking_shelf_physical_guard_m": local_runtime[
+                        "docking_shelf_physical_guard_m"
+                    ],
                     "lookahead_distance_m": local_runtime[
                         "lookahead_distance_m"
                     ],

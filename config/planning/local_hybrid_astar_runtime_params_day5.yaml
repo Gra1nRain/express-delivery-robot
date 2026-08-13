@@ -22,6 +22,11 @@ local_hybrid_astar_runtime:
   # cell must be cleared; the measured physical work-side gap is about 0.28 m.
   docking_work_side_clearance_m: 0.03
   docking_non_work_side_clearance_m: 0.10
+  # Inside the final 1 m and only after heading is within the 5 deg docking
+  # tolerance, ignore live shelf-face returns that remain at least 5 cm beyond
+  # the physical vehicle side. Static-map shelf geometry remains active.
+  docking_shelf_filter_distance_m: 1.00
+  docking_shelf_physical_guard_m: 0.05
   lookahead_distance_m: 3.00
   search_padding_m: 1.50
   sample_spacing_m: 0.10

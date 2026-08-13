@@ -33,6 +33,8 @@ from competition_planning.local_trajectory_planner import (
     LocalTrajectoryPlanner,
     concatenate_reference_paths,
     docking_mode_is_active,
+    docking_shelf_filter_is_active,
+    filter_expected_docking_shelf_points,
     occupied_grid_cell_centers,
     precision_docking_work_sides,
     reference_prefix_to_checkpoint,
@@ -219,10 +221,20 @@ class LocalReplannerNode(Node):
         self._docking_non_work_side_clearance_m = float(
             self.declare_parameter("docking_non_work_side_clearance_m", 0.10).value
         )
+        self._docking_shelf_filter_distance_m = float(
+            self.declare_parameter("docking_shelf_filter_distance_m", 1.00).value
+        )
+        self._docking_shelf_physical_guard_m = float(
+            self.declare_parameter("docking_shelf_physical_guard_m", 0.05).value
+        )
         if self._docking_activation_distance_m <= 0.0:
             raise ValueError("docking_activation_distance_m must be positive")
         if not 0 <= self._docking_raw_occupancy_threshold <= 100:
             raise ValueError("docking_costmap_occupancy_threshold must be in [0, 100]")
+        if self._docking_shelf_filter_distance_m <= 0.0:
+            raise ValueError("docking_shelf_filter_distance_m must be positive")
+        if self._docking_shelf_physical_guard_m < 0.0:
+            raise ValueError("docking_shelf_physical_guard_m must be non-negative")
         self._docking_mode = False
 
         obstacle_source = str(
@@ -523,6 +535,7 @@ class LocalReplannerNode(Node):
             )
             return
 
+        docking_filtered_obstacle_count = 0
         try:
             reference_path = self._reference_path
             if self._active_checkpoint_ref is not None:
@@ -576,6 +589,36 @@ class LocalReplannerNode(Node):
             )
             if obstacle_points is None:
                 raise ValueError("docking costmap has no raw occupied cells")
+            checkpoint = (
+                self._semantic_points.get(self._active_checkpoint_ref)
+                if self._active_checkpoint_ref is not None
+                else None
+            )
+            if (
+                docking_mode
+                and checkpoint is not None
+                and docking_shelf_filter_is_active(
+                    current_pose=current_pose,
+                    checkpoint=checkpoint,
+                    activation_distance_m=self._docking_shelf_filter_distance_m,
+                    heading_tolerance_rad=self._config.goal_heading_tolerance_rad,
+                )
+            ):
+                obstacle_points, docking_filtered_obstacle_count = (
+                    filter_expected_docking_shelf_points(
+                        obstacle_points,
+                        checkpoint=checkpoint,
+                        work_side=self._dock_work_sides.get(
+                            str(self._active_checkpoint_ref),
+                            "RIGHT",
+                        ),
+                        vehicle_length_m=self._docking_vehicle_length_m,
+                        vehicle_width_m=self._docking_vehicle_width_m,
+                        front_clearance_m=self._docking_front_clearance_m,
+                        approach_distance_m=self._docking_shelf_filter_distance_m,
+                        physical_guard_m=self._docking_shelf_physical_guard_m,
+                    )
+                )
             started_at = time.perf_counter()
             result = self._planner.plan(
                 reference_path=reference_path,
@@ -591,6 +634,7 @@ class LocalReplannerNode(Node):
                 obstacle_age_s=obstacle_age_s,
                 odom_age_s=odom_age_s,
                 planning_time_ms=(time.perf_counter() - started_at) * 1000.0,
+                docking_filtered_obstacle_count=docking_filtered_obstacle_count,
             )
             return
         except (TransformException, GridPlanningError, ValueError) as exc:
@@ -599,6 +643,7 @@ class LocalReplannerNode(Node):
                 detail=str(exc),
                 obstacle_age_s=obstacle_age_s,
                 odom_age_s=odom_age_s,
+                docking_filtered_obstacle_count=docking_filtered_obstacle_count,
             )
             return
 
@@ -625,6 +670,7 @@ class LocalReplannerNode(Node):
             rejoin_index=result.rejoin_index,
             planning_grid_cell_count=result.planning_grid_cell_count,
             docking_mode=self._docking_mode,
+            docking_filtered_obstacle_count=docking_filtered_obstacle_count,
         )
 
     def _docking_config(self, checkpoint_ref: str | None) -> LocalReplanConfig:

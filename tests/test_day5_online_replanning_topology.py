@@ -135,8 +135,8 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             ],
             0.02,
         )
-        self.assertEqual(control["motion"]["docking_speed_min_mps"], 0.05)
-        self.assertEqual(control["motion"]["docking_speed_max_mps"], 0.08)
+        self.assertEqual(control["motion"]["docking_speed_min_mps"], 0.08)
+        self.assertEqual(control["motion"]["docking_speed_max_mps"], 0.12)
         self.assertEqual(control["motion"]["docking_slowdown_distance_m"], 0.50)
         alternate_control = yaml.safe_load(
             (
@@ -186,6 +186,8 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
             runtime["docking_non_work_side_clearance_m"],
             runtime["docking_work_side_clearance_m"],
         )
+        self.assertEqual(runtime["docking_shelf_filter_distance_m"], 1.00)
+        self.assertEqual(runtime["docking_shelf_physical_guard_m"], 0.05)
         self.assertEqual(runtime["planning_timeout_s"], 0.75)
         self.assertEqual(runtime["relaxed_extension_timeout_s"], 0.75)
         self.assertLess(

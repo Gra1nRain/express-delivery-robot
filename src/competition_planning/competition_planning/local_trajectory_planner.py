@@ -873,6 +873,87 @@ def precision_docking_work_sides(
     }
 
 
+def filter_expected_docking_shelf_points(
+    points: Iterable[tuple[float, float]],
+    *,
+    checkpoint: PathPoint,
+    work_side: str,
+    vehicle_length_m: float,
+    vehicle_width_m: float,
+    front_clearance_m: float,
+    approach_distance_m: float,
+    physical_guard_m: float,
+) -> tuple[tuple[tuple[float, float], ...], int]:
+    """Ignore expected shelf-face echoes outside the final physical sweep.
+
+    The static map still contains the shelf.  This filter only removes live
+    shelf returns on the declared work side when they are farther from the
+    docking centerline than the physical half-width plus a guard.  Obstacles
+    inside that guard, on the non-work side, or beyond the final approach
+    corridor remain available to collision checking.
+    """
+
+    normalized_side = work_side.upper()
+    if normalized_side not in {"LEFT", "RIGHT"}:
+        raise ValueError(f"unsupported docking work_side: {work_side}")
+    if vehicle_length_m <= 0.0 or vehicle_width_m <= 0.0:
+        raise ValueError("docking vehicle dimensions must be positive")
+    if front_clearance_m < 0.0 or approach_distance_m <= 0.0:
+        raise ValueError("docking approach geometry is invalid")
+    if physical_guard_m < 0.0:
+        raise ValueError("docking physical guard must be non-negative")
+
+    cos_yaw = math.cos(checkpoint.yaw)
+    sin_yaw = math.sin(checkpoint.yaw)
+    half_length_m = 0.5 * vehicle_length_m
+    protected_lateral_m = 0.5 * vehicle_width_m + physical_guard_m
+    minimum_longitudinal_m = -approach_distance_m - half_length_m
+    maximum_longitudinal_m = half_length_m + front_clearance_m
+    kept: list[tuple[float, float]] = []
+    removed_count = 0
+    for x, y in points:
+        delta_x = x - checkpoint.x
+        delta_y = y - checkpoint.y
+        longitudinal_m = cos_yaw * delta_x + sin_yaw * delta_y
+        lateral_m = -sin_yaw * delta_x + cos_yaw * delta_y
+        on_work_side = (
+            lateral_m >= protected_lateral_m
+            if normalized_side == "LEFT"
+            else lateral_m <= -protected_lateral_m
+        )
+        in_final_corridor = (
+            minimum_longitudinal_m
+            <= longitudinal_m
+            <= maximum_longitudinal_m
+        )
+        if on_work_side and in_final_corridor:
+            removed_count += 1
+            continue
+        kept.append((x, y))
+    return tuple(kept), removed_count
+
+
+def docking_shelf_filter_is_active(
+    *,
+    current_pose: PathPoint,
+    checkpoint: PathPoint,
+    activation_distance_m: float,
+    heading_tolerance_rad: float,
+) -> bool:
+    """Limit shelf filtering to an aligned final precision approach."""
+
+    if activation_distance_m <= 0.0:
+        raise ValueError("docking shelf filter distance must be positive")
+    if heading_tolerance_rad < 0.0:
+        raise ValueError("docking shelf filter heading tolerance must be non-negative")
+    return (
+        math.hypot(checkpoint.x - current_pose.x, checkpoint.y - current_pose.y)
+        <= activation_distance_m + 1e-9
+        and abs(_wrap_angle(current_pose.yaw - checkpoint.yaw))
+        <= heading_tolerance_rad + 1e-9
+    )
+
+
 def concatenate_reference_paths(
     paths: Sequence[Sequence[PathPoint]],
     *,
