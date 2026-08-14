@@ -34,11 +34,14 @@
 - 小车端 `colcon build --symlink-install --packages-select competition_localization competition_control competition_bringup`：3 个包全部成功，耗时 `12.9 s`。
 - 小车端新增功能针对性测试：`48 passed in 1.80s`。
 - 小车安装空间可发现 `fastlio_anchor_node`、`scan_map_residual_monitor_node`、`startup_alignment_node`；`day5_motion_control.launch.py --show-args` 可见并解析 `start_alignment`、残差参数文件和启动校准参数文件。
+- 小车端以 `start_base:=false`、`start_chassis_adapter:=false` 且关闭 Livox、FAST-LIO、近障、局部规划、地图服务的方式短时启动；使用源清单匹配的 `debug_indoor_one_lap_continuous_trajectory.yaml` 后，锚点、残差、校准、MPPI、安全五个节点均成功就绪并在超时后干净退出。
+- 实时 `/localization/alignment_status` 为 transient-local / reliable；抽样状态是 `WAITING`、`startup_ready=false`、`anchor_revision=null`，符合“未收到粗锚点时禁止发车”的预期。现场可见 1 个发布者，`fastlio_anchor` 和 `mppi_control` 两个订阅者。
+- 第一次使用 launch 的既有默认 `debug_continuous_trajectory.yaml` 时，MPPI 因路线、语义地图、规划和优化源清单 SHA-256 不匹配而按设计拒绝启动；改用最后一次实车方案的匹配 artifact 后通过。未覆盖或重新生成该默认 artifact。
 - 直接执行无范围限制的 `python -m pytest -q` 会收集用户已有的未跟踪 Piper ROS 目录，并因本机缺少其 `ament_copyright`、`ament_flake8`、`ament_pep257` 依赖在收集阶段失败；该目录未被修改，也不属于本次受控测试范围。
 
 ## 尚未验证与风险
 
-- 尚未启动传感器链进行静止 topic/TF 联调；本次小车验证止于构建、测试、可执行程序发现和 launch 参数解析。
+- 尚未启动 Livox/FAST-LIO 传感器链，未发布 `/initialpose`，因此尚未验证从粗锚点到自动精修、复核和 READY 的完整静止 topic/TF 闭环。
 - 尚未用实车静止扫描确认 5 帧候选和 3 帧复核在现场几何下可稳定收敛。
 - 尚未验证检查点处地图几何是否都足够可观；低置信度时系统会安全地持续停车，而不是猜测修正。
 - 尚未进行任何校准后的自主路线测试。下一次实车运动仍必须由用户重新发布初始位姿并明确允许发车。
