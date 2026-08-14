@@ -5,6 +5,8 @@ import math
 from typing import Sequence
 
 import numpy as np
+
+from competition_localization.planar_transform import PlanarTransform
 from scipy.ndimage import distance_transform_edt
 
 
@@ -300,6 +302,26 @@ def match_scan_to_map(
         point_count=len(points),
         search_boundary_hit=search_boundary_hit,
         confident=inlier_ratio >= 0.50 and not search_boundary_hit,
+    )
+
+
+def correction_about_sensor_as_transform(
+    *,
+    sensor_xy_m: tuple[float, float],
+    dx_m: float,
+    dy_m: float,
+    dyaw_rad: float,
+) -> PlanarTransform:
+    """Convert a correction about the lidar pivot into a map-frame SE(2) delta."""
+    sensor_x, sensor_y = sensor_xy_m
+    cos_yaw = math.cos(dyaw_rad)
+    sin_yaw = math.sin(dyaw_rad)
+    rotated_sensor_x = cos_yaw * sensor_x - sin_yaw * sensor_y
+    rotated_sensor_y = sin_yaw * sensor_x + cos_yaw * sensor_y
+    return PlanarTransform(
+        x=sensor_x + dx_m - rotated_sensor_x,
+        y=sensor_y + dy_m - rotated_sensor_y,
+        yaw=dyaw_rad,
     )
 
 

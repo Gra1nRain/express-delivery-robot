@@ -8,12 +8,71 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_control"))
 
 from competition_control.control_safety import (
+    alignment_gate_decision,
     segmented_safety_stop_requested,
     update_local_hard_stop_latch,
 )
 
 
 class PrecisionControlSafetyRegressionTest(unittest.TestCase):
+    def test_alignment_gate_blocks_start_and_requests_stopped_checkpoint(self) -> None:
+        startup = alignment_gate_decision(
+            required=True,
+            route_enabled=True,
+            status_age_s=0.1,
+            status_timeout_s=1.0,
+            startup_ready=False,
+            checkpoint_hold=False,
+            checkpoint_ready_ref=None,
+            active_checkpoint_ref="pickup_front",
+            dock_hold_reached=False,
+        )
+        approaching = alignment_gate_decision(
+            required=True,
+            route_enabled=True,
+            status_age_s=0.1,
+            status_timeout_s=1.0,
+            startup_ready=True,
+            checkpoint_hold=False,
+            checkpoint_ready_ref=None,
+            active_checkpoint_ref="pickup_front",
+            dock_hold_reached=False,
+        )
+        docked = alignment_gate_decision(
+            required=True,
+            route_enabled=True,
+            status_age_s=0.1,
+            status_timeout_s=1.0,
+            startup_ready=True,
+            checkpoint_hold=False,
+            checkpoint_ready_ref=None,
+            active_checkpoint_ref="pickup_front",
+            dock_hold_reached=True,
+        )
+
+        self.assertTrue(startup.hold_requested)
+        self.assertFalse(approaching.hold_requested)
+        self.assertFalse(approaching.completion_allowed)
+        self.assertFalse(approaching.request_checkpoint)
+        self.assertTrue(docked.request_checkpoint)
+
+    def test_stale_alignment_status_fails_safe_while_route_is_enabled(self) -> None:
+        decision = alignment_gate_decision(
+            required=True,
+            route_enabled=True,
+            status_age_s=1.5,
+            status_timeout_s=1.0,
+            startup_ready=True,
+            checkpoint_hold=False,
+            checkpoint_ready_ref=None,
+            active_checkpoint_ref="pickup_front",
+            dock_hold_reached=False,
+        )
+
+        self.assertTrue(decision.hold_requested)
+        self.assertFalse(decision.completion_allowed)
+        self.assertEqual(decision.reason, "alignment_status_stale")
+
     def test_start_pose_blocked_stays_latched_until_planner_recovers(self) -> None:
         fixture = (
             REPO_ROOT

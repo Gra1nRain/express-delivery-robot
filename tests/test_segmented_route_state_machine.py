@@ -51,6 +51,7 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
         heading_error_rad: float = 0.0,
         speed_mps: float = 0.0,
         longitudinal_error_m: float = -1.0,
+        completion_allowed: bool = True,
     ) -> SegmentedRouteObservation:
         return SegmentedRouteObservation(
             now_s=now_s,
@@ -61,6 +62,7 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
             heading_error_rad=heading_error_rad,
             speed_mps=speed_mps,
             longitudinal_error_m=longitudinal_error_m,
+            completion_allowed=completion_allowed,
         )
 
     def test_overshot_checkpoint_holds_instead_of_micro_crawling(self) -> None:
@@ -230,6 +232,35 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
         self.assertEqual(decision.phase, SegmentedRoutePhase.TRACKING)
         self.assertTrue(decision.allow_tracking)
         self.assertEqual(decision.active_segment_index, 0)
+
+    def test_checkpoint_alignment_gate_holds_completed_segment_until_ready(self) -> None:
+        self.machine.update(self.observation(0.0))
+        self.machine.update(
+            self.observation(1.0, position_error_m=0.02, speed_mps=0.0)
+        )
+
+        held = self.machine.update(
+            self.observation(
+                2.5,
+                position_error_m=0.02,
+                speed_mps=0.0,
+                completion_allowed=False,
+            )
+        )
+        released = self.machine.update(
+            self.observation(
+                2.6,
+                position_error_m=0.02,
+                speed_mps=0.0,
+                completion_allowed=True,
+            )
+        )
+
+        self.assertEqual(held.phase, SegmentedRoutePhase.DOCK_HOLD)
+        self.assertEqual(held.active_segment_index, 0)
+        self.assertFalse(held.segment_changed)
+        self.assertEqual(released.active_segment_index, 1)
+        self.assertTrue(released.segment_changed)
 
     def test_safety_stop_auto_resumes_but_invalid_state_requires_rearm(self) -> None:
         self.machine.update(self.observation(0.0))

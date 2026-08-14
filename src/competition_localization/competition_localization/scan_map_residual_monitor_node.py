@@ -24,6 +24,7 @@ from competition_localization.scan_map_residual import (
     ScanMatchConfig,
     StationaryResidualSample,
     classify_stationary_residuals,
+    correction_about_sensor_as_transform,
     laser_scan_points,
     match_scan_to_map,
     velocity_is_stationary,
@@ -93,7 +94,8 @@ class ScanMapResidualMonitor(Node):
             min_points=int(self.declare_parameter("min_points", 60).value),
         )
         self._distance_field: OccupancyDistanceField | None = None
-        self._last_processed_s = -math.inf
+        self._latest_scan: LaserScan | None = None
+        self._last_scan_stamp_s: float | None = None
         self._vehicle_velocity: tuple[float, float] | None = None
         self._vehicle_odom_stamp_s: float | None = None
         self._fastlio_odom_stamp_s: float | None = None
@@ -143,6 +145,10 @@ class ScanMapResidualMonitor(Node):
             ),
             10,
         )
+        self._timer = self.create_timer(
+            self._update_period_s,
+            self._process_latest_scan,
+        )
         self.get_logger().info(
             "Scan-map residual monitor ready (observation only; no TF or motion output)"
         )
@@ -179,12 +185,17 @@ class ScanMapResidualMonitor(Node):
         self._fastlio_odom_stamp_s = _stamp_seconds(message.header.stamp)
 
     def _scan_callback(self, message: LaserScan) -> None:
+        self._latest_scan = message
+
+    def _process_latest_scan(self) -> None:
+        message = self._latest_scan
+        if message is None:
+            return
         now_s = self.get_clock().now().nanoseconds * 1e-9
         scan_stamp_s = _stamp_seconds(message.header.stamp)
         scan_age_s = now_s - scan_stamp_s
-        if now_s - self._last_processed_s < self._update_period_s:
+        if self._last_scan_stamp_s == scan_stamp_s:
             return
-        self._last_processed_s = now_s
         if self._distance_field is None or scan_age_s > self._max_scan_age_s:
             return
         try:
@@ -197,6 +208,7 @@ class ScanMapResidualMonitor(Node):
         except TransformException as exc:
             self.get_logger().warning(f"Scan-map TF unavailable: {exc}")
             return
+        self._last_scan_stamp_s = scan_stamp_s
         points_scan = laser_scan_points(
             message.ranges,
             angle_min_rad=float(message.angle_min),
@@ -249,6 +261,12 @@ class ScanMapResidualMonitor(Node):
             classification = "low_confidence"
         elif not stationary:
             classification = "moving_observation"
+        anchor_correction = correction_about_sensor_as_transform(
+            sensor_xy_m=sensor_xy,
+            dx_m=result.correction_x_m,
+            dy_m=result.correction_y_m,
+            dyaw_rad=result.correction_yaw_rad,
+        )
         status = {
             "classification": classification,
             "stationary": stationary,
@@ -262,6 +280,9 @@ class ScanMapResidualMonitor(Node):
             "correction_y_m": result.correction_y_m,
             "correction_yaw_rad": result.correction_yaw_rad,
             "correction_yaw_deg": math.degrees(result.correction_yaw_rad),
+            "anchor_correction_x_m": anchor_correction.x,
+            "anchor_correction_y_m": anchor_correction.y,
+            "anchor_correction_yaw_rad": anchor_correction.yaw,
             "baseline_mean_residual_m": result.baseline_mean_residual_m,
             "best_mean_residual_m": result.best_mean_residual_m,
             "best_median_residual_m": result.best_median_residual_m,

@@ -14,6 +14,7 @@ from competition_localization.scan_map_residual import (
     ScanMatchConfig,
     StationaryResidualSample,
     classify_stationary_residuals,
+    correction_about_sensor_as_transform,
     laser_scan_points,
     match_scan_to_map,
     velocity_is_stationary,
@@ -21,6 +22,18 @@ from competition_localization.scan_map_residual import (
 
 
 class ScanMapResidualTest(unittest.TestCase):
+    def test_converts_sensor_pivot_correction_to_global_transform(self) -> None:
+        correction = correction_about_sensor_as_transform(
+            sensor_xy_m=(2.0, 3.0),
+            dx_m=0.10,
+            dy_m=-0.20,
+            dyaw_rad=math.pi / 2.0,
+        )
+
+        self.assertAlmostEqual(correction.x, 5.10)
+        self.assertAlmostEqual(correction.y, 0.80)
+        self.assertAlmostEqual(correction.yaw, math.pi / 2.0)
+
     def test_ros_monitor_is_observation_only(self) -> None:
         node_text = (
             REPO_ROOT

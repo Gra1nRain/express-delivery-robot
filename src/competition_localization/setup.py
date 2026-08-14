@@ -14,6 +14,7 @@ setup(
         "console_scripts": [
             "fastlio_anchor_node = competition_localization.fastlio_anchor_node:main",
             "scan_map_residual_monitor_node = competition_localization.scan_map_residual_monitor_node:main",
+            "startup_alignment_node = competition_localization.startup_alignment_node:main",
         ],
     },
     install_requires=["setuptools"],

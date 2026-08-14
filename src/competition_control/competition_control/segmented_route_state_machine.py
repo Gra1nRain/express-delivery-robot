@@ -58,6 +58,7 @@ class SegmentedRouteObservation:
     heading_error_rad: float
     speed_mps: float
     longitudinal_error_m: float = math.nan
+    completion_allowed: bool = True
 
 
 @dataclass(frozen=True)
@@ -173,6 +174,8 @@ class SegmentedRouteStateMachine:
                 observation.now_s - self._dock_hold_started_s
                 < self._config.dock_hold_s
             ):
+                return self._decision(allow_tracking=False)
+            if not observation.completion_allowed:
                 return self._decision(allow_tracking=False)
             self._dock_hold_started_s = None
             if self._active_segment_index >= self._segment_count - 1:
