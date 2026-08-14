@@ -24,6 +24,9 @@ global_planner:
   # planner connects the exact measured checkpoint pose.
   dock_approach_goal_lateral_tolerance_m: 0.03
   dock_approach_exact_goal_connection: true
+  # A long route may use the normal turning radius while still tightening the
+  # final approach alignment before its exact precision goal.
+  precision_alignment_waypoint_position_tolerance_m: 0.03
   hybrid_goal_heading_tolerance_deg: 5.0
   # Entry/exit refs are route hints; permit early departure to prepare docks.
   hybrid_soft_waypoint_position_tolerance_m: 1.20

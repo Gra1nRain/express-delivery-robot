@@ -8,7 +8,7 @@
 
 ## 当前测试内容
 
-当前全局运动几何是一条连续轨迹：
+当前活动版本已临时切回 `8_14_1`，用于与外移版本进行实车距离对比。它仍是一条连续轨迹：
 
 ```text
 start
@@ -16,8 +16,8 @@ start
   -> random_obstacle_entry / exit
   -> pickup_front（停）
   -> pickup_rear（停）
-  -> pickup_shelf_clear_terminal_align（直行 0.60 m，不停）
-  -> 自由掉头（不强制经过旧 cone_lane_change_entry / exit）
+  -> pickup_departure_align（离站引导，不停）
+  -> cone_lane_change_entry / exit
   -> drop_front（停）
   -> drop_rear（停）
   -> finish_park（终点停车）
@@ -30,6 +30,12 @@ start
 路线：/home/agilex/competition_ws/config/routes/debug_indoor_one_lap_route.yaml
 语义地图：/home/agilex/competition_ws/maps/debug/semantic_map.yaml
 ```
+
+版本快照：
+
+- `8_14_1`：四个原始实测精停点；当前活动版本。
+- `8_14_2`：四个精停点向货架外侧平移 `0.27 m`，取货后先直行净空再进行自由大半径掉头；仅作为对比快照保留。
+- 切版必须同时切换轨迹、路线配置、语义地图和规划参数，不能只替换轨迹 YAML。
 
 ### 与旧手动测试文档的区别
 
@@ -67,9 +73,9 @@ semantic_map_control_validation.yaml
 
 事实：当前室内路线仅对 `pickup_front`、`pickup_rear`、`drop_front`、`drop_rear` 启用精停；`finish_park` 仍使用常规停车逻辑。
 
-事实：2026-08-14 路线把上述四个精停点统一沿货架外法线平移 `0.27 m`。`pickup_rear` 完成后先按该精停姿态直行 `0.60 m`，车身离开货架端部后才开始最小半径 `0.81 m` 的自由掉头；旧锥桶入口/出口只保留为地图语义，不再作为掉头轨迹必须经过的点。
+事实：当前活动的 `8_14_1` 使用四个原始实测精停点。严格离线扫掠按 `0.72 x 0.50 m` 车体再加 `0.20 m` clearance 检查时，共检查 706 个姿态，其中 157 个姿态进入膨胀占用区；首个风险出现在取货区进场前。因此该版本只用于受监督低速距离对比，不能视为已经通过碰撞安全验证。
 
-未验证：精停点外移会把机械臂与货架的工作距离同步增加 `0.27 m`，实车低速通过后仍需重新确认机械臂可达性。
+事实：`8_14_2` 把四个点统一向货架外侧平移 `0.27 m`，并在 `pickup_rear` 后先直行 `0.60 m` 再开始最小半径 `0.81 m` 的自由掉头。它通过了严格扫掠检查，但实车观察表明机械臂工作距离过大。
 
 场地适配入口：路线文件只配置“语义点 → profile”映射；距离、航向容限、微调速度和稳定时间在 `config/docking/debug_dock_params.yaml` 中。正式场地改用 `config/docking/competition_dock_params.yaml`，不需要修改状态机代码。
 

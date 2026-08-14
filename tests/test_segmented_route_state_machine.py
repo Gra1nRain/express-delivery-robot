@@ -416,6 +416,7 @@ class SegmentedTrajectoryArtifactTest(unittest.TestCase):
             [
                 "pickup_transit_1",
                 "pickup_1_rear",
+                "pickup_departure_wide",
                 "drop_transit_1",
                 "drop_1_rear",
                 "finish_park",

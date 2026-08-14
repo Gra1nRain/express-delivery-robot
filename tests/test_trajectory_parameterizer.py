@@ -10,6 +10,16 @@ import unittest
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_planning"))
 
+PROFILE_8_14_2_SEMANTIC_MAP = (
+    REPO_ROOT / "maps" / "debug" / "semantic_map_8_14_2.yaml"
+)
+PROFILE_8_14_2_ROUTE = (
+    REPO_ROOT / "config" / "routes" / "debug_indoor_one_lap_route_8_14_2.yaml"
+)
+PROFILE_8_14_2_PLANNING = (
+    REPO_ROOT / "config" / "planning" / "planning_params_8_14_2.yaml"
+)
+
 from competition_planning.semantic_planner import PathPoint, StepPlan, load_yaml_file
 from competition_planning.trajectory_parameterizer import (
     optimize_route_trajectory,
@@ -20,9 +30,7 @@ from competition_planning.trajectory_parameterizer import (
 
 class TrajectoryParameterizerTest(unittest.TestCase):
     def test_debug_precision_docks_are_shifted_outward_by_27_cm(self) -> None:
-        semantic_map = load_yaml_file(
-            REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
-        )
+        semantic_map = load_yaml_file(PROFILE_8_14_2_SEMANTIC_MAP)
         original_points = {
             "pickup_front": (8.4130, -0.0810),
             "pickup_rear": (9.0130, -0.0910),
@@ -66,9 +74,7 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                 )
 
     def test_debug_alignment_anchors_follow_shifted_dock_poses(self) -> None:
-        semantic_map = load_yaml_file(
-            REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
-        )
+        semantic_map = load_yaml_file(PROFILE_8_14_2_SEMANTIC_MAP)
         for anchor_ref, dock_ref, distance_m in (
             ("pickup_approach_align", "pickup_front", 1.00),
             ("pickup_front_terminal_align", "pickup_front", 0.50),
@@ -93,12 +99,8 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             self.assertAlmostEqual(float(anchor["yaw"]), yaw, msg=anchor_ref)
 
     def test_pickup_to_drop_turn_is_one_soft_global_planning_interval(self) -> None:
-        route = load_yaml_file(
-            REPO_ROOT / "config" / "routes" / "debug_indoor_one_lap_route.yaml"
-        )
-        semantic_map = load_yaml_file(
-            REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
-        )
+        route = load_yaml_file(PROFILE_8_14_2_ROUTE)
+        semantic_map = load_yaml_file(PROFILE_8_14_2_SEMANTIC_MAP)
         steps = {step["id"]: step for step in route["steps"]}
 
         self.assertNotIn("pickup_departure_wide", steps)
@@ -157,15 +159,9 @@ class TrajectoryParameterizerTest(unittest.TestCase):
         )
 
     def test_indoor_one_lap_is_one_continuous_trajectory(self) -> None:
-        route = load_yaml_file(
-            REPO_ROOT / "config" / "routes" / "debug_indoor_one_lap_route.yaml"
-        )
-        semantic_map = load_yaml_file(
-            REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
-        )
-        planning = load_yaml_file(
-            REPO_ROOT / "config" / "planning" / "planning_params.yaml"
-        )
+        route = load_yaml_file(PROFILE_8_14_2_ROUTE)
+        semantic_map = load_yaml_file(PROFILE_8_14_2_SEMANTIC_MAP)
+        planning = load_yaml_file(PROFILE_8_14_2_PLANNING)
         optimizer = load_yaml_file(
             REPO_ROOT / "config" / "planning" / "optimizer_params.yaml"
         )
@@ -401,9 +397,7 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             )
 
     def test_dock_approach_anchors_follow_precision_pose_axes(self) -> None:
-        semantic_map = load_yaml_file(
-            REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
-        )
+        semantic_map = load_yaml_file(PROFILE_8_14_2_SEMANTIC_MAP)
 
         for prefix in ("pickup", "drop"):
             front = semantic_map["points"][f"{prefix}_front"]
@@ -438,9 +432,7 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                 places=3,
             )
 
-        planning = load_yaml_file(
-            REPO_ROOT / "config" / "planning" / "planning_params.yaml"
-        )["global_planner"]
+        planning = load_yaml_file(PROFILE_8_14_2_PLANNING)["global_planner"]
         self.assertEqual(
             planning["hybrid_alignment_waypoint_heading_tolerance_deg"],
             5.0,
