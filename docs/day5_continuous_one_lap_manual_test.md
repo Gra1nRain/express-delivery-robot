@@ -16,7 +16,8 @@ start
   -> random_obstacle_entry / exit
   -> pickup_front（停）
   -> pickup_rear（停）
-  -> cone_lane_change_entry / exit
+  -> pickup_shelf_clear_terminal_align（直行 0.60 m，不停）
+  -> 自由掉头（不强制经过旧 cone_lane_change_entry / exit）
   -> drop_front（停）
   -> drop_rear（停）
   -> finish_park（终点停车）
@@ -65,6 +66,10 @@ semantic_map_control_validation.yaml
 事实：进入末端微调前必须先停车稳定。航向超差时只允许原地自旋；航向合格后使用平移模式同时修正纵向和横向误差。模式切换必须在低速状态完成，并受 0.5 s 反馈超时保护。
 
 事实：当前室内路线仅对 `pickup_front`、`pickup_rear`、`drop_front`、`drop_rear` 启用精停；`finish_park` 仍使用常规停车逻辑。
+
+事实：2026-08-14 路线把上述四个精停点统一沿货架外法线平移 `0.27 m`。`pickup_rear` 完成后先按该精停姿态直行 `0.60 m`，车身离开货架端部后才开始最小半径 `0.81 m` 的自由掉头；旧锥桶入口/出口只保留为地图语义，不再作为掉头轨迹必须经过的点。
+
+未验证：精停点外移会把机械臂与货架的工作距离同步增加 `0.27 m`，实车低速通过后仍需重新确认机械臂可达性。
 
 场地适配入口：路线文件只配置“语义点 → profile”映射；距离、航向容限、微调速度和稳定时间在 `config/docking/debug_dock_params.yaml` 中。正式场地改用 `config/docking/competition_dock_params.yaml`，不需要修改状态机代码。
 

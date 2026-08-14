@@ -19,6 +19,143 @@ from competition_planning.trajectory_parameterizer import (
 
 
 class TrajectoryParameterizerTest(unittest.TestCase):
+    def test_debug_precision_docks_are_shifted_outward_by_27_cm(self) -> None:
+        semantic_map = load_yaml_file(
+            REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
+        )
+        original_points = {
+            "pickup_front": (8.4130, -0.0810),
+            "pickup_rear": (9.0130, -0.0910),
+            "drop_front": (2.2660, 3.4560),
+            "drop_rear": (1.6850, 3.4670),
+        }
+        groups = {
+            "pickup": tuple(
+                ref for ref in original_points if ref.startswith("pickup_")
+            ),
+            "drop": tuple(
+                ref for ref in original_points if ref.startswith("drop_")
+            ),
+        }
+
+        for prefix, refs in groups.items():
+            old_front = original_points[f"{prefix}_front"]
+            old_rear = original_points[f"{prefix}_rear"]
+            shelf_yaw = math.atan2(
+                old_rear[1] - old_front[1], old_rear[0] - old_front[0]
+            )
+            tangent = (math.cos(shelf_yaw), math.sin(shelf_yaw))
+            outward = (-tangent[1], tangent[0])
+            for ref in refs:
+                actual = semantic_map["points"][ref]
+                delta = (
+                    float(actual["x"]) - original_points[ref][0],
+                    float(actual["y"]) - original_points[ref][1],
+                )
+                self.assertAlmostEqual(
+                    delta[0] * tangent[0] + delta[1] * tangent[1],
+                    0.0,
+                    places=3,
+                    msg=ref,
+                )
+                self.assertAlmostEqual(
+                    delta[0] * outward[0] + delta[1] * outward[1],
+                    0.27,
+                    places=3,
+                    msg=ref,
+                )
+
+    def test_debug_alignment_anchors_follow_shifted_dock_poses(self) -> None:
+        semantic_map = load_yaml_file(
+            REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
+        )
+        for anchor_ref, dock_ref, distance_m in (
+            ("pickup_approach_align", "pickup_front", 1.00),
+            ("pickup_front_terminal_align", "pickup_front", 0.50),
+            ("drop_approach_align", "drop_front", 1.00),
+            ("drop_front_terminal_align", "drop_front", 0.50),
+        ):
+            anchor = semantic_map["points"][anchor_ref]
+            dock = semantic_map["points"][dock_ref]
+            yaw = float(dock["yaw"])
+            self.assertAlmostEqual(
+                float(anchor["x"]),
+                float(dock["x"]) - distance_m * math.cos(yaw),
+                places=3,
+                msg=anchor_ref,
+            )
+            self.assertAlmostEqual(
+                float(anchor["y"]),
+                float(dock["y"]) - distance_m * math.sin(yaw),
+                places=3,
+                msg=anchor_ref,
+            )
+            self.assertAlmostEqual(float(anchor["yaw"]), yaw, msg=anchor_ref)
+
+    def test_pickup_to_drop_turn_is_one_soft_global_planning_interval(self) -> None:
+        route = load_yaml_file(
+            REPO_ROOT / "config" / "routes" / "debug_indoor_one_lap_route.yaml"
+        )
+        semantic_map = load_yaml_file(
+            REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
+        )
+        steps = {step["id"]: step for step in route["steps"]}
+
+        self.assertNotIn("pickup_departure_wide", steps)
+        turn = steps["drop_transit_1"]
+        self.assertFalse(turn["docking_approach"])
+        self.assertTrue(turn["precision_goal_connection"])
+        self.assertTrue(turn["soft_intermediate_refs"])
+        self.assertEqual(turn["corridor_ref"], "pickup_to_drop_aligned")
+        self.assertEqual(turn["target_ref"], "drop_front")
+        self.assertNotIn("drop_final_approach", steps)
+        pickup_rear = semantic_map["points"]["pickup_rear"]
+        shelf_clear = semantic_map["points"]["pickup_shelf_clear_terminal_align"]
+        rear_yaw = float(pickup_rear["yaw"])
+        delta_x = float(shelf_clear["x"]) - float(pickup_rear["x"])
+        delta_y = float(shelf_clear["y"]) - float(pickup_rear["y"])
+        self.assertAlmostEqual(
+            delta_x * math.cos(rear_yaw) + delta_y * math.sin(rear_yaw),
+            0.60,
+            places=3,
+        )
+        self.assertAlmostEqual(
+            -delta_x * math.sin(rear_yaw) + delta_y * math.cos(rear_yaw),
+            0.0,
+            places=3,
+        )
+        self.assertAlmostEqual(float(shelf_clear["yaw"]), rear_yaw)
+        turn_exit = semantic_map["points"]["pickup_turn_exit_guide"]
+        self.assertAlmostEqual(
+            float(turn_exit["x"]),
+            float(shelf_clear["x"]) - 2.0 * 0.81 * math.sin(rear_yaw),
+            places=3,
+        )
+        self.assertAlmostEqual(
+            float(turn_exit["y"]),
+            float(shelf_clear["y"]) + 2.0 * 0.81 * math.cos(rear_yaw),
+            places=3,
+        )
+        centerlines = {
+            item["id"]: item for item in semantic_map["lane_centerlines"]
+        }
+        corridors = {
+            item["id"]: item for item in semantic_map["route_corridors"]
+        }
+        self.assertEqual(
+            centerlines[corridors["pickup_to_drop_aligned"]["centerline_ref"]][
+                "points"
+            ],
+            [
+                "pickup_rear",
+                "pickup_shelf_clear_terminal_align",
+                "pickup_turn_exit_guide",
+                "drop_approach_align",
+                "drop_front_terminal_align",
+                "drop_front",
+            ],
+        )
+
     def test_indoor_one_lap_is_one_continuous_trajectory(self) -> None:
         route = load_yaml_file(
             REPO_ROOT / "config" / "routes" / "debug_indoor_one_lap_route.yaml"
@@ -52,9 +189,8 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             "pickup_front",
             "pickup_rear_terminal_align",
             "pickup_rear",
-            "pickup_departure_align",
-            "cone_lane_change_entry",
-            "cone_lane_change_exit",
+            "pickup_shelf_clear_terminal_align",
+            "pickup_turn_exit_guide",
             "drop_approach_align",
             "drop_front_terminal_align",
             "drop_front",
@@ -73,8 +209,13 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             terminal_ref = f"{ref}_terminal_align"
             terminal = points_by_ref[terminal_ref]
             terminal_expected = semantic_map["points"][terminal_ref]
-            self.assertAlmostEqual(terminal.x, float(terminal_expected["x"]))
-            self.assertAlmostEqual(terminal.y, float(terminal_expected["y"]))
+            self.assertLessEqual(
+                math.hypot(
+                    terminal.x - float(terminal_expected["x"]),
+                    terminal.y - float(terminal_expected["y"]),
+                ),
+                0.03,
+            )
 
             terminal_index = next(
                 index
@@ -96,13 +237,16 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                 places=3,
             )
 
-            prefix = ref.split("_", maxsplit=1)[0]
-            shelf_front = semantic_map["points"][f"{prefix}_front"]
-            shelf_rear = semantic_map["points"][f"{prefix}_rear"]
-            shelf_yaw = math.atan2(
-                float(shelf_rear["y"]) - float(shelf_front["y"]),
-                float(shelf_rear["x"]) - float(shelf_front["x"]),
-            )
+            if ref.endswith("_front"):
+                terminal_heading = float(expected["yaw"])
+            else:
+                prefix = ref.split("_", maxsplit=1)[0]
+                shelf_front = semantic_map["points"][f"{prefix}_front"]
+                shelf_rear = semantic_map["points"][f"{prefix}_rear"]
+                terminal_heading = math.atan2(
+                    float(shelf_rear["y"]) - float(shelf_front["y"]),
+                    float(shelf_rear["x"]) - float(shelf_front["x"]),
+                )
             terminal_tail = result.points[terminal_index : dock_index + 1]
             tangent_errors_deg = []
             for first, second in zip(terminal_tail, terminal_tail[1:]):
@@ -110,7 +254,8 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                 tangent_errors_deg.append(
                     abs(
                         math.degrees(
-                            (tangent - shelf_yaw + math.pi) % (2.0 * math.pi)
+                            (tangent - terminal_heading + math.pi)
+                            % (2.0 * math.pi)
                             - math.pi
                         )
                     )
@@ -125,14 +270,12 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                 second.y - first.y
             ) * (third.x - first.x)
             incoming_curvature = 2.0 * cross / (ab * bc * ca)
-            self.assertAlmostEqual(incoming_curvature, 0.0, places=2)
+            self.assertLessEqual(abs(incoming_curvature), 0.01)
         ordinary_soft_offsets_m = []
         for ref in (
             "traffic_light_stop_line",
             "random_obstacle_entry",
             "random_obstacle_exit",
-            "cone_lane_change_entry",
-            "cone_lane_change_exit",
         ):
             expected = semantic_map["points"][ref]
             ordinary_soft_offsets_m.append(
@@ -171,17 +314,17 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             for index, point in enumerate(result.points)
             if point.ref_id == "pickup_rear"
         )
-        departure_align_index = next(
+        departure_tail_end_index = next(
             index
             for index, point in enumerate(result.points)
-            if point.ref_id == "pickup_departure_align"
-            and index > pickup_rear_index
+            if index > pickup_rear_index
+            and point.ref_id == "pickup_shelf_clear_terminal_align"
         )
-        cone_entry_index = next(
+        drop_approach_index = next(
             index
             for index, point in enumerate(result.points)
-            if point.ref_id == "cone_lane_change_entry"
-            and index > departure_align_index
+            if point.ref_id == "drop_approach_align"
+            and index > departure_tail_end_index
         )
         pickup_front = semantic_map["points"]["pickup_front"]
         pickup_rear = semantic_map["points"]["pickup_rear"]
@@ -189,7 +332,11 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             float(pickup_rear["y"]) - float(pickup_front["y"]),
             float(pickup_rear["x"]) - float(pickup_front["x"]),
         )
-        departure_tail = result.points[pickup_rear_index : departure_align_index + 1]
+        departure_yaw = float(pickup_rear["yaw"])
+        departure_tail = result.points[
+            pickup_rear_index : departure_tail_end_index + 1
+        ]
+        self.assertLessEqual(abs(departure_tail[0].curvature), 0.01)
         self.assertGreaterEqual(
             departure_tail[-1].s - departure_tail[0].s,
             0.50,
@@ -198,11 +345,13 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             tangent = math.atan2(second.y - first.y, second.x - first.x)
             heading_error = abs(
                 math.degrees(
-                    (tangent - shelf_yaw + math.pi) % (2.0 * math.pi) - math.pi
+                    (tangent - departure_yaw + math.pi) % (2.0 * math.pi) - math.pi
                 )
             )
-            self.assertLessEqual(heading_error, 3.0)
-        departure_turn = result.points[departure_align_index : cone_entry_index + 1]
+            self.assertLessEqual(heading_error, 1.0)
+        departure_turn = result.points[
+            departure_tail_end_index : drop_approach_index + 1
+        ]
         self.assertLessEqual(
             max(abs(point.curvature) for point in departure_turn),
             1.0 / 0.81 + 1e-6,
@@ -251,7 +400,7 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                 prefix,
             )
 
-    def test_dock_approach_anchors_follow_measured_front_rear_axes(self) -> None:
+    def test_dock_approach_anchors_follow_precision_pose_axes(self) -> None:
         semantic_map = load_yaml_file(
             REPO_ROOT / "maps" / "debug" / "semantic_map.yaml"
         )
@@ -271,9 +420,11 @@ class TrajectoryParameterizerTest(unittest.TestCase):
                 float(rear["x"]) - float(front["x"]),
             )
 
-            self.assertAlmostEqual(float(align["yaw"]), shelf_yaw, places=3)
             self.assertAlmostEqual(
-                float(front_terminal["yaw"]), shelf_yaw, places=3
+                float(align["yaw"]), float(front["yaw"]), places=3
+            )
+            self.assertAlmostEqual(
+                float(front_terminal["yaw"]), float(front["yaw"]), places=3
             )
             self.assertAlmostEqual(
                 float(rear_terminal["yaw"]), shelf_yaw, places=3

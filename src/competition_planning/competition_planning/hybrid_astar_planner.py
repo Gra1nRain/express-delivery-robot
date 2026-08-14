@@ -141,6 +141,7 @@ class HybridAStarPlanner:
         if reference_deviation_weight < 0.0:
             raise GridPlanningError("reference_deviation_weight must be non-negative")
         self._reference_xy = tuple((point.x, point.y) for point in reference_path)
+        self._default_reference_xy = self._reference_xy
         self._reference_deviation_weight = reference_deviation_weight
         self._reference_distance_sq_cache: dict[tuple[int, int], float] = {}
         if corridor_half_width_m is not None and corridor_half_width_m <= 0.0:
@@ -148,6 +149,7 @@ class HybridAStarPlanner:
         self._corridor_half_width_sq = (
             None if corridor_half_width_m is None else corridor_half_width_m**2
         )
+        self._default_corridor_half_width_sq = self._corridor_half_width_sq
         if obstacle_clearance_distance_m < 0.0:
             raise GridPlanningError("obstacle_clearance_distance_m must be non-negative")
         if obstacle_clearance_weight < 0.0:
@@ -187,19 +189,31 @@ class HybridAStarPlanner:
         corridor_half_width_m: float | None = None,
         soft_intermediate_waypoints: bool = False,
     ) -> tuple[PathPoint, ...]:
-        if len(waypoints) < 2:
-            return tuple(waypoints)
-        if reference_path is not None:
+        if reference_path is None:
+            next_reference_xy = self._default_reference_xy
+            next_corridor_half_width_sq = self._default_corridor_half_width_sq
+        else:
             if corridor_half_width_m is not None and corridor_half_width_m <= 0.0:
                 raise GridPlanningError("corridor_half_width_m must be positive")
-            self._reference_xy = tuple(
+            next_reference_xy = tuple(
                 (point.x, point.y) for point in reference_path
             )
-            if corridor_half_width_m is not None:
-                self._corridor_half_width_sq = corridor_half_width_m**2
+            next_corridor_half_width_sq = (
+                None
+                if corridor_half_width_m is None
+                else corridor_half_width_m**2
+            )
+        if (
+            next_reference_xy != self._reference_xy
+            or next_corridor_half_width_sq != self._corridor_half_width_sq
+        ):
+            self._reference_xy = next_reference_xy
+            self._corridor_half_width_sq = next_corridor_half_width_sq
             self._reference_distance_sq_cache.clear()
             self._navigable_cell_cache.clear()
             self._point_cost_cache.clear()
+        if len(waypoints) < 2:
+            return tuple(waypoints)
 
         deadline_s = (
             None

@@ -960,6 +960,7 @@ def concatenate_reference_paths(
     connection_tolerance_m: float = 0.15,
     connection_heading_tolerance_rad: float = math.radians(10.0),
     connection_blend_distance_m: float = 0.80,
+    preserve_next_path: bool = False,
 ) -> tuple[PathPoint, ...]:
     """Join route segments into one monotonic local-planning reference."""
 
@@ -994,6 +995,43 @@ def concatenate_reference_paths(
         offset_x_m = previous.x - current.x
         offset_y_m = previous.y - current.y
         offset_yaw_rad = _wrap_angle(previous.yaw - current.yaw)
+        if preserve_next_path:
+            tail_distances_m = [0.0]
+            for index in range(len(joined) - 1, 0, -1):
+                tail_distances_m.append(
+                    tail_distances_m[-1]
+                    + math.hypot(
+                        joined[index].x - joined[index - 1].x,
+                        joined[index].y - joined[index - 1].y,
+                    )
+                )
+            blend_distance_m = min(
+                connection_blend_distance_m,
+                tail_distances_m[-1],
+            )
+            for reverse_index, distance_m in enumerate(tail_distances_m):
+                if distance_m > blend_distance_m:
+                    break
+                index = len(joined) - 1 - reverse_index
+                blend_weight = (
+                    max(0.0, 1.0 - distance_m / blend_distance_m)
+                    if blend_distance_m > 0.0
+                    else 1.0
+                )
+                point = joined[index]
+                seam_ref_id = previous.ref_id or current.ref_id
+                joined[index] = (
+                    PathPoint(current.x, current.y, current.yaw, seam_ref_id)
+                    if reverse_index == 0
+                    else PathPoint(
+                        point.x - offset_x_m * blend_weight,
+                        point.y - offset_y_m * blend_weight,
+                        _wrap_angle(point.yaw - offset_yaw_rad * blend_weight),
+                        point.ref_id,
+                    )
+                )
+            joined.extend(path[1:])
+            continue
         distances_m: list[float] = []
         distance_m = 0.0
         prior = current

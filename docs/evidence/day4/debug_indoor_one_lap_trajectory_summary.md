@@ -5,7 +5,7 @@
 - route_name: debug_indoor_one_lap_route
 - frame_id: map
 - ok: True
-- trajectory_count: 6
+- trajectory_count: 5
 - failure_count: 0
 
 ## 配置限值
@@ -20,12 +20,11 @@
 
 | step_id | points | length_m | duration_s | max_v_mps | max_abs_curvature |
 |---|---:|---:|---:|---:|---:|
-| pickup_transit_1 | 89 | 8.821 | 23.798 | 0.500 | 0.625011 |
+| pickup_transit_1 | 88 | 8.797 | 23.750 | 0.500 | 0.416667 |
 | pickup_1_rear | 8 | 0.600 | 2.538 | 0.447 | 0.359323 |
-| pickup_departure_wide | 60 | 5.899 | 33.355 | 0.500 | 1.234568 |
-| drop_transit_1 | 53 | 5.286 | 20.806 | 0.493 | 0.833333 |
+| drop_transit_1 | 112 | 10.917 | 54.839 | 0.500 | 1.234568 |
 | drop_1_rear | 6 | 0.581 | 2.497 | 0.447 | 0.251077 |
-| finish_park | 25 | 2.400 | 6.141 | 0.500 | 0.462968 |
+| finish_park | 25 | 2.400 | 6.141 | 0.500 | 0.154323 |
 
 ## 未验证
 

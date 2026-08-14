@@ -31,6 +31,43 @@ def _empty_map() -> OccupancyGridMap:
 
 
 class HybridAStarTimeoutTest(unittest.TestCase):
+    def test_per_call_reference_context_does_not_leak_into_next_segment(self) -> None:
+        default_reference = (
+            PathPoint(0.0, 0.0, 0.0),
+            PathPoint(1.0, 0.0, 0.0),
+        )
+        planner = HybridAStarPlanner(
+            _empty_map(),
+            inflation_radius_m=0.04,
+            search_padding_m=1.50,
+            sample_spacing_m=0.10,
+            min_turning_radius_m=0.81,
+            step_length_m=0.20,
+            curvature_bins=9,
+            heading_bins=72,
+            goal_position_tolerance_m=0.15,
+            goal_heading_tolerance_rad=0.14,
+            reference_path=default_reference,
+            corridor_half_width_m=0.50,
+        )
+        override_reference = (
+            PathPoint(0.0, 1.0, 0.0),
+            PathPoint(1.0, 1.0, 0.0),
+        )
+
+        planner.plan(
+            (PathPoint(0.0, 0.0, 0.0),),
+            reference_path=override_reference,
+            corridor_half_width_m=0.20,
+        )
+        self.assertEqual(planner._reference_xy, ((0.0, 1.0), (1.0, 1.0)))
+        self.assertAlmostEqual(planner._corridor_half_width_sq, 0.04)
+
+        planner.plan((PathPoint(0.0, 0.0, 0.0),))
+
+        self.assertEqual(planner._reference_xy, ((0.0, 0.0), (1.0, 0.0)))
+        self.assertAlmostEqual(planner._corridor_half_width_sq, 0.25)
+
     def test_search_aborts_when_wall_clock_deadline_expires(self) -> None:
         planner = HybridAStarPlanner(
             _empty_map(),

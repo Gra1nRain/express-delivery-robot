@@ -321,6 +321,7 @@ def _plan_joined_step_paths(
     try:
         path = concatenate_reference_paths(
             tuple(plan.path for plan in step_plan.plans),
+            preserve_next_path=True,
         )
     except ValueError as exc:
         return ContinuousRoutePlan(
@@ -854,6 +855,16 @@ def _path_curvatures(path: Sequence[PathPoint]) -> list[float]:
         curvatures[index] = _signed_curvature(first, second, third)
     curvatures[0] = curvatures[1]
     curvatures[-1] = curvatures[-2]
+    # Semantic anchors are possible state-machine restart points. Use their
+    # outgoing geometry so curvature from the completed incoming segment does
+    # not command an immediate steering transient after a precision stop.
+    for index, point in enumerate(path[:-2]):
+        if point.ref_id:
+            curvatures[index] = _signed_curvature(
+                path[index],
+                path[index + 1],
+                path[index + 2],
+            )
     return curvatures
 
 

@@ -81,53 +81,61 @@ points:
   #   role: pickup_area
   #   status: measured
   pickup_front:
-    x: 8.413
-    y: -0.081
+    x: 8.4175
+    y: 0.1890
     yaw: 0.015
     role: pickup_area_front
-    status: measured
+    status: measured_then_shifted_outward_0p27m_2026_08_14
   pickup_rear:
-    x: 9.013
-    y: -0.091
+    x: 9.0175
+    y: 0.1790
     yaw: 0.022
     role: pickup_area_rear
-    status: measured
-  # Derived from the measured pickup_front -> pickup_rear shelf axis.  This
-  # soft guide starts 1.00 m before the front dock so the chassis is nearly
-  # parallel before entering the close shelf clearance.
+    status: measured_then_shifted_outward_0p27m_2026_08_14
+  # Derived from the shifted pickup_front pose. This soft guide starts 1.00 m
+  # before the front dock along its exact recorded docking yaw.
   pickup_approach_align:
-    x: 7.4131
-    y: -0.0643
-    yaw: -0.0167
+    x: 7.4176
+    y: 0.1740
+    yaw: 0.015
     role: pickup_approach_alignment
-    status: derived_from_measured_dock_pair
+    status: derived_1p00m_before_shifted_pickup_front_pose
   # Exact terminal anchor 0.50 m before pickup_front.  The outer 1.00 m
   # approach point remains a soft guide; this anchor makes only the final
   # docking tail coincide with the measured front-to-rear shelf axis.  The
   # measured pickup_front yaw remains the exact final pose.
   pickup_front_terminal_align:
-    x: 7.9131
-    y: -0.0727
-    yaw: -0.0167
+    x: 7.9176
+    y: 0.1815
+    yaw: 0.015
     role: pickup_front_terminal_alignment
-    status: derived_from_measured_dock_pair
+    status: derived_0p50m_before_shifted_pickup_front_pose
   # A 0.30 m rear tail leaves enough distance after pickup_front to respect
   # the minimum turning radius while staying parallel for the second stop.
   pickup_rear_terminal_align:
-    x: 8.7130
-    y: -0.0860
+    x: 8.7175
+    y: 0.1840
     yaw: -0.0167
     role: pickup_rear_terminal_alignment
-    status: derived_from_measured_dock_pair
-  # Non-stop egress guide 0.60 m beyond pickup_rear along the measured shelf
-  # axis.  It keeps the chassis parallel until it has cleared the rack before
-  # the ordinary-radius route turn begins.
-  pickup_departure_align:
-    x: 9.6129
-    y: -0.1010
-    yaw: -0.0167
-    role: pickup_departure_alignment
-    status: derived_from_measured_dock_pair
+    status: derived_from_shifted_pickup_dock_pair
+  # Non-stop egress guide 0.60 m beyond pickup_rear along its exact recorded
+  # docking yaw. It holds steering neutral until the whole chassis has cleared
+  # the rack, then permits the ordinary-radius route turn.
+  pickup_shelf_clear_terminal_align:
+    x: 9.6174
+    y: 0.1922
+    yaw: 0.022
+    role: pickup_shelf_clearance_alignment
+    status: derived_0p60m_forward_from_shifted_pickup_rear
+  # Soft guide at the nominal exit of a 0.81 m left semicircle. The planner may
+  # deviate within the corridor; this point narrows search without becoming a
+  # mission checkpoint or a pose that the chassis must hit exactly.
+  pickup_turn_exit_guide:
+    x: 9.5818
+    y: 1.8118
+    yaw: -3.1196
+    role: pickup_turn_exit_guide
+    status: derived_from_shelf_clear_0p81m_left_semicircle
   # Retired on 2026-08-09; replaced by drop_front and drop_rear.
   # drop_dock:
   #   x: 2.077
@@ -136,41 +144,40 @@ points:
   #   role: drop_area
   #   status: measured
   drop_front:
-    x: 2.266
-    y: 3.456
+    x: 2.2609
+    y: 3.1860
     yaw: -3.136
     role: drop_area_front
-    status: measured
+    status: measured_then_shifted_outward_0p27m_2026_08_14
   drop_rear:
-    x: 1.685
-    y: 3.467
+    x: 1.6799
+    y: 3.1970
     yaw: -3.115
     role: drop_area_rear
-    status: measured
-  # Derived from the measured drop_front -> drop_rear shelf axis.  This is a
-  # soft heading guide, not a mandatory pose; 1.00 m gives the chassis room to
-  # settle parallel after leaving the cone region.
+    status: measured_then_shifted_outward_0p27m_2026_08_14
+  # Derived from the shifted drop_front pose. This is a soft heading guide;
+  # 1.00 m gives the chassis room to settle onto its exact docking yaw.
   drop_approach_align:
-    x: 3.2658
-    y: 3.4371
-    yaw: 3.1227
+    x: 3.2609
+    y: 3.1916
+    yaw: -3.136
     role: drop_approach_alignment
-    status: derived_from_measured_dock_pair
+    status: derived_1p00m_before_shifted_drop_front_pose
   # Exact terminal anchors preserve the measured drop poses while preventing
   # the planner from using the final precision segment to finish a residual
   # turn.  They follow the measured front-to-rear shelf axis.
   drop_front_terminal_align:
-    x: 2.7659
-    y: 3.4465
-    yaw: 3.1227
+    x: 2.7609
+    y: 3.1888
+    yaw: -3.136
     role: drop_front_terminal_alignment
-    status: derived_from_measured_dock_pair
+    status: derived_0p50m_before_shifted_drop_front_pose
   drop_rear_terminal_align:
-    x: 1.9849
-    y: 3.4613
+    x: 1.9798
+    y: 3.1913
     yaw: 3.1227
     role: drop_rear_terminal_alignment
-    status: derived_from_measured_dock_pair
+    status: derived_from_shifted_drop_dock_pair
   finish_park:
     x: -0.740
     y: 3.185
@@ -241,21 +248,16 @@ lane_centerlines:
       - drop_front
   - id: pickup_to_drop_aligned_lane
     status: debug_lab_only
-    width_m: 2.40
+    # The wide corridor lets Hybrid A* finish the U-turn without treating the
+    # historical cone entry/exit recordings as hard geometric targets.
+    width_m: 3.60
     points:
       - pickup_rear
-      - cone_lane_change_entry
-      - cone_lane_change_exit
+      - pickup_shelf_clear_terminal_align
+      - pickup_turn_exit_guide
       - drop_approach_align
       - drop_front_terminal_align
       - drop_front
-  - id: pickup_departure_wide_lane
-    status: debug_lab_only
-    width_m: 2.40
-    points:
-      - pickup_rear
-      - pickup_departure_align
-      - cone_lane_change_entry
   - id: drop_front_to_rear_lane
     status: measured
     width_m: 2.40
@@ -402,9 +404,6 @@ route_corridors:
   - id: pickup_to_drop_aligned
     centerline_ref: pickup_to_drop_aligned_lane
     allowed_steps: [drop_transit_1]
-  - id: pickup_departure_wide
-    centerline_ref: pickup_departure_wide_lane
-    allowed_steps: [pickup_departure_wide]
   - id: drop_front_to_rear
     centerline_ref: drop_front_to_rear_lane
     allowed_steps: [drop_1_rear, drop_2_rear]

@@ -165,6 +165,7 @@ def plan_route(
     map_model = _SemanticMap(semantic_map)
     grid_planner = None
     dock_approach_grid_planner = None
+    precision_goal_grid_planner = None
     grid_planner_failure: str | None = None
     if planner_plugin in {"occupancy_grid_astar", "hybrid_astar"}:
         try:
@@ -192,6 +193,30 @@ def plan_route(
                 dock_approach_grid_planner = _load_hybrid_planner(
                     semantic_map,
                     dock_params,
+                )
+            if planner_plugin == "hybrid_astar":
+                precision_params = dict(params)
+                precision_params["hybrid_goal_lateral_tolerance_m"] = params.get(
+                    "precision_goal_lateral_tolerance_m",
+                    params.get("dock_approach_goal_lateral_tolerance_m", 0.03),
+                )
+                precision_params[
+                    "hybrid_alignment_waypoint_position_tolerance_m"
+                ] = params.get(
+                    "precision_alignment_waypoint_position_tolerance_m",
+                    params.get("dock_approach_goal_lateral_tolerance_m", 0.03),
+                )
+                precision_params["hybrid_goal_position_tolerance_m"] = params.get(
+                    "precision_alignment_waypoint_position_tolerance_m",
+                    params.get("dock_approach_goal_lateral_tolerance_m", 0.03),
+                )
+                precision_params["hybrid_exact_goal_connection"] = params.get(
+                    "precision_goal_exact_connection",
+                    params.get("dock_approach_exact_goal_connection", True),
+                )
+                precision_goal_grid_planner = _load_hybrid_planner(
+                    semantic_map,
+                    precision_params,
                 )
         except Exception as exc:
             grid_planner_failure = str(exc)
@@ -224,6 +249,7 @@ def plan_route(
             fallback_plugin=fallback_plugin,
             grid_planner=grid_planner,
             dock_approach_grid_planner=dock_approach_grid_planner,
+            precision_goal_grid_planner=precision_goal_grid_planner,
             grid_planner_failure=grid_planner_failure,
             smoother=smoother,
         )
@@ -484,6 +510,7 @@ def _plan_step(
     fallback_plugin: str,
     grid_planner: Any,
     dock_approach_grid_planner: Any,
+    precision_goal_grid_planner: Any,
     grid_planner_failure: str | None,
     smoother: Any,
 ) -> tuple[StepPlan | None, PlanFailure | None, str | None]:
@@ -562,12 +589,12 @@ def _plan_step(
     path = semantic_path
     used_plugin = "semantic_corridor"
     if planner_plugin in {"occupancy_grid_astar", "hybrid_astar"}:
-        active_grid_planner = (
-            dock_approach_grid_planner
-            if dock_approach_grid_planner is not None
-            and is_dock_approach
-            else grid_planner
-        )
+        if bool(step.get("precision_goal_connection", False)):
+            active_grid_planner = precision_goal_grid_planner or grid_planner
+        elif dock_approach_grid_planner is not None and is_dock_approach:
+            active_grid_planner = dock_approach_grid_planner
+        else:
+            active_grid_planner = grid_planner
         if active_grid_planner is None:
             if fallback_plugin != "semantic_corridor":
                 return (

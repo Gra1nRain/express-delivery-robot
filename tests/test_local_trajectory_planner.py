@@ -433,6 +433,25 @@ class ReferencePathConcatenationTest(unittest.TestCase):
                 )
             )
 
+    def test_whole_route_join_preserves_downstream_precision_geometry(self) -> None:
+        first = (
+            PathPoint(0.0, 0.0, 0.0, "start"),
+            PathPoint(1.0, 0.0, 0.0, "drop_approach_align"),
+        )
+        second = (
+            PathPoint(1.08, 0.04, 0.05, "drop_approach_align"),
+            PathPoint(1.58, 0.04, 0.05, "drop_front_terminal_align"),
+            PathPoint(2.08, 0.04, 0.05, "drop_front"),
+        )
+
+        joined = concatenate_reference_paths(
+            (first, second),
+            preserve_next_path=True,
+        )
+
+        self.assertEqual(joined[-2:], second[-2:])
+        self.assertEqual(joined[1], second[0])
+
     def test_indoor_one_lap_segments_form_one_planning_reference(self) -> None:
         artifact = yaml.safe_load(
             (
