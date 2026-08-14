@@ -62,6 +62,7 @@ from competition_control.precision_docking import (
     fixed_reference_to_checkpoint,
     precision_docking_configs_from_dict,
     straight_followup_anchors_from_config,
+    straight_followup_extension_from_config,
 )
 from competition_control.shelf_alignment import (
     ShelfObservation,
@@ -192,6 +193,9 @@ class MPPIControlNode(Node):
         self._straight_followup_anchors = straight_followup_anchors_from_config(
             precision_config,
             tuple(checkpoint.ref_id for checkpoint in self._mission_checkpoints),
+        )
+        self._straight_followup_extension_m = (
+            straight_followup_extension_from_config(precision_config)
         )
         unknown_precision_refs = set(self._precision_configs) - checkpoint_refs
         if unknown_precision_refs:
@@ -811,6 +815,7 @@ class MPPIControlNode(Node):
                 anchor_checkpoint,
                 checkpoint,
                 speed_mps=self._checkpoint_max_speed_mps,
+                extension_m=self._straight_followup_extension_m,
             )
             self._straight_followup_anchor_state = calibrated_anchor_state
             self._straight_followup_anchor_ref = required_anchor_ref

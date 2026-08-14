@@ -13,6 +13,7 @@ arm_max_retries: 3
 straight_followups:
   pickup_rear: pickup_front
   drop_rear: drop_front
+straight_followup_extension_m: 0.11
 precision_profiles:
   shelf_dock:
     # Enter before ordinary inflated-costmap rejection can block the exact pose.

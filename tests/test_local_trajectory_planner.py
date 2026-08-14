@@ -27,6 +27,7 @@ from competition_planning.local_trajectory_planner import (
     LocalReplanConfig,
     LocalTrajectoryPlanner,
     concatenate_reference_paths,
+    docking_context_checkpoint,
     docking_mode_is_active,
     docking_shelf_filter_is_active,
     filter_expected_docking_shelf_points,
@@ -92,6 +93,37 @@ def _docking_planner(obstacle_x: float, obstacle_y: float) -> HybridAStarPlanner
 
 
 class DockingCollisionModeTest(unittest.TestCase):
+    def test_departure_uses_completed_rear_dock_while_next_goal_is_far(self) -> None:
+        pickup_rear = PathPoint(9.013, -0.091, 0.022, "pickup_rear")
+        drop_front = PathPoint(2.266, 3.456, -3.136, "drop_front")
+
+        checkpoint, checkpoint_ref = docking_context_checkpoint(
+            current_pose=PathPoint(9.02, -0.09, 0.022),
+            active_checkpoint=drop_front,
+            active_checkpoint_ref="drop_front",
+            departure_checkpoints={"pickup_rear": pickup_rear},
+            docking_refs={"pickup_rear", "drop_front"},
+            activation_distance_m=1.0,
+        )
+
+        self.assertIs(checkpoint, pickup_rear)
+        self.assertEqual(checkpoint_ref, "pickup_rear")
+
+    def test_departure_context_expires_outside_dock_distance(self) -> None:
+        checkpoint, checkpoint_ref = docking_context_checkpoint(
+            current_pose=PathPoint(10.02, -0.09, 0.022),
+            active_checkpoint=PathPoint(2.266, 3.456, -3.136, "drop_front"),
+            active_checkpoint_ref="drop_front",
+            departure_checkpoints={
+                "pickup_rear": PathPoint(9.013, -0.091, 0.022, "pickup_rear")
+            },
+            docking_refs={"pickup_rear", "drop_front"},
+            activation_distance_m=1.0,
+        )
+
+        self.assertIsNone(checkpoint)
+        self.assertIsNone(checkpoint_ref)
+
     def test_shelf_filter_requires_final_distance_and_aligned_heading(self) -> None:
         checkpoint = PathPoint(8.413, -0.081, 0.0, "pickup_front")
 

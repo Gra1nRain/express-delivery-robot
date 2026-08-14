@@ -314,12 +314,22 @@ def straight_followup_anchors_from_config(
     return resolved
 
 
+def straight_followup_extension_from_config(dock_params: dict[str, Any]) -> float:
+    """Return the configured extra travel after each semantic rear checkpoint."""
+
+    extension_m = float(dock_params.get("straight_followup_extension_m", 0.0))
+    if not math.isfinite(extension_m) or extension_m < 0.0:
+        raise ValueError("precision straight followup extension must be non-negative")
+    return extension_m
+
+
 def calibrated_straight_reference(
     anchor_state: VehicleState,
     anchor_checkpoint: MissionCheckpoint,
     followup_checkpoint: MissionCheckpoint,
     *,
     speed_mps: float,
+    extension_m: float = 0.0,
     point_spacing_m: float = 0.05,
     max_lateral_offset_m: float = 0.05,
     max_heading_delta_rad: float = math.radians(5.0),
@@ -328,6 +338,8 @@ def calibrated_straight_reference(
 
     if speed_mps <= 0.0 or point_spacing_m <= 0.0:
         raise ValueError("calibrated straight speed and spacing must be positive")
+    if not math.isfinite(extension_m) or extension_m < 0.0:
+        raise ValueError("calibrated straight extension must be non-negative")
     dx = followup_checkpoint.x - anchor_checkpoint.x
     dy = followup_checkpoint.y - anchor_checkpoint.y
     cos_yaw = math.cos(anchor_checkpoint.yaw)
@@ -346,6 +358,7 @@ def calibrated_straight_reference(
             f"{anchor_checkpoint.ref_id}->{followup_checkpoint.ref_id} "
             "is not a straight forward pair"
         )
+    distance_m += extension_m
 
     segment_count = max(1, math.ceil(distance_m / point_spacing_m))
     actual_cos_yaw = math.cos(anchor_state.yaw)

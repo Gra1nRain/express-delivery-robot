@@ -33,6 +33,9 @@ local_hybrid_astar_runtime:
   # the physical vehicle side. Static-map shelf geometry remains active.
   docking_shelf_filter_distance_m: 1.00
   docking_shelf_physical_guard_m: 0.05
+  # Rear precision stops may keep shelf-specific collision geometry while the
+  # existing global reference carries the chassis straight out of the rack.
+  docking_departure_refs: [pickup_rear, drop_rear]
   lookahead_distance_m: 3.00
   search_padding_m: 1.50
   sample_spacing_m: 0.10

@@ -303,6 +303,9 @@ def _launch_setup(context, *args, **kwargs):
                     "docking_shelf_physical_guard_m": local_runtime[
                         "docking_shelf_physical_guard_m"
                     ],
+                    "docking_departure_refs_csv": ",".join(
+                        local_runtime["docking_departure_refs"]
+                    ),
                     "lookahead_distance_m": local_runtime[
                         "lookahead_distance_m"
                     ],

@@ -11,6 +11,7 @@ warning: Replace poses and table geometry after official field survey.
 straight_followups:
   pickup_rear: pickup_front
   drop_rear: drop_front
+straight_followup_extension_m: 0.11
 precision_profiles:
   shelf_dock:
     # Initial safe defaults. Re-validate these values during official field survey.

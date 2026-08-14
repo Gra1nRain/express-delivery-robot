@@ -23,6 +23,7 @@ from competition_control.precision_docking import (
     fixed_reference_to_checkpoint,
     precision_docking_configs_from_dict,
     straight_followup_anchors_from_config,
+    straight_followup_extension_from_config,
 )
 from competition_control.shelf_alignment import ShelfObservation
 
@@ -46,6 +47,11 @@ class PrecisionDockingConfigurationTest(unittest.TestCase):
                 "drop_rear": "drop_front",
             },
         )
+        self.assertAlmostEqual(
+            straight_followup_extension_from_config(dock_params),
+            0.11,
+            delta=1e-9,
+        )
 
     def test_calibrated_followup_starts_at_actual_front_pose_and_stays_straight(
         self,
@@ -64,6 +70,7 @@ class PrecisionDockingConfigurationTest(unittest.TestCase):
             anchor,
             followup,
             speed_mps=0.08,
+            extension_m=0.11,
         )
 
         semantic_distance = (
@@ -72,7 +79,7 @@ class PrecisionDockingConfigurationTest(unittest.TestCase):
         )
         self.assertAlmostEqual(
             math.hypot(target.x - anchor_state.x, target.y - anchor_state.y),
-            semantic_distance,
+            semantic_distance + 0.11,
             delta=1e-9,
         )
         self.assertAlmostEqual(target.yaw, anchor_state.yaw, delta=1e-9)
@@ -88,6 +95,11 @@ class PrecisionDockingConfigurationTest(unittest.TestCase):
         )
 
     def test_shipped_pickup_and_drop_followup_distances_are_valid(self) -> None:
+        dock_params = yaml.safe_load(
+            (REPO_ROOT / "config" / "docking" / "debug_dock_params.yaml")
+            .read_text(encoding="utf-8")
+        )
+        extension_m = straight_followup_extension_from_config(dock_params)
         semantic_map = yaml.safe_load(
             (REPO_ROOT / "maps" / "debug" / "semantic_map.yaml").read_text(
                 encoding="utf-8"
@@ -118,11 +130,22 @@ class PrecisionDockingConfigurationTest(unittest.TestCase):
                 anchor,
                 followup,
                 speed_mps=0.08,
+                extension_m=extension_m,
             )
             distances[followup_ref] = trajectory.points[-1].s
 
-        self.assertAlmostEqual(distances["pickup_rear"], 0.60, delta=0.01)
-        self.assertAlmostEqual(distances["drop_rear"], 0.581, delta=0.01)
+        self.assertAlmostEqual(distances["pickup_rear"], 0.71, delta=0.01)
+        self.assertAlmostEqual(distances["drop_rear"], 0.691, delta=0.01)
+
+    def test_calibrated_followup_rejects_negative_extension(self) -> None:
+        with self.assertRaisesRegex(ValueError, "extension"):
+            calibrated_straight_reference(
+                VehicleState(0.0, 0.0, 0.0, 0.0),
+                MissionCheckpoint("front", 0.0, 0.0, 0.0),
+                MissionCheckpoint("rear", 0.50, 0.0, 0.0),
+                speed_mps=0.08,
+                extension_m=-0.01,
+            )
 
     def test_calibrated_followup_rejects_non_straight_semantic_pair(self) -> None:
         with self.assertRaisesRegex(ValueError, "not a straight forward pair"):

@@ -859,6 +859,41 @@ def docking_mode_is_active(
     )
 
 
+def docking_context_checkpoint(
+    *,
+    current_pose: PathPoint,
+    active_checkpoint: PathPoint | None,
+    active_checkpoint_ref: str | None,
+    departure_checkpoints: Mapping[str, PathPoint],
+    docking_refs: set[str],
+    activation_distance_m: float,
+) -> tuple[PathPoint | None, str | None]:
+    """Choose dock collision geometry without adding a motion-state transition."""
+
+    if docking_mode_is_active(
+        current_pose=current_pose,
+        checkpoint=active_checkpoint,
+        active_checkpoint_ref=active_checkpoint_ref,
+        docking_refs=docking_refs,
+        activation_distance_m=activation_distance_m,
+    ):
+        return active_checkpoint, active_checkpoint_ref
+
+    nearby_departures = tuple(
+        (math.hypot(point.x - current_pose.x, point.y - current_pose.y), ref, point)
+        for ref, point in departure_checkpoints.items()
+        if math.hypot(point.x - current_pose.x, point.y - current_pose.y)
+        <= activation_distance_m + 1e-9
+    )
+    if not nearby_departures:
+        return None, None
+    _, departure_ref, departure_checkpoint = min(
+        nearby_departures,
+        key=lambda item: item[0],
+    )
+    return departure_checkpoint, departure_ref
+
+
 def precision_docking_work_sides(
     dock_records: Iterable[Any],
 ) -> dict[str, str]:

@@ -32,7 +32,7 @@ from competition_planning.local_trajectory_planner import (
     LocalReplanConfig,
     LocalTrajectoryPlanner,
     concatenate_reference_paths,
-    docking_mode_is_active,
+    docking_context_checkpoint,
     docking_shelf_filter_is_active,
     filter_expected_docking_shelf_points,
     occupied_grid_cell_centers,
@@ -83,6 +83,19 @@ class LocalReplannerNode(Node):
         self._dock_work_sides = precision_docking_work_sides(
             semantic_map.get("dock_poses", [])
         )
+        self._dock_departure_refs = {
+            ref.strip()
+            for ref in str(
+                self.declare_parameter("docking_departure_refs_csv", "").value
+            ).split(",")
+            if ref.strip()
+        }
+        unknown_departure_refs = self._dock_departure_refs - set(self._dock_work_sides)
+        if unknown_departure_refs:
+            raise ValueError(
+                "docking departure refs are not pickup/drop docks: "
+                + ", ".join(sorted(unknown_departure_refs))
+            )
         self._config = LocalReplanConfig(
             lookahead_distance_m=float(
                 self.declare_parameter("lookahead_distance_m", 3.00).value
@@ -571,22 +584,29 @@ class LocalReplannerNode(Node):
                 y=float(map_from_base.transform.translation.y),
                 yaw=_yaw_from_quaternion(map_from_base.transform.rotation),
             )
-            docking_mode = docking_mode_is_active(
+            active_checkpoint = (
+                self._semantic_points.get(self._active_checkpoint_ref)
+                if self._active_checkpoint_ref is not None
+                else None
+            )
+            docking_checkpoint, docking_checkpoint_ref = docking_context_checkpoint(
                 current_pose=current_pose,
-                checkpoint=(
-                    self._semantic_points.get(self._active_checkpoint_ref)
-                    if self._active_checkpoint_ref is not None
-                    else None
-                ),
+                active_checkpoint=active_checkpoint,
                 active_checkpoint_ref=self._active_checkpoint_ref,
+                departure_checkpoints={
+                    ref: self._semantic_points[ref]
+                    for ref in self._dock_departure_refs
+                    if ref in self._semantic_points
+                },
                 docking_refs=set(self._dock_work_sides),
                 activation_distance_m=self._docking_activation_distance_m,
             )
+            docking_mode = docking_checkpoint is not None
             if docking_mode != self._docking_mode:
                 self._docking_mode = docking_mode
                 self._planner = LocalTrajectoryPlanner(
                     self._static_map,
-                    self._docking_config(self._active_checkpoint_ref)
+                    self._docking_config(docking_checkpoint_ref)
                     if docking_mode
                     else self._config,
                 )
@@ -597,17 +617,12 @@ class LocalReplannerNode(Node):
             )
             if obstacle_points is None:
                 raise ValueError("docking costmap has no raw occupied cells")
-            checkpoint = (
-                self._semantic_points.get(self._active_checkpoint_ref)
-                if self._active_checkpoint_ref is not None
-                else None
-            )
             if (
                 docking_mode
-                and checkpoint is not None
+                and docking_checkpoint is not None
                 and docking_shelf_filter_is_active(
                     current_pose=current_pose,
-                    checkpoint=checkpoint,
+                    checkpoint=docking_checkpoint,
                     activation_distance_m=self._docking_shelf_filter_distance_m,
                     heading_tolerance_rad=self._config.goal_heading_tolerance_rad,
                 )
@@ -615,9 +630,9 @@ class LocalReplannerNode(Node):
                 obstacle_points, docking_filtered_obstacle_count = (
                     filter_expected_docking_shelf_points(
                         obstacle_points,
-                        checkpoint=checkpoint,
+                        checkpoint=docking_checkpoint,
                         work_side=self._dock_work_sides.get(
-                            str(self._active_checkpoint_ref),
+                            str(docking_checkpoint_ref),
                             "RIGHT",
                         ),
                         vehicle_length_m=self._docking_vehicle_length_m,
@@ -678,6 +693,7 @@ class LocalReplannerNode(Node):
             rejoin_index=result.rejoin_index,
             planning_grid_cell_count=result.planning_grid_cell_count,
             docking_mode=self._docking_mode,
+            docking_context_ref=docking_checkpoint_ref,
             docking_filtered_obstacle_count=docking_filtered_obstacle_count,
         )
 
