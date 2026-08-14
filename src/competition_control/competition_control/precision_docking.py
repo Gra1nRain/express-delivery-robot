@@ -13,6 +13,7 @@ from competition_control.mppi_controller import (
     ControlTrajectoryPoint,
     VehicleState,
 )
+from competition_control.shelf_alignment import ShelfAlignmentConfig, ShelfObservation
 
 
 class RequestedMotionMode(str, Enum):
@@ -29,6 +30,7 @@ class PrecisionDockingPhase(str, Enum):
     POSITION_TRIM = "POSITION_TRIM"
     DOCK_READY = "DOCK_READY"
     ALIGNMENT_HOLD = "ALIGNMENT_HOLD"
+    SHELF_OBSERVATION_HOLD = "SHELF_OBSERVATION_HOLD"
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,14 @@ class PrecisionDockingConfig:
     parallel_gain: float = 0.8
     parallel_min_speed_mps: float = 0.04
     parallel_max_speed_mps: float = 0.06
+    shelf_relative_enabled: bool = False
+    shelf_side: str = "RIGHT"
+    vehicle_half_width_m: float = 0.25
+    target_side_clearance_m: float = 0.28
+    minimum_side_clearance_m: float = 0.12
+    shelf_capture_distance_m: float = 0.20
+    shelf_observation_max_age_s: float = 0.25
+    shelf_alignment: ShelfAlignmentConfig = ShelfAlignmentConfig()
 
     def __post_init__(self) -> None:
         if not (
@@ -80,6 +90,39 @@ class PrecisionDockingConfig:
             raise ValueError("spin rates must satisfy 0 < min <= max")
         if not (0.0 < self.parallel_min_speed_mps <= self.parallel_max_speed_mps):
             raise ValueError("parallel speeds must satisfy 0 < min <= max")
+        if self.shelf_relative_enabled:
+            if self.shelf_side not in {"LEFT", "RIGHT"}:
+                raise ValueError("precision shelf side must be LEFT or RIGHT")
+            if self.shelf_alignment.side != self.shelf_side:
+                raise ValueError("precision shelf side must match scan fit side")
+            if not (
+                self.vehicle_half_width_m > 0.0
+                and self.target_side_clearance_m > self.minimum_side_clearance_m > 0.0
+            ):
+                raise ValueError(
+                    "precision shelf clearances must satisfy target > minimum > 0"
+                )
+            if not (
+                self.activation_distance_m
+                >= self.shelf_capture_distance_m
+                >= self.trim_entry_distance_m
+            ):
+                raise ValueError(
+                    "precision shelf capture must be between trim entry and activation"
+                )
+            if self.shelf_observation_max_age_s <= 0.0:
+                raise ValueError("precision shelf observation age must be positive")
+            target_sensor_distance = (
+                self.vehicle_half_width_m + self.target_side_clearance_m
+            )
+            if not (
+                self.shelf_alignment.min_side_distance_m
+                <= target_sensor_distance
+                <= self.shelf_alignment.max_side_distance_m
+            ):
+                raise ValueError(
+                    "precision shelf scan window must contain the target distance"
+                )
 
 
 @dataclass(frozen=True)
@@ -94,6 +137,8 @@ class PrecisionDockingDecision:
     pose_ready: bool = False
     position_error_m: float = math.inf
     heading_error_rad: float = math.inf
+    shelf_relative_active: bool = False
+    shelf_clearance_m: float | None = None
 
 
 def precision_docking_configs_from_dict(
@@ -128,6 +173,17 @@ def precision_docking_configs_from_dict(
                 f"unknown precision profile {profile_name!r} for checkpoint {ref!r}"
             )
         try:
+            shelf = raw.get("shelf_relative", {})
+            if shelf is None:
+                shelf = {}
+            if not isinstance(shelf, dict):
+                raise ValueError("shelf_relative must be a mapping")
+            scan_fit = shelf.get("scan_fit", {})
+            if scan_fit is None:
+                scan_fit = {}
+            if not isinstance(scan_fit, dict):
+                raise ValueError("shelf_relative.scan_fit must be a mapping")
+            shelf_side = str(shelf.get("side", "RIGHT")).strip().upper()
             resolved[ref] = PrecisionDockingConfig(
                 activation_distance_m=float(raw["activation_distance_m"]),
                 trim_entry_distance_m=float(raw["trim_entry_distance_m"]),
@@ -161,6 +217,47 @@ def precision_docking_configs_from_dict(
                 parallel_gain=float(raw.get("parallel_gain", 0.8)),
                 parallel_min_speed_mps=float(raw.get("parallel_min_speed_mps", 0.04)),
                 parallel_max_speed_mps=float(raw.get("parallel_max_speed_mps", 0.06)),
+                shelf_relative_enabled=_as_bool(shelf.get("enabled", False)),
+                shelf_side=shelf_side,
+                vehicle_half_width_m=float(shelf.get("vehicle_half_width_m", 0.25)),
+                target_side_clearance_m=float(
+                    shelf.get("target_side_clearance_m", 0.28)
+                ),
+                minimum_side_clearance_m=float(
+                    shelf.get("minimum_side_clearance_m", 0.12)
+                ),
+                shelf_capture_distance_m=float(
+                    shelf.get("capture_distance_m", 0.20)
+                ),
+                shelf_observation_max_age_s=float(
+                    shelf.get("observation_max_age_s", 0.25)
+                ),
+                shelf_alignment=ShelfAlignmentConfig(
+                    side=shelf_side,
+                    min_range_m=float(scan_fit.get("min_range_m", 0.10)),
+                    max_range_m=float(scan_fit.get("max_range_m", 1.50)),
+                    min_longitudinal_m=float(
+                        scan_fit.get("min_longitudinal_m", -0.60)
+                    ),
+                    max_longitudinal_m=float(
+                        scan_fit.get("max_longitudinal_m", 0.80)
+                    ),
+                    min_side_distance_m=float(
+                        scan_fit.get("min_side_distance_m", 0.20)
+                    ),
+                    max_side_distance_m=float(
+                        scan_fit.get("max_side_distance_m", 1.00)
+                    ),
+                    min_points=int(scan_fit.get("min_points", 12)),
+                    min_span_m=float(scan_fit.get("min_span_m", 0.30)),
+                    max_residual_m=float(scan_fit.get("max_residual_m", 0.025)),
+                    max_heading_error_rad=math.radians(
+                        float(scan_fit.get("max_heading_error_deg", 15.0))
+                    ),
+                    max_candidate_points=int(
+                        scan_fit.get("max_candidate_points", 96)
+                    ),
+                ),
             )
         except (KeyError, TypeError, ValueError) as exc:
             if isinstance(exc, ValueError) and str(exc).startswith("precision"):
@@ -231,6 +328,7 @@ class PrecisionDockingController:
         self._phase = PrecisionDockingPhase.NORMAL_NAV
         self._settle_started_s: float | None = None
         self._stable_started_s: float | None = None
+        self._shelf_relative_latched = False
 
     def update(
         self,
@@ -239,22 +337,68 @@ class PrecisionDockingController:
         state: VehicleState,
         checkpoint: MissionCheckpoint,
         yaw_rate_radps: float,
+        shelf_observation: ShelfObservation | None = None,
     ) -> PrecisionDockingDecision:
         if not math.isfinite(now_s):
             raise ValueError("now_s must be finite")
         dx = checkpoint.x - state.x
         dy = checkpoint.y - state.y
-        position_error = math.hypot(dx, dy)
+        map_position_error = math.hypot(dx, dy)
         heading_error = _wrap_angle(checkpoint.yaw - state.yaw)
+        cos_yaw = math.cos(state.yaw)
+        sin_yaw = math.sin(state.yaw)
+        body_x_error = cos_yaw * dx + sin_yaw * dy
+        body_y_error = -sin_yaw * dx + cos_yaw * dy
+        shelf_clearance_m: float | None = None
+        shelf_relative_active = False
 
-        if position_error > self._config.activation_distance_m:
+        if map_position_error > self._config.activation_distance_m:
             self.reset()
             return self._decision(
                 PrecisionDockingPhase.NORMAL_NAV,
-                position_error,
+                map_position_error,
                 heading_error,
             )
-        if position_error > self._config.trim_entry_distance_m:
+
+        if self._config.shelf_relative_enabled:
+            should_capture = (
+                self._shelf_relative_latched
+                or abs(body_x_error) <= self._config.shelf_capture_distance_m
+            )
+            if should_capture:
+                self._shelf_relative_latched = True
+                if shelf_observation is None:
+                    self._phase = PrecisionDockingPhase.SHELF_OBSERVATION_HOLD
+                    self._settle_started_s = None
+                    self._stable_started_s = None
+                    return self._decision(
+                        self._phase,
+                        map_position_error,
+                        heading_error,
+                        use_fixed_reference=True,
+                        shelf_relative_active=True,
+                    )
+                shelf_relative_active = True
+                shelf_clearance_m = (
+                    shelf_observation.side_distance_m
+                    - self._config.vehicle_half_width_m
+                )
+                clearance_error = (
+                    shelf_clearance_m - self._config.target_side_clearance_m
+                )
+                side_sign = 1.0 if self._config.shelf_side == "LEFT" else -1.0
+                body_y_error = side_sign * clearance_error
+                position_error = math.hypot(body_x_error, clearance_error)
+                heading_error = shelf_observation.heading_error_rad
+            else:
+                position_error = map_position_error
+        else:
+            position_error = map_position_error
+
+        if (
+            not shelf_relative_active
+            and position_error > self._config.trim_entry_distance_m
+        ):
             self._phase = PrecisionDockingPhase.PRECISION_APPROACH
             self._settle_started_s = None
             self._stable_started_s = None
@@ -273,7 +417,14 @@ class PrecisionDockingController:
             PrecisionDockingPhase.NORMAL_NAV,
             PrecisionDockingPhase.PRECISION_APPROACH,
         ):
-            return self._settle(now_s, stopped, position_error, heading_error)
+            return self._settle(
+                now_s,
+                stopped,
+                position_error,
+                heading_error,
+                shelf_relative_active=shelf_relative_active,
+                shelf_clearance_m=shelf_clearance_m,
+            )
         if self._phase == PrecisionDockingPhase.STOP_SETTLE:
             if not stopped:
                 self._settle_started_s = None
@@ -282,6 +433,8 @@ class PrecisionDockingController:
                     position_error,
                     heading_error,
                     use_fixed_reference=True,
+                    shelf_relative_active=shelf_relative_active,
+                    shelf_clearance_m=shelf_clearance_m,
                 )
             if self._settle_started_s is None:
                 self._settle_started_s = now_s
@@ -291,13 +444,44 @@ class PrecisionDockingController:
                     position_error,
                     heading_error,
                     use_fixed_reference=True,
+                    shelf_relative_active=shelf_relative_active,
+                    shelf_clearance_m=shelf_clearance_m,
                 )
             return self._select_trim(
-                now_s, state, checkpoint, position_error, heading_error
+                now_s,
+                state,
+                checkpoint,
+                position_error,
+                heading_error,
+                body_x_error=body_x_error,
+                body_y_error=body_y_error,
+                shelf_relative_active=shelf_relative_active,
+                shelf_clearance_m=shelf_clearance_m,
+                shelf_observation=shelf_observation,
             )
         if self._phase == PrecisionDockingPhase.HEADING_TRIM:
+            if (
+                shelf_relative_active
+                and shelf_clearance_m is not None
+                and shelf_clearance_m < self._config.minimum_side_clearance_m
+            ):
+                return self._settle(
+                    now_s,
+                    stopped,
+                    position_error,
+                    heading_error,
+                    shelf_relative_active=True,
+                    shelf_clearance_m=shelf_clearance_m,
+                )
             if abs(heading_error) <= self._config.heading_trim_target_rad:
-                return self._settle(now_s, stopped, position_error, heading_error)
+                return self._settle(
+                    now_s,
+                    stopped,
+                    position_error,
+                    heading_error,
+                    shelf_relative_active=shelf_relative_active,
+                    shelf_clearance_m=shelf_clearance_m,
+                )
             if abs(heading_error) > self._config.max_spin_correction_rad:
                 return self._alignment_hold(position_error, heading_error)
             yaw_rate = _bounded_signed(
@@ -312,16 +496,45 @@ class PrecisionDockingController:
                 mode=RequestedMotionMode.SPIN,
                 yaw_rate_radps=yaw_rate,
                 use_fixed_reference=True,
+                shelf_relative_active=shelf_relative_active,
+                shelf_clearance_m=shelf_clearance_m,
             )
         if self._phase == PrecisionDockingPhase.POSITION_TRIM:
             if abs(heading_error) > self._config.heading_realign_tolerance_rad:
-                return self._settle(now_s, stopped, position_error, heading_error)
+                return self._settle(
+                    now_s,
+                    stopped,
+                    position_error,
+                    heading_error,
+                    shelf_relative_active=shelf_relative_active,
+                    shelf_clearance_m=shelf_clearance_m,
+                )
             if position_error <= self._config.final_position_tolerance_m:
-                return self._settle(now_s, stopped, position_error, heading_error)
-            if position_error > self._config.max_parallel_correction_m:
+                return self._settle(
+                    now_s,
+                    stopped,
+                    position_error,
+                    heading_error,
+                    shelf_relative_active=shelf_relative_active,
+                    shelf_clearance_m=shelf_clearance_m,
+                )
+            if (
+                shelf_relative_active
+                and shelf_clearance_m is not None
+                and shelf_clearance_m < self._config.minimum_side_clearance_m
+            ):
+                body_x_error = 0.0
+            elif position_error > self._config.max_parallel_correction_m:
                 return self._alignment_hold(position_error, heading_error)
             return self._parallel_command(
-                state, checkpoint, position_error, heading_error
+                state,
+                checkpoint,
+                position_error,
+                heading_error,
+                body_x_error=body_x_error,
+                body_y_error=body_y_error,
+                shelf_relative_active=shelf_relative_active,
+                shelf_clearance_m=shelf_clearance_m,
             )
         if self._phase == PrecisionDockingPhase.DOCK_READY:
             if (
@@ -330,7 +543,14 @@ class PrecisionDockingController:
                 or not stopped
             ):
                 self._stable_started_s = None
-                return self._settle(now_s, stopped, position_error, heading_error)
+                return self._settle(
+                    now_s,
+                    stopped,
+                    position_error,
+                    heading_error,
+                    shelf_relative_active=shelf_relative_active,
+                    shelf_clearance_m=shelf_clearance_m,
+                )
             if self._stable_started_s is None:
                 self._stable_started_s = now_s
             return self._decision(
@@ -341,14 +561,32 @@ class PrecisionDockingController:
                 pose_ready=(
                     now_s - self._stable_started_s >= self._config.stable_time_s
                 ),
+                shelf_relative_active=shelf_relative_active,
+                shelf_clearance_m=shelf_clearance_m,
             )
         if self._phase == PrecisionDockingPhase.ALIGNMENT_HOLD:
             if (
                 abs(heading_error) <= self._config.max_spin_correction_rad
                 and position_error <= self._config.max_parallel_correction_m
             ):
-                return self._settle(now_s, stopped, position_error, heading_error)
+                return self._settle(
+                    now_s,
+                    stopped,
+                    position_error,
+                    heading_error,
+                    shelf_relative_active=shelf_relative_active,
+                    shelf_clearance_m=shelf_clearance_m,
+                )
             return self._alignment_hold(position_error, heading_error)
+        if self._phase == PrecisionDockingPhase.SHELF_OBSERVATION_HOLD:
+            return self._settle(
+                now_s,
+                stopped,
+                position_error,
+                heading_error,
+                shelf_relative_active=shelf_relative_active,
+                shelf_clearance_m=shelf_clearance_m,
+            )
         return self._alignment_hold(position_error, heading_error)
 
     def _settle(
@@ -357,6 +595,9 @@ class PrecisionDockingController:
         stopped: bool,
         position_error: float,
         heading_error: float,
+        *,
+        shelf_relative_active: bool = False,
+        shelf_clearance_m: float | None = None,
     ) -> PrecisionDockingDecision:
         self._phase = PrecisionDockingPhase.STOP_SETTLE
         self._stable_started_s = None
@@ -366,6 +607,8 @@ class PrecisionDockingController:
             position_error,
             heading_error,
             use_fixed_reference=True,
+            shelf_relative_active=shelf_relative_active,
+            shelf_clearance_m=shelf_clearance_m,
         )
 
     def _select_trim(
@@ -375,8 +618,30 @@ class PrecisionDockingController:
         checkpoint: MissionCheckpoint,
         position_error: float,
         heading_error: float,
+        *,
+        body_x_error: float,
+        body_y_error: float,
+        shelf_relative_active: bool,
+        shelf_clearance_m: float | None,
+        shelf_observation: ShelfObservation | None,
     ) -> PrecisionDockingDecision:
         self._settle_started_s = None
+        if (
+            shelf_relative_active
+            and shelf_clearance_m is not None
+            and shelf_clearance_m < self._config.minimum_side_clearance_m
+        ):
+            self._phase = PrecisionDockingPhase.POSITION_TRIM
+            return self._parallel_command(
+                state,
+                checkpoint,
+                position_error,
+                heading_error,
+                body_x_error=0.0,
+                body_y_error=body_y_error,
+                shelf_relative_active=True,
+                shelf_clearance_m=shelf_clearance_m,
+            )
         if abs(heading_error) > self._config.max_spin_correction_rad:
             return self._alignment_hold(position_error, heading_error)
         if abs(heading_error) > self._config.heading_realign_tolerance_rad:
@@ -386,13 +651,21 @@ class PrecisionDockingController:
                 state=state,
                 checkpoint=checkpoint,
                 yaw_rate_radps=0.0,
+                shelf_observation=shelf_observation,
             )
         if position_error > self._config.max_parallel_correction_m:
             return self._alignment_hold(position_error, heading_error)
         if position_error > self._config.final_position_tolerance_m:
             self._phase = PrecisionDockingPhase.POSITION_TRIM
             return self._parallel_command(
-                state, checkpoint, position_error, heading_error
+                state,
+                checkpoint,
+                position_error,
+                heading_error,
+                body_x_error=body_x_error,
+                body_y_error=body_y_error,
+                shelf_relative_active=shelf_relative_active,
+                shelf_clearance_m=shelf_clearance_m,
             )
         self._phase = PrecisionDockingPhase.DOCK_READY
         self._stable_started_s = now_s
@@ -401,6 +674,8 @@ class PrecisionDockingController:
             position_error,
             heading_error,
             use_fixed_reference=True,
+            shelf_relative_active=shelf_relative_active,
+            shelf_clearance_m=shelf_clearance_m,
         )
 
     def _parallel_command(
@@ -409,15 +684,21 @@ class PrecisionDockingController:
         checkpoint: MissionCheckpoint,
         position_error: float,
         heading_error: float,
+        *,
+        body_x_error: float | None = None,
+        body_y_error: float | None = None,
+        shelf_relative_active: bool = False,
+        shelf_clearance_m: float | None = None,
     ) -> PrecisionDockingDecision:
-        dx = checkpoint.x - state.x
-        dy = checkpoint.y - state.y
-        cos_yaw = math.cos(state.yaw)
-        sin_yaw = math.sin(state.yaw)
-        body_x = cos_yaw * dx + sin_yaw * dy
-        body_y = -sin_yaw * dx + cos_yaw * dy
-        raw_x = self._config.parallel_gain * body_x
-        raw_y = self._config.parallel_gain * body_y
+        if body_x_error is None or body_y_error is None:
+            dx = checkpoint.x - state.x
+            dy = checkpoint.y - state.y
+            cos_yaw = math.cos(state.yaw)
+            sin_yaw = math.sin(state.yaw)
+            body_x_error = cos_yaw * dx + sin_yaw * dy
+            body_y_error = -sin_yaw * dx + cos_yaw * dy
+        raw_x = self._config.parallel_gain * body_x_error
+        raw_y = self._config.parallel_gain * body_y_error
         magnitude = math.hypot(raw_x, raw_y)
         if magnitude <= 1e-12:
             return self._alignment_hold(position_error, heading_error)
@@ -434,6 +715,8 @@ class PrecisionDockingController:
             linear_x_mps=raw_x * scale,
             linear_y_mps=raw_y * scale,
             use_fixed_reference=True,
+            shelf_relative_active=shelf_relative_active,
+            shelf_clearance_m=shelf_clearance_m,
         )
 
     def _alignment_hold(
@@ -461,6 +744,8 @@ class PrecisionDockingController:
         yaw_rate_radps: float = 0.0,
         use_fixed_reference: bool = False,
         pose_ready: bool = False,
+        shelf_relative_active: bool = False,
+        shelf_clearance_m: float | None = None,
     ) -> PrecisionDockingDecision:
         return PrecisionDockingDecision(
             phase=phase,
@@ -473,6 +758,8 @@ class PrecisionDockingController:
             pose_ready=pose_ready,
             position_error_m=position_error,
             heading_error_rad=heading_error,
+            shelf_relative_active=shelf_relative_active,
+            shelf_clearance_m=shelf_clearance_m,
         )
 
 
@@ -484,3 +771,15 @@ def _bounded_signed(value: float, minimum: float, maximum: float) -> float:
 
 def _wrap_angle(angle: float) -> float:
     return (angle + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "on", "1"}:
+            return True
+        if normalized in {"false", "no", "off", "0"}:
+            return False
+    raise ValueError(f"expected boolean, got {value!r}")

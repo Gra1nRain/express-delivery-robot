@@ -19,6 +19,7 @@ from nav_msgs.msg import Odometry, Path as NavPath
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Bool, String, UInt32
 from tf2_ros import Buffer, TransformException, TransformListener
 import yaml
@@ -49,11 +50,16 @@ from competition_control.mppi_controller import (
     shape_checkpoint_approach_command,
 )
 from competition_control.precision_docking import (
+    PrecisionDockingConfig,
     PrecisionDockingController,
     PrecisionDockingPhase,
     RequestedMotionMode,
     fixed_reference_to_checkpoint,
     precision_docking_configs_from_dict,
+)
+from competition_control.shelf_alignment import (
+    ShelfObservation,
+    estimate_shelf_from_scan,
 )
 from competition_control.segmented_route_state_machine import (
     SegmentedRouteConfig,
@@ -185,6 +191,10 @@ class MPPIControlNode(Node):
         self._precision_active = False
         self._precision_phase = PrecisionDockingPhase.NORMAL_NAV.value
         self._requested_motion_mode = RequestedMotionMode.DUAL_ACKERMANN.value
+        self._latest_shelf_observation: ShelfObservation | None = None
+        self._latest_shelf_observation_stamp_s: float | None = None
+        self._shelf_relative_active = False
+        self._shelf_clearance_m: float | None = None
         trajectory = self._global_trajectory
         if trajectory.frame_id != self._map_frame:
             raise ValueError(
@@ -377,6 +387,16 @@ class MPPIControlNode(Node):
             odom_topic,
             self._odom_callback,
             20,
+        )
+        scan_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+        )
+        self._shelf_scan_subscription = self.create_subscription(
+            LaserScan,
+            str(self.declare_parameter("shelf_scan_topic", "/scan").value),
+            self._shelf_scan_callback,
+            scan_qos,
         )
         self._command_publisher = self.create_publisher(
             TwistStamped,
@@ -697,6 +717,25 @@ class MPPIControlNode(Node):
     def _avoidance_stop_callback(self, message: Bool) -> None:
         self._avoidance_stop_requested = bool(message.data)
 
+    def _shelf_scan_callback(self, message: LaserScan) -> None:
+        config = self._active_precision_config()
+        if config is None or not config.shelf_relative_enabled:
+            self._latest_shelf_observation = None
+            self._latest_shelf_observation_stamp_s = None
+            return
+        observation = estimate_shelf_from_scan(
+            message.ranges,
+            angle_min_rad=float(message.angle_min),
+            angle_increment_rad=float(message.angle_increment),
+            config=config.shelf_alignment,
+        )
+        self._latest_shelf_observation = observation
+        self._latest_shelf_observation_stamp_s = (
+            self.get_clock().now().nanoseconds * 1e-9
+            if observation is not None
+            else None
+        )
+
     def _activate_checkpoint(self, checkpoint_index: int) -> None:
         self._active_checkpoint_index = checkpoint_index
         self._accepted_local_geometry = None
@@ -730,6 +769,7 @@ class MPPIControlNode(Node):
         longitudinal_error_m = checkpoint_longitudinal_error(state, goal)
         precision_decision = None
         if self._route_enabled and self._precision_controller is not None:
+            shelf_observation = self._fresh_shelf_observation(now_s)
             precision_decision = self._precision_controller.update(
                 now_s=now_s,
                 state=state,
@@ -739,9 +779,15 @@ class MPPIControlNode(Node):
                     if self._latest_velocity is not None
                     else 0.0
                 ),
+                shelf_observation=shelf_observation,
             )
             self._precision_phase = precision_decision.phase.value
             self._requested_motion_mode = precision_decision.motion_mode.value
+            self._shelf_relative_active = precision_decision.shelf_relative_active
+            self._shelf_clearance_m = precision_decision.shelf_clearance_m
+            if precision_decision.shelf_relative_active:
+                position_error_m = precision_decision.position_error_m
+                heading_error_rad = precision_decision.heading_error_rad
             if precision_decision.use_fixed_reference and not self._precision_active:
                 self._controller.replace_trajectory(
                     fixed_reference_to_checkpoint(
@@ -762,6 +808,8 @@ class MPPIControlNode(Node):
         else:
             self._precision_phase = PrecisionDockingPhase.NORMAL_NAV.value
             self._requested_motion_mode = RequestedMotionMode.DUAL_ACKERMANN.value
+            self._shelf_relative_active = False
+            self._shelf_clearance_m = None
 
         local_plan_unavailable = (
             self._replanning_enabled
@@ -1032,6 +1080,21 @@ class MPPIControlNode(Node):
                         "precision_phase": self._precision_phase,
                         "precision_fixed_reference": self._precision_active,
                         "requested_motion_mode": self._requested_motion_mode,
+                        "shelf_relative_active": self._shelf_relative_active,
+                        "shelf_clearance_m": self._shelf_clearance_m,
+                        "shelf_observation_age_s": self._shelf_observation_age_s(
+                            now_s
+                        ),
+                        "shelf_observation_points": (
+                            self._latest_shelf_observation.point_count
+                            if self._latest_shelf_observation is not None
+                            else None
+                        ),
+                        "shelf_observation_residual_m": (
+                            self._latest_shelf_observation.residual_rms_m
+                            if self._latest_shelf_observation is not None
+                            else None
+                        ),
                     },
                     separators=(",", ":"),
                 )
@@ -1043,10 +1106,38 @@ class MPPIControlNode(Node):
             return None
         return now_s - self._latest_local_plan_stamp_s
 
+    def _active_precision_config(self) -> PrecisionDockingConfig | None:
+        if not self._mission_checkpoints:
+            return None
+        checkpoint = self._mission_checkpoints[self._active_checkpoint_index]
+        return self._precision_configs.get(checkpoint.ref_id)
+
+    def _shelf_observation_age_s(self, now_s: float) -> float | None:
+        if self._latest_shelf_observation_stamp_s is None:
+            return None
+        return max(0.0, now_s - self._latest_shelf_observation_stamp_s)
+
+    def _fresh_shelf_observation(self, now_s: float) -> ShelfObservation | None:
+        config = self._active_precision_config()
+        age_s = self._shelf_observation_age_s(now_s)
+        if (
+            config is None
+            or not config.shelf_relative_enabled
+            or self._latest_shelf_observation is None
+            or age_s is None
+            or age_s > config.shelf_observation_max_age_s
+        ):
+            return None
+        return self._latest_shelf_observation
+
     def _reset_precision_controller(self) -> None:
         self._precision_active = False
         self._precision_phase = PrecisionDockingPhase.NORMAL_NAV.value
         self._requested_motion_mode = RequestedMotionMode.DUAL_ACKERMANN.value
+        self._latest_shelf_observation = None
+        self._latest_shelf_observation_stamp_s = None
+        self._shelf_relative_active = False
+        self._shelf_clearance_m = None
         if not self._mission_checkpoints:
             self._precision_controller = None
             return

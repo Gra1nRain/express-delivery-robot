@@ -273,6 +273,19 @@ class RelayMonitor(Node):
                 "active_checkpoint_ref"
             )
             self.data["precision_phase"] = parsed.get("precision_phase")
+            self.data["shelf_relative_active"] = parsed.get(
+                "shelf_relative_active"
+            )
+            self.data["shelf_clearance_m"] = parsed.get("shelf_clearance_m")
+            self.data["shelf_observation_age_s"] = parsed.get(
+                "shelf_observation_age_s"
+            )
+            self.data["shelf_observation_points"] = parsed.get(
+                "shelf_observation_points"
+            )
+            self.data["shelf_observation_residual_m"] = parsed.get(
+                "shelf_observation_residual_m"
+            )
         elif key == "local_status" and parsed is not None:
             self.data["local_status_value"] = parsed.get("status")
             self.data["local_reference_start_index"] = parsed.get("reference_start_index")

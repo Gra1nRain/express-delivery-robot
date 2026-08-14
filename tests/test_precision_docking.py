@@ -22,6 +22,7 @@ from competition_control.precision_docking import (
     fixed_reference_to_checkpoint,
     precision_docking_configs_from_dict,
 )
+from competition_control.shelf_alignment import ShelfObservation
 
 
 class PrecisionDockingConfigurationTest(unittest.TestCase):
@@ -93,18 +94,27 @@ class PrecisionDockingConfigurationTest(unittest.TestCase):
                 yaw=math.radians(-3.47),
                 linear_speed_mps=0.0,
             )
+            shelf_observation = ShelfObservation(
+                side_distance_m=0.44,
+                heading_error_rad=0.0,
+                point_count=30,
+                residual_rms_m=0.01,
+                span_m=0.60,
+            )
 
             controller.update(
                 now_s=0.0,
                 state=state,
                 checkpoint=checkpoint,
                 yaw_rate_radps=0.0,
+                shelf_observation=shelf_observation,
             )
             decision = controller.update(
                 now_s=0.31,
                 state=state,
                 checkpoint=checkpoint,
                 yaw_rate_radps=0.0,
+                shelf_observation=shelf_observation,
             )
 
             self.assertEqual(
@@ -276,6 +286,98 @@ class PrecisionDockingControllerTest(unittest.TestCase):
         self.assertEqual(stable_started.phase, PrecisionDockingPhase.DOCK_READY)
         self.assertFalse(not_ready.pose_ready)
         self.assertTrue(ready.pose_ready)
+
+
+class ShelfRelativePrecisionDockingTest(unittest.TestCase):
+    def setUp(self) -> None:
+        configs = precision_docking_configs_from_dict(
+            {"precision_docking": {"checkpoints": {"dock": "shelf"}}},
+            {
+                "precision_profiles": {
+                    "shelf": {
+                        "activation_distance_m": 1.5,
+                        "trim_entry_distance_m": 0.10,
+                        "final_position_tolerance_m": 0.03,
+                        "heading_realign_tolerance_deg": 4.0,
+                        "heading_trim_target_deg": 2.0,
+                        "max_parallel_correction_m": 0.35,
+                        "shelf_relative": {
+                            "enabled": True,
+                            "side": "RIGHT",
+                            "vehicle_half_width_m": 0.25,
+                            "target_side_clearance_m": 0.28,
+                            "minimum_side_clearance_m": 0.12,
+                            "capture_distance_m": 0.20,
+                        },
+                    }
+                }
+            },
+        )
+        self.controller = PrecisionDockingController(configs["dock"])
+        self.goal = MissionCheckpoint("dock", 0.0, 0.0, 0.0)
+
+    @staticmethod
+    def observation(distance_m: float, heading_deg: float = 0.0) -> ShelfObservation:
+        return ShelfObservation(
+            side_distance_m=distance_m,
+            heading_error_rad=math.radians(heading_deg),
+            point_count=30,
+            residual_rms_m=0.01,
+            span_m=0.60,
+        )
+
+    def update(self, now_s: float, *, x: float, y: float, observation=None):
+        return self.controller.update(
+            now_s=now_s,
+            state=VehicleState(x=x, y=y, yaw=0.0, linear_speed_mps=0.0),
+            checkpoint=self.goal,
+            yaw_rate_radps=0.0,
+            shelf_observation=observation,
+        )
+
+    def test_map_lateral_error_is_replaced_by_measured_shelf_clearance(self) -> None:
+        observation = self.observation(0.53)
+        first = self.update(0.0, x=-0.05, y=0.18, observation=observation)
+        ready = self.update(0.31, x=-0.05, y=0.18, observation=observation)
+
+        self.assertEqual(first.phase, PrecisionDockingPhase.STOP_SETTLE)
+        self.assertEqual(ready.phase, PrecisionDockingPhase.POSITION_TRIM)
+        self.assertAlmostEqual(ready.linear_y_mps, 0.0, delta=1e-9)
+        self.assertGreater(ready.linear_x_mps, 0.0)
+        self.assertTrue(ready.shelf_relative_active)
+
+    def test_too_close_vehicle_moves_away_from_right_shelf(self) -> None:
+        observation = self.observation(0.34)
+        self.update(0.0, x=-0.05, y=0.0, observation=observation)
+        decision = self.update(0.31, x=-0.05, y=0.0, observation=observation)
+
+        self.assertEqual(decision.phase, PrecisionDockingPhase.POSITION_TRIM)
+        self.assertGreater(decision.linear_y_mps, 0.0)
+        self.assertEqual(decision.linear_x_mps, 0.0)
+
+    def test_emergency_clearance_retreat_is_not_blocked_by_trim_limit(self) -> None:
+        observation = self.observation(0.20)
+        self.update(0.0, x=-0.15, y=0.0, observation=observation)
+        first_retreat = self.update(0.31, x=-0.15, y=0.0, observation=observation)
+        continuing_retreat = self.update(
+            0.36,
+            x=-0.15,
+            y=0.0,
+            observation=observation,
+        )
+
+        self.assertGreater(first_retreat.linear_y_mps, 0.0)
+        self.assertGreater(continuing_retreat.linear_y_mps, 0.0)
+        self.assertEqual(continuing_retreat.phase, PrecisionDockingPhase.POSITION_TRIM)
+
+    def test_missing_observation_holds_after_shelf_capture(self) -> None:
+        decision = self.update(0.0, x=-0.05, y=0.0, observation=None)
+
+        self.assertEqual(decision.phase, PrecisionDockingPhase.SHELF_OBSERVATION_HOLD)
+        self.assertEqual(
+            (decision.linear_x_mps, decision.linear_y_mps, decision.yaw_rate_radps),
+            (0.0, 0.0, 0.0),
+        )
 
 
 if __name__ == "__main__":
