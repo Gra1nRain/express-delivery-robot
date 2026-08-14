@@ -51,6 +51,16 @@ class StartupAlignmentNode(Node):
                 max_best_median_residual_m=float(
                     self.declare_parameter("max_best_median_residual_m", 0.05).value
                 ),
+                max_acceptable_baseline_median_m=float(
+                    self.declare_parameter(
+                        "max_acceptable_baseline_median_m", 0.08
+                    ).value
+                ),
+                min_acceptable_baseline_inlier_ratio=float(
+                    self.declare_parameter(
+                        "min_acceptable_baseline_inlier_ratio", 0.50
+                    ).value
+                ),
                 max_startup_translation_m=float(
                     self.declare_parameter("max_startup_translation_m", 0.50).value
                 ),
@@ -218,6 +228,8 @@ class StartupAlignmentNode(Node):
                     y=float(status["correction_y_m"]),
                     yaw=float(status["correction_yaw_rad"]),
                 ),
+                baseline_median_residual_m=float(status["baseline_median_residual_m"]),
+                baseline_inlier_ratio=float(status["baseline_inlier_ratio"]),
             )
         except (KeyError, TypeError, ValueError):
             return

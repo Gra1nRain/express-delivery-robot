@@ -34,6 +34,8 @@ class AlignmentConfig:
     max_sample_yaw_spread_rad: float = math.radians(1.0)
     min_inlier_ratio: float = 0.60
     max_best_median_residual_m: float = 0.05
+    max_acceptable_baseline_median_m: float = 0.08
+    min_acceptable_baseline_inlier_ratio: float = 0.50
     max_startup_translation_m: float = 0.50
     max_startup_yaw_rad: float = math.radians(10.0)
     max_checkpoint_translation_m: float = 0.20
@@ -52,6 +54,8 @@ class AlignmentObservation:
     best_median_residual_m: float
     inlier_ratio: float
     residual_correction: PlanarTransform | None = None
+    baseline_median_residual_m: float = math.inf
+    baseline_inlier_ratio: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -165,11 +169,14 @@ class StartupAlignment:
         return self._decision(reason)
 
     def _usable(self, observation: AlignmentObservation) -> bool:
+        common = observation.stationary and observation.correction.is_finite()
+        if not common:
+            return False
+        if self._coarse_anchor_acceptable(observation):
+            return True
         return (
-            observation.stationary
-            and observation.confident
+            observation.confident
             and not observation.search_boundary_hit
-            and observation.correction.is_finite()
             and observation.best_median_residual_m
             <= self._config.max_best_median_residual_m
             and observation.inlier_ratio >= self._config.min_inlier_ratio
@@ -207,15 +214,28 @@ class StartupAlignment:
             for sample in self._samples
         )
 
-    @staticmethod
     def _sample_correction(
+        self,
         sample: AlignmentObservation,
         *,
         use_residual: bool,
     ) -> PlanarTransform:
+        if self._coarse_anchor_acceptable(sample):
+            return PlanarTransform(0.0, 0.0, 0.0)
         if use_residual and sample.residual_correction is not None:
             return sample.residual_correction
         return sample.correction
+
+    def _coarse_anchor_acceptable(
+        self,
+        observation: AlignmentObservation,
+    ) -> bool:
+        return (
+            observation.baseline_median_residual_m
+            <= self._config.max_acceptable_baseline_median_m
+            and observation.baseline_inlier_ratio
+            >= self._config.min_acceptable_baseline_inlier_ratio
+        )
 
     def _within_mode_limit(self, correction: PlanarTransform) -> bool:
         assert self._mode is not None

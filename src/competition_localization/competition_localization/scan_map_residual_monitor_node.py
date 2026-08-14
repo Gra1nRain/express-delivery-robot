@@ -284,6 +284,8 @@ class ScanMapResidualMonitor(Node):
             "anchor_correction_y_m": anchor_correction.y,
             "anchor_correction_yaw_rad": anchor_correction.yaw,
             "baseline_mean_residual_m": result.baseline_mean_residual_m,
+            "baseline_median_residual_m": result.baseline_median_residual_m,
+            "baseline_inlier_ratio": result.baseline_inlier_ratio,
             "best_mean_residual_m": result.best_mean_residual_m,
             "best_median_residual_m": result.best_median_residual_m,
             "best_p90_residual_m": result.best_p90_residual_m,

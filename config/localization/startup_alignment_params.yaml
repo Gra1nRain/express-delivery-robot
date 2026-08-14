@@ -12,6 +12,10 @@ startup_alignment:
     max_sample_yaw_spread_deg: 1.0
     min_inlier_ratio: 0.60
     max_best_median_residual_m: 0.05
+    # If the coarse anchor already aligns most scan points to the map, keep it
+    # instead of accepting a large correction along repeated wall geometry.
+    max_acceptable_baseline_median_m: 0.08
+    min_acceptable_baseline_inlier_ratio: 0.50
     max_startup_translation_m: 0.50
     max_startup_yaw_deg: 10.0
     max_checkpoint_translation_m: 0.20

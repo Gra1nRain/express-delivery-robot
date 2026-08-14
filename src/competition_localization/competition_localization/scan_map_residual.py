@@ -109,6 +109,8 @@ class ScanMatchResult:
     correction_y_m: float
     correction_yaw_rad: float
     baseline_mean_residual_m: float
+    baseline_median_residual_m: float
+    baseline_inlier_ratio: float
     best_mean_residual_m: float
     best_median_residual_m: float
     best_p90_residual_m: float
@@ -295,6 +297,10 @@ def match_scan_to_map(
         correction_y_m=best[1],
         correction_yaw_rad=best[2],
         baseline_mean_residual_m=float(np.mean(baseline)),
+        baseline_median_residual_m=float(np.median(baseline)),
+        baseline_inlier_ratio=float(
+            np.mean(baseline <= config.inlier_threshold_m)
+        ),
         best_mean_residual_m=float(np.mean(residuals)),
         best_median_residual_m=float(np.median(residuals)),
         best_p90_residual_m=float(np.percentile(residuals, 90)),

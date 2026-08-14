@@ -103,6 +103,11 @@ class ScanMapResidualTest(unittest.TestCase):
         self.assertAlmostEqual(result.correction_x_m, -0.15, delta=0.03)
         self.assertAlmostEqual(result.correction_y_m, 0.10, delta=0.03)
         self.assertLess(result.best_median_residual_m, 0.03)
+        self.assertGreater(
+            result.baseline_median_residual_m,
+            result.best_median_residual_m,
+        )
+        self.assertLess(result.baseline_inlier_ratio, result.inlier_ratio)
         self.assertGreater(result.inlier_ratio, 0.90)
         self.assertFalse(result.search_boundary_hit)
 

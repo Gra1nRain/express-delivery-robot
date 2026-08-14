@@ -1,3 +1,4 @@
+import json
 import math
 import pathlib
 import sys
@@ -35,6 +36,78 @@ def observation(
 
 
 class StartupAlignmentTest(unittest.TestCase):
+    def test_ambiguous_search_keeps_an_already_acceptable_coarse_anchor(self) -> None:
+        fixture = (
+            REPO_ROOT
+            / "tests"
+            / "fixtures"
+            / "day5_startup_alignment_ambiguous_coarse_20260814.jsonl"
+        )
+        rows = [
+            json.loads(line)
+            for line in fixture.read_text(encoding="utf-8").splitlines()
+        ]
+        alignment = StartupAlignment(AlignmentConfig(required_samples=len(rows)))
+        alignment.begin(
+            mode=AlignmentMode.STARTUP,
+            reference="startup",
+            anchor_revision=2,
+        )
+
+        decision = None
+        for row in rows:
+            correction = PlanarTransform(
+                row["correction_x_m"],
+                row["correction_y_m"],
+                math.radians(row["correction_yaw_deg"]),
+            )
+            decision = alignment.observe(
+                AlignmentObservation(
+                    stamp_s=row["stamp_s"],
+                    stationary=True,
+                    confident=row["confident"],
+                    search_boundary_hit=row["search_boundary_hit"],
+                    correction=correction,
+                    residual_correction=correction,
+                    best_median_residual_m=row["best_median_residual_m"],
+                    inlier_ratio=row["inlier_ratio"],
+                    baseline_median_residual_m=row["baseline_median_residual_m"],
+                    baseline_inlier_ratio=row["baseline_inlier_ratio"],
+                )
+            )
+
+        assert decision is not None
+        self.assertEqual(decision.phase, AlignmentPhase.APPLYING)
+        self.assertEqual(decision.correction, PlanarTransform(0.0, 0.0, 0.0))
+        self.assertEqual(
+            decision.residual_correction,
+            PlanarTransform(0.0, 0.0, 0.0),
+        )
+
+        alignment.applied(new_anchor_revision=3)
+        for index, row in enumerate(rows[:3], start=6):
+            correction = PlanarTransform(
+                row["correction_x_m"],
+                row["correction_y_m"],
+                math.radians(row["correction_yaw_deg"]),
+            )
+            decision = alignment.observe(
+                AlignmentObservation(
+                    stamp_s=float(index),
+                    stationary=True,
+                    confident=row["confident"],
+                    search_boundary_hit=row["search_boundary_hit"],
+                    correction=correction,
+                    residual_correction=correction,
+                    best_median_residual_m=row["best_median_residual_m"],
+                    inlier_ratio=row["inlier_ratio"],
+                    baseline_median_residual_m=row["baseline_median_residual_m"],
+                    baseline_inlier_ratio=row["baseline_inlier_ratio"],
+                )
+            )
+
+        self.assertEqual(decision.phase, AlignmentPhase.READY)
+
     def test_limits_use_vehicle_displacement_not_global_pivot_transform(self) -> None:
         alignment = StartupAlignment(AlignmentConfig(required_samples=2))
         alignment.begin(
