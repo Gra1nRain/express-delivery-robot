@@ -9,6 +9,8 @@
 
 本次没有启动底盘、没有发布路线使能，也没有进行实车运动。
 
+功能提交：`ef082e4 feat(localization): add gated map anchor calibration`
+
 ## 已实现事实
 
 - `fastlio_anchor_node` 仍是 `map -> camera_init` 唯一 TF 写入者。
@@ -28,11 +30,15 @@
 - 新增并通过锚点 revision、回滚、安全上下文、旋转中心换算和检查点完成门禁测试。
 - Day 5 启动拓扑测试确认残差节点和校准协调器被启动，且协调器不拥有 TF broadcaster 或速度输出。
 - `python -m pytest -q tests`：`300 passed`。
+- 提交中的 23 个文件已定向同步到 `/home/agilex/competition_ws`，电脑与小车 SHA-256 全部一致。
+- 小车端 `colcon build --symlink-install --packages-select competition_localization competition_control competition_bringup`：3 个包全部成功，耗时 `12.9 s`。
+- 小车端新增功能针对性测试：`48 passed in 1.80s`。
+- 小车安装空间可发现 `fastlio_anchor_node`、`scan_map_residual_monitor_node`、`startup_alignment_node`；`day5_motion_control.launch.py --show-args` 可见并解析 `start_alignment`、残差参数文件和启动校准参数文件。
 - 直接执行无范围限制的 `python -m pytest -q` 会收集用户已有的未跟踪 Piper ROS 目录，并因本机缺少其 `ament_copyright`、`ament_flake8`、`ament_pep257` 依赖在收集阶段失败；该目录未被修改，也不属于本次受控测试范围。
 
 ## 尚未验证与风险
 
-- 尚未在小车 ROS2 Humble 环境完成构建和无运动 topic/TF 联调。
+- 尚未启动传感器链进行静止 topic/TF 联调；本次小车验证止于构建、测试、可执行程序发现和 launch 参数解析。
 - 尚未用实车静止扫描确认 5 帧候选和 3 帧复核在现场几何下可稳定收敛。
 - 尚未验证检查点处地图几何是否都足够可观；低置信度时系统会安全地持续停车，而不是猜测修正。
 - 尚未进行任何校准后的自主路线测试。下一次实车运动仍必须由用户重新发布初始位姿并明确允许发车。
