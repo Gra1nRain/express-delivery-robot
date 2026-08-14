@@ -59,6 +59,8 @@ class PrecisionDockingConfig:
     minimum_side_clearance_m: float = 0.12
     shelf_capture_distance_m: float = 0.20
     shelf_observation_max_age_s: float = 0.25
+    shelf_scan_fusion_window_s: float = 0.80
+    shelf_scan_fusion_max_frames: int = 10
     shelf_alignment: ShelfAlignmentConfig = ShelfAlignmentConfig()
 
     def __post_init__(self) -> None:
@@ -110,8 +112,14 @@ class PrecisionDockingConfig:
                 raise ValueError(
                     "precision shelf capture must be between trim entry and activation"
                 )
-            if self.shelf_observation_max_age_s <= 0.0:
-                raise ValueError("precision shelf observation age must be positive")
+            if (
+                self.shelf_observation_max_age_s <= 0.0
+                or self.shelf_scan_fusion_window_s <= 0.0
+                or self.shelf_scan_fusion_max_frames < 1
+            ):
+                raise ValueError(
+                    "precision shelf observation and fusion limits must be positive"
+                )
             target_sensor_distance = (
                 self.vehicle_half_width_m + self.target_side_clearance_m
             )
@@ -232,6 +240,12 @@ def precision_docking_configs_from_dict(
                 shelf_observation_max_age_s=float(
                     shelf.get("observation_max_age_s", 0.25)
                 ),
+                shelf_scan_fusion_window_s=float(
+                    shelf.get("scan_fusion_window_s", 0.80)
+                ),
+                shelf_scan_fusion_max_frames=int(
+                    shelf.get("scan_fusion_max_frames", 10)
+                ),
                 shelf_alignment=ShelfAlignmentConfig(
                     side=shelf_side,
                     min_range_m=float(scan_fit.get("min_range_m", 0.10)),
@@ -255,7 +269,7 @@ def precision_docking_configs_from_dict(
                         float(scan_fit.get("max_heading_error_deg", 15.0))
                     ),
                     max_candidate_points=int(
-                        scan_fit.get("max_candidate_points", 96)
+                        scan_fit.get("max_candidate_points", 40)
                     ),
                 ),
             )

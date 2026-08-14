@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 import json
 import math
 from pathlib import Path
@@ -59,7 +60,9 @@ from competition_control.precision_docking import (
 )
 from competition_control.shelf_alignment import (
     ShelfObservation,
+    ShelfScan,
     estimate_shelf_from_scan,
+    estimate_shelf_from_scans,
 )
 from competition_control.segmented_route_state_machine import (
     SegmentedRouteConfig,
@@ -193,6 +196,7 @@ class MPPIControlNode(Node):
         self._requested_motion_mode = RequestedMotionMode.DUAL_ACKERMANN.value
         self._latest_shelf_observation: ShelfObservation | None = None
         self._latest_shelf_observation_stamp_s: float | None = None
+        self._shelf_scan_history: deque[tuple[float, ShelfScan]] = deque()
         self._shelf_relative_active = False
         self._shelf_clearance_m: float | None = None
         trajectory = self._global_trajectory
@@ -722,18 +726,42 @@ class MPPIControlNode(Node):
         if config is None or not config.shelf_relative_enabled:
             self._latest_shelf_observation = None
             self._latest_shelf_observation_stamp_s = None
+            self._shelf_scan_history.clear()
             return
-        observation = estimate_shelf_from_scan(
-            message.ranges,
+        now_s = self.get_clock().now().nanoseconds * 1e-9
+        scan = ShelfScan(
+            ranges=tuple(float(value) for value in message.ranges),
             angle_min_rad=float(message.angle_min),
             angle_increment_rad=float(message.angle_increment),
-            config=config.shelf_alignment,
         )
+        if self._shelf_relative_active:
+            self._shelf_scan_history.append((now_s, scan))
+            while (
+                self._shelf_scan_history
+                and now_s - self._shelf_scan_history[0][0]
+                > config.shelf_scan_fusion_window_s
+            ):
+                self._shelf_scan_history.popleft()
+            while (
+                len(self._shelf_scan_history)
+                > config.shelf_scan_fusion_max_frames
+            ):
+                self._shelf_scan_history.popleft()
+            observation = estimate_shelf_from_scans(
+                tuple(item[1] for item in self._shelf_scan_history),
+                config=config.shelf_alignment,
+            )
+        else:
+            self._shelf_scan_history.clear()
+            observation = estimate_shelf_from_scan(
+                scan.ranges,
+                angle_min_rad=scan.angle_min_rad,
+                angle_increment_rad=scan.angle_increment_rad,
+                config=config.shelf_alignment,
+            )
         self._latest_shelf_observation = observation
         self._latest_shelf_observation_stamp_s = (
-            self.get_clock().now().nanoseconds * 1e-9
-            if observation is not None
-            else None
+            now_s if observation is not None else None
         )
 
     def _activate_checkpoint(self, checkpoint_index: int) -> None:
@@ -781,10 +809,15 @@ class MPPIControlNode(Node):
                 ),
                 shelf_observation=shelf_observation,
             )
+            shelf_relative_was_active = self._shelf_relative_active
             self._precision_phase = precision_decision.phase.value
             self._requested_motion_mode = precision_decision.motion_mode.value
             self._shelf_relative_active = precision_decision.shelf_relative_active
             self._shelf_clearance_m = precision_decision.shelf_clearance_m
+            if self._shelf_relative_active and not shelf_relative_was_active:
+                self._shelf_scan_history.clear()
+                self._latest_shelf_observation = None
+                self._latest_shelf_observation_stamp_s = None
             if precision_decision.shelf_relative_active:
                 position_error_m = precision_decision.position_error_m
                 heading_error_rad = precision_decision.heading_error_rad
@@ -1095,6 +1128,9 @@ class MPPIControlNode(Node):
                             if self._latest_shelf_observation is not None
                             else None
                         ),
+                        "shelf_scan_fusion_frames": len(
+                            self._shelf_scan_history
+                        ),
                     },
                     separators=(",", ":"),
                 )
@@ -1136,6 +1172,7 @@ class MPPIControlNode(Node):
         self._requested_motion_mode = RequestedMotionMode.DUAL_ACKERMANN.value
         self._latest_shelf_observation = None
         self._latest_shelf_observation_stamp_s = None
+        self._shelf_scan_history.clear()
         self._shelf_relative_active = False
         self._shelf_clearance_m = None
         if not self._mission_checkpoints:

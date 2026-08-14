@@ -20,7 +20,7 @@ class ShelfAlignmentConfig:
     min_span_m: float = 0.30
     max_residual_m: float = 0.025
     max_heading_error_rad: float = math.radians(15.0)
-    max_candidate_points: int = 96
+    max_candidate_points: int = 40
 
     def __post_init__(self) -> None:
         if self.side not in {"LEFT", "RIGHT"}:
@@ -50,6 +50,13 @@ class ShelfObservation:
     span_m: float
 
 
+@dataclass(frozen=True)
+class ShelfScan:
+    ranges: tuple[float, ...]
+    angle_min_rad: float
+    angle_increment_rad: float
+
+
 def estimate_shelf_from_scan(
     ranges: Sequence[float],
     *,
@@ -59,35 +66,57 @@ def estimate_shelf_from_scan(
 ) -> ShelfObservation | None:
     """Fit the selected shelf side without trusting the global map pose."""
 
-    if not math.isfinite(angle_min_rad) or not math.isfinite(angle_increment_rad):
-        return None
-    if angle_increment_rad == 0.0:
-        return None
+    return estimate_shelf_from_scans(
+        (
+            ShelfScan(
+                ranges=tuple(float(value) for value in ranges),
+                angle_min_rad=angle_min_rad,
+                angle_increment_rad=angle_increment_rad,
+            ),
+        ),
+        config=config,
+    )
+
+
+def estimate_shelf_from_scans(
+    scans: Sequence[ShelfScan],
+    *,
+    config: ShelfAlignmentConfig,
+) -> ShelfObservation | None:
+    """Fit a shelf from a short, bounded scan window used only while stopped."""
+
     side_sign = 1.0 if config.side == "LEFT" else -1.0
     points: list[tuple[float, float]] = []
-    for index, raw_range in enumerate(ranges):
-        distance = float(raw_range)
-        if not math.isfinite(distance):
-            continue
-        if not (config.min_range_m <= distance <= config.max_range_m):
-            continue
-        angle = angle_min_rad + index * angle_increment_rad
-        x = distance * math.cos(angle)
-        y = distance * math.sin(angle)
-        side_distance = side_sign * y
-        if not (config.min_longitudinal_m <= x <= config.max_longitudinal_m):
-            continue
-        if not (
-            config.min_side_distance_m
-            <= side_distance
-            <= config.max_side_distance_m
+    for scan in scans:
+        if (
+            not math.isfinite(scan.angle_min_rad)
+            or not math.isfinite(scan.angle_increment_rad)
+            or scan.angle_increment_rad == 0.0
         ):
             continue
-        points.append((x, y))
+        for index, distance in enumerate(scan.ranges):
+            if not math.isfinite(distance):
+                continue
+            if not (config.min_range_m <= distance <= config.max_range_m):
+                continue
+            angle = scan.angle_min_rad + index * scan.angle_increment_rad
+            x = distance * math.cos(angle)
+            y = distance * math.sin(angle)
+            side_distance = side_sign * y
+            if not (config.min_longitudinal_m <= x <= config.max_longitudinal_m):
+                continue
+            if not (
+                config.min_side_distance_m
+                <= side_distance
+                <= config.max_side_distance_m
+            ):
+                continue
+            points.append((x, y))
     if len(points) < config.min_points:
         return None
 
-    candidates = _uniform_sample(points, config.max_candidate_points)
+    fit_points = _uniform_sample(points, config.max_candidate_points * 2)
+    candidates = _uniform_sample(fit_points, config.max_candidate_points)
     inlier_threshold = config.max_residual_m * 1.5
     best: tuple[int, float, float, list[tuple[float, float]]] | None = None
     for left_index, left in enumerate(candidates[:-1]):
@@ -109,7 +138,7 @@ def estimate_shelf_from_scan(
             normal_y = tangent_x
             inliers = [
                 point
-                for point in points
+                for point in fit_points
                 if abs(
                     normal_x * (point[0] - left[0])
                     + normal_y * (point[1] - left[1])

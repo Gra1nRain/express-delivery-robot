@@ -9,7 +9,9 @@ sys.path.insert(0, str(REPO_ROOT / "src" / "competition_control"))
 
 from competition_control.shelf_alignment import (
     ShelfAlignmentConfig,
+    ShelfScan,
     estimate_shelf_from_scan,
+    estimate_shelf_from_scans,
 )
 
 
@@ -92,6 +94,46 @@ class ShelfAlignmentEstimatorTest(unittest.TestCase):
         )
 
         self.assertIsNone(observation)
+
+    def test_short_sparse_scan_window_recovers_stationary_shelf(self) -> None:
+        dense, angle_min, increment = synthetic_right_shelf_scan(distance_m=0.53)
+        valid_indices = [
+            index for index, value in enumerate(dense) if math.isfinite(value)
+        ]
+        selected = [
+            valid_indices[round(index * (len(valid_indices) - 1) / 19)]
+            for index in range(20)
+        ]
+        sparse_scans = []
+        for frame_index in range(4):
+            ranges = [math.inf] * len(dense)
+            for index in selected[frame_index::4]:
+                ranges[index] = dense[index]
+            self.assertIsNone(
+                estimate_shelf_from_scan(
+                    ranges,
+                    angle_min_rad=angle_min,
+                    angle_increment_rad=increment,
+                    config=self.config,
+                )
+            )
+            sparse_scans.append(
+                ShelfScan(
+                    ranges=tuple(ranges),
+                    angle_min_rad=angle_min,
+                    angle_increment_rad=increment,
+                )
+            )
+
+        observation = estimate_shelf_from_scans(
+            sparse_scans,
+            config=self.config,
+        )
+
+        self.assertIsNotNone(observation)
+        assert observation is not None
+        self.assertAlmostEqual(observation.side_distance_m, 0.53, delta=0.01)
+        self.assertGreaterEqual(observation.point_count, 10)
 
 
 if __name__ == "__main__":

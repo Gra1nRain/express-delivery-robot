@@ -38,6 +38,10 @@ precision_profiles:
       minimum_side_clearance_m: 0.20
       capture_distance_m: 0.20
       observation_max_age_s: 0.30
+      # Only the stopped final-docking observer fuses this short window. The
+      # obstacle layer and global /scan consumers remain latest-frame-only.
+      scan_fusion_window_s: 0.80
+      scan_fusion_max_frames: 10
       scan_fit:
         min_range_m: 0.10
         max_range_m: 1.50
@@ -49,4 +53,4 @@ precision_profiles:
         min_span_m: 0.30
         max_residual_m: 0.035
         max_heading_error_deg: 15.0
-        max_candidate_points: 96
+        max_candidate_points: 40

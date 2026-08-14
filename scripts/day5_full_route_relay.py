@@ -286,6 +286,9 @@ class RelayMonitor(Node):
             self.data["shelf_observation_residual_m"] = parsed.get(
                 "shelf_observation_residual_m"
             )
+            self.data["shelf_scan_fusion_frames"] = parsed.get(
+                "shelf_scan_fusion_frames"
+            )
         elif key == "local_status" and parsed is not None:
             self.data["local_status_value"] = parsed.get("status")
             self.data["local_reference_start_index"] = parsed.get("reference_start_index")
