@@ -43,7 +43,7 @@ class PrecisionDockingConfig:
     stopped_speed_tolerance_mps: float = 0.02
     stopped_yaw_rate_tolerance_radps: float = 0.03
     max_spin_correction_rad: float = math.radians(10.0)
-    max_parallel_correction_m: float = 0.08
+    max_parallel_correction_m: float = 0.10
     spin_gain: float = 1.0
     spin_min_yaw_rate_radps: float = 0.06
     spin_max_yaw_rate_radps: float = 0.15
@@ -72,8 +72,10 @@ class PrecisionDockingConfig:
             )
         if self.settle_time_s < 0.0 or self.stable_time_s < 0.0:
             raise ValueError("precision settle times must be non-negative")
-        if self.max_parallel_correction_m <= self.final_position_tolerance_m:
-            raise ValueError("max parallel correction must exceed final tolerance")
+        if self.max_parallel_correction_m < self.trim_entry_distance_m:
+            raise ValueError(
+                "precision max parallel correction must cover trim entry distance"
+            )
         if not (0.0 < self.spin_min_yaw_rate_radps <= self.spin_max_yaw_rate_radps):
             raise ValueError("spin rates must satisfy 0 < min <= max")
         if not (0.0 < self.parallel_min_speed_mps <= self.parallel_max_speed_mps):
@@ -148,7 +150,10 @@ def precision_docking_configs_from_dict(
                     float(raw.get("max_spin_correction_deg", 10.0))
                 ),
                 max_parallel_correction_m=float(
-                    raw.get("max_parallel_correction_m", 0.08)
+                    raw.get(
+                        "max_parallel_correction_m",
+                        raw["trim_entry_distance_m"],
+                    )
                 ),
                 spin_gain=float(raw.get("spin_gain", 1.0)),
                 spin_min_yaw_rate_radps=float(raw.get("spin_min_yaw_rate_radps", 0.06)),

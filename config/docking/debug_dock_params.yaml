@@ -20,7 +20,7 @@ precision_profiles:
     stopped_speed_tolerance_mps: 0.02
     stopped_yaw_rate_tolerance_radps: 0.03
     max_spin_correction_deg: 10.0
-    max_parallel_correction_m: 0.08
+    max_parallel_correction_m: 0.10
     spin_gain: 1.0
     spin_min_yaw_rate_radps: 0.06
     spin_max_yaw_rate_radps: 0.15

@@ -3,6 +3,8 @@ import pathlib
 import sys
 import unittest
 
+import yaml
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_control"))
@@ -55,6 +57,66 @@ class PrecisionDockingConfigurationTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "unknown precision profile"):
             precision_docking_configs_from_dict(route, {"precision_profiles": {}})
+
+    def test_trim_entry_dead_zone_is_rejected_before_motion(self) -> None:
+        route = {"precision_docking": {"checkpoints": {"dock": "shelf"}}}
+        dock_params = {
+            "precision_profiles": {
+                "shelf": {
+                    "activation_distance_m": 1.5,
+                    "trim_entry_distance_m": 0.10,
+                    "final_position_tolerance_m": 0.03,
+                    "heading_realign_tolerance_deg": 4.0,
+                    "heading_trim_target_deg": 2.0,
+                    "max_parallel_correction_m": 0.08,
+                }
+            }
+        }
+
+        with self.assertRaisesRegex(ValueError, "cover trim entry distance"):
+            precision_docking_configs_from_dict(route, dock_params)
+
+    def test_shipped_profiles_trim_the_observed_nine_centimeter_error(self) -> None:
+        route = {"precision_docking": {"checkpoints": {"dock": "shelf_dock"}}}
+        for filename in ("debug_dock_params.yaml", "competition_dock_params.yaml"):
+            dock_params = yaml.safe_load(
+                (REPO_ROOT / "config" / "docking" / filename).read_text(
+                    encoding="utf-8"
+                )
+            )
+            config = precision_docking_configs_from_dict(route, dock_params)["dock"]
+            controller = PrecisionDockingController(config)
+            checkpoint = MissionCheckpoint("dock", 0.0, 0.0, 0.0)
+            state = VehicleState(
+                x=-0.015,
+                y=0.0944,
+                yaw=math.radians(-3.47),
+                linear_speed_mps=0.0,
+            )
+
+            controller.update(
+                now_s=0.0,
+                state=state,
+                checkpoint=checkpoint,
+                yaw_rate_radps=0.0,
+            )
+            decision = controller.update(
+                now_s=0.31,
+                state=state,
+                checkpoint=checkpoint,
+                yaw_rate_radps=0.0,
+            )
+
+            self.assertEqual(
+                decision.phase,
+                PrecisionDockingPhase.POSITION_TRIM,
+                filename,
+            )
+            self.assertEqual(decision.motion_mode, RequestedMotionMode.PARALLEL)
+            self.assertGreater(
+                math.hypot(decision.linear_x_mps, decision.linear_y_mps),
+                0.0,
+            )
 
     def test_fixed_reference_is_sliced_from_vehicle_to_semantic_checkpoint(
         self,
@@ -110,7 +172,7 @@ class PrecisionDockingControllerTest(unittest.TestCase):
                         "settle_time_s": 0.30,
                         "stable_time_s": 0.50,
                         "max_spin_correction_deg": 10.0,
-                        "max_parallel_correction_m": 0.08,
+                        "max_parallel_correction_m": 0.10,
                         "spin_gain": 1.0,
                         "spin_min_yaw_rate_radps": 0.06,
                         "spin_max_yaw_rate_radps": 0.15,
