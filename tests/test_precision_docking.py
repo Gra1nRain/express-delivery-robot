@@ -19,13 +19,120 @@ from competition_control.precision_docking import (
     PrecisionDockingController,
     PrecisionDockingPhase,
     RequestedMotionMode,
+    calibrated_straight_reference,
     fixed_reference_to_checkpoint,
     precision_docking_configs_from_dict,
+    straight_followup_anchors_from_config,
 )
 from competition_control.shelf_alignment import ShelfObservation
 
 
 class PrecisionDockingConfigurationTest(unittest.TestCase):
+    def test_shipped_route_declares_calibrated_straight_followups(self) -> None:
+        dock_params = yaml.safe_load(
+            (REPO_ROOT / "config" / "docking" / "debug_dock_params.yaml")
+            .read_text(encoding="utf-8")
+        )
+
+        followups = straight_followup_anchors_from_config(
+            dock_params,
+            ("pickup_front", "pickup_rear", "drop_front", "drop_rear"),
+        )
+
+        self.assertEqual(
+            followups,
+            {
+                "pickup_rear": "pickup_front",
+                "drop_rear": "drop_front",
+            },
+        )
+
+    def test_calibrated_followup_starts_at_actual_front_pose_and_stays_straight(
+        self,
+    ) -> None:
+        anchor_state = VehicleState(
+            x=8.50,
+            y=-1.20,
+            yaw=math.radians(1.5),
+            linear_speed_mps=0.0,
+        )
+        anchor = MissionCheckpoint("pickup_front", 8.413, -0.081, 0.015)
+        followup = MissionCheckpoint("pickup_rear", 9.013, -0.091, 0.022)
+
+        target, trajectory = calibrated_straight_reference(
+            anchor_state,
+            anchor,
+            followup,
+            speed_mps=0.08,
+        )
+
+        semantic_distance = (
+            math.cos(anchor.yaw) * (followup.x - anchor.x)
+            + math.sin(anchor.yaw) * (followup.y - anchor.y)
+        )
+        self.assertAlmostEqual(
+            math.hypot(target.x - anchor_state.x, target.y - anchor_state.y),
+            semantic_distance,
+            delta=1e-9,
+        )
+        self.assertAlmostEqual(target.yaw, anchor_state.yaw, delta=1e-9)
+        self.assertAlmostEqual(trajectory.points[0].x, anchor_state.x, delta=1e-9)
+        self.assertAlmostEqual(trajectory.points[0].y, anchor_state.y, delta=1e-9)
+        self.assertEqual(trajectory.points[-1].ref_id, "pickup_rear")
+        self.assertTrue(all(point.curvature == 0.0 for point in trajectory.points))
+        self.assertTrue(
+            all(
+                math.isclose(point.yaw, anchor_state.yaw, abs_tol=1e-9)
+                for point in trajectory.points
+            )
+        )
+
+    def test_shipped_pickup_and_drop_followup_distances_are_valid(self) -> None:
+        semantic_map = yaml.safe_load(
+            (REPO_ROOT / "maps" / "debug" / "semantic_map.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        distances = {}
+        for anchor_ref, followup_ref in (
+            ("pickup_front", "pickup_rear"),
+            ("drop_front", "drop_rear"),
+        ):
+            anchor_raw = semantic_map["points"][anchor_ref]
+            followup_raw = semantic_map["points"][followup_ref]
+            anchor = MissionCheckpoint(
+                anchor_ref,
+                float(anchor_raw["x"]),
+                float(anchor_raw["y"]),
+                float(anchor_raw["yaw"]),
+            )
+            followup = MissionCheckpoint(
+                followup_ref,
+                float(followup_raw["x"]),
+                float(followup_raw["y"]),
+                float(followup_raw["yaw"]),
+            )
+            _, trajectory = calibrated_straight_reference(
+                VehicleState(anchor.x, anchor.y, anchor.yaw, 0.0),
+                anchor,
+                followup,
+                speed_mps=0.08,
+            )
+            distances[followup_ref] = trajectory.points[-1].s
+
+        self.assertAlmostEqual(distances["pickup_rear"], 0.60, delta=0.01)
+        self.assertAlmostEqual(distances["drop_rear"], 0.581, delta=0.01)
+
+    def test_calibrated_followup_rejects_non_straight_semantic_pair(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not a straight forward pair"):
+            calibrated_straight_reference(
+                VehicleState(0.0, 0.0, 0.0, 0.0),
+                MissionCheckpoint("front", 0.0, 0.0, 0.0),
+                MissionCheckpoint("rear", 0.50, 0.20, 0.0),
+                speed_mps=0.08,
+            )
+
     def test_route_maps_semantic_refs_to_reusable_site_profiles(self) -> None:
         route = {
             "precision_docking": {

@@ -289,6 +289,21 @@ class RelayMonitor(Node):
             self.data["shelf_scan_fusion_frames"] = parsed.get(
                 "shelf_scan_fusion_frames"
             )
+            self.data["straight_followup_active"] = parsed.get(
+                "straight_followup_active"
+            )
+            self.data["straight_followup_anchor_ref"] = parsed.get(
+                "straight_followup_anchor_ref"
+            )
+            self.data["straight_followup_distance_m"] = parsed.get(
+                "straight_followup_distance_m"
+            )
+            self.data["straight_followup_remaining_m"] = parsed.get(
+                "straight_followup_remaining_m"
+            )
+            self.data["straight_followup_cross_track_m"] = parsed.get(
+                "straight_followup_cross_track_m"
+            )
         elif key == "local_status" and parsed is not None:
             self.data["local_status_value"] = parsed.get("status")
             self.data["local_reference_start_index"] = parsed.get("reference_start_index")

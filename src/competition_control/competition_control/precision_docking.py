@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum
 import math
-from typing import Any
+from typing import Any, Sequence
 
 from competition_control.mission_checkpoints import MissionCheckpoint
 from competition_control.mppi_controller import (
@@ -280,6 +280,103 @@ def precision_docking_configs_from_dict(
                 f"invalid precision profile {profile_name!r} for checkpoint {ref!r}"
             ) from exc
     return resolved
+
+
+def straight_followup_anchors_from_config(
+    dock_params: dict[str, Any],
+    checkpoint_refs: Sequence[str],
+) -> dict[str, str]:
+    """Resolve checkpoints that follow the preceding calibrated stop in a line."""
+
+    raw_followups = dock_params.get("straight_followups", {})
+    if raw_followups is None:
+        return {}
+    if not isinstance(raw_followups, dict):
+        raise ValueError("precision straight_followups must be a mapping")
+
+    ordered_refs = tuple(str(ref) for ref in checkpoint_refs)
+    ref_indices = {ref: index for index, ref in enumerate(ordered_refs)}
+    resolved: dict[str, str] = {}
+    for raw_followup_ref, raw_anchor_ref in raw_followups.items():
+        followup_ref = str(raw_followup_ref).strip()
+        anchor_ref = str(raw_anchor_ref).strip()
+        if not followup_ref or not anchor_ref:
+            raise ValueError("precision straight followup refs must be non-empty")
+        if followup_ref not in ref_indices or anchor_ref not in ref_indices:
+            raise ValueError(
+                "precision straight followup refs must be mission checkpoints"
+            )
+        if ref_indices[followup_ref] != ref_indices[anchor_ref] + 1:
+            raise ValueError(
+                "precision straight followup must immediately follow its anchor"
+            )
+        resolved[followup_ref] = anchor_ref
+    return resolved
+
+
+def calibrated_straight_reference(
+    anchor_state: VehicleState,
+    anchor_checkpoint: MissionCheckpoint,
+    followup_checkpoint: MissionCheckpoint,
+    *,
+    speed_mps: float,
+    point_spacing_m: float = 0.05,
+    max_lateral_offset_m: float = 0.05,
+    max_heading_delta_rad: float = math.radians(5.0),
+) -> tuple[MissionCheckpoint, ControlTrajectory]:
+    """Build a straight followup from the actual calibrated vehicle pose."""
+
+    if speed_mps <= 0.0 or point_spacing_m <= 0.0:
+        raise ValueError("calibrated straight speed and spacing must be positive")
+    dx = followup_checkpoint.x - anchor_checkpoint.x
+    dy = followup_checkpoint.y - anchor_checkpoint.y
+    cos_yaw = math.cos(anchor_checkpoint.yaw)
+    sin_yaw = math.sin(anchor_checkpoint.yaw)
+    distance_m = cos_yaw * dx + sin_yaw * dy
+    lateral_offset_m = -sin_yaw * dx + cos_yaw * dy
+    heading_delta_rad = _wrap_angle(
+        followup_checkpoint.yaw - anchor_checkpoint.yaw
+    )
+    if (
+        distance_m <= 0.0
+        or abs(lateral_offset_m) > max_lateral_offset_m
+        or abs(heading_delta_rad) > max_heading_delta_rad
+    ):
+        raise ValueError(
+            f"{anchor_checkpoint.ref_id}->{followup_checkpoint.ref_id} "
+            "is not a straight forward pair"
+        )
+
+    segment_count = max(1, math.ceil(distance_m / point_spacing_m))
+    actual_cos_yaw = math.cos(anchor_state.yaw)
+    actual_sin_yaw = math.sin(anchor_state.yaw)
+    points = tuple(
+        ControlTrajectoryPoint(
+            x=anchor_state.x + distance_m * index / segment_count * actual_cos_yaw,
+            y=anchor_state.y + distance_m * index / segment_count * actual_sin_yaw,
+            yaw=anchor_state.yaw,
+            s=distance_m * index / segment_count,
+            curvature=0.0,
+            v=0.0 if index == segment_count else speed_mps,
+            t=distance_m * index / segment_count / speed_mps,
+            ref_id=(followup_checkpoint.ref_id if index == segment_count else None),
+        )
+        for index in range(segment_count + 1)
+    )
+    target = MissionCheckpoint(
+        ref_id=followup_checkpoint.ref_id,
+        x=points[-1].x,
+        y=points[-1].y,
+        yaw=anchor_state.yaw,
+    )
+    return target, ControlTrajectory(
+        frame_id="map",
+        route_name=(
+            f"calibrated_straight_{anchor_checkpoint.ref_id}_to_"
+            f"{followup_checkpoint.ref_id}"
+        ),
+        points=points,
+    )
 
 
 def fixed_reference_to_checkpoint(

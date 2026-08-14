@@ -39,7 +39,10 @@ from competition_control.local_plan_continuity import (
     nearest_stop_line_path_point_index,
     stop_line_lengths_excluding_docks,
 )
-from competition_control.mission_checkpoints import mission_checkpoints_from_route
+from competition_control.mission_checkpoints import (
+    MissionCheckpoint,
+    mission_checkpoints_from_route,
+)
 from competition_control.mppi_controller import (
     BodyCommand,
     ControlTrajectory,
@@ -55,8 +58,10 @@ from competition_control.precision_docking import (
     PrecisionDockingController,
     PrecisionDockingPhase,
     RequestedMotionMode,
+    calibrated_straight_reference,
     fixed_reference_to_checkpoint,
     precision_docking_configs_from_dict,
+    straight_followup_anchors_from_config,
 )
 from competition_control.shelf_alignment import (
     ShelfObservation,
@@ -184,6 +189,10 @@ class MPPIControlNode(Node):
         checkpoint_refs = {
             checkpoint.ref_id for checkpoint in self._mission_checkpoints
         }
+        self._straight_followup_anchors = straight_followup_anchors_from_config(
+            precision_config,
+            tuple(checkpoint.ref_id for checkpoint in self._mission_checkpoints),
+        )
         unknown_precision_refs = set(self._precision_configs) - checkpoint_refs
         if unknown_precision_refs:
             raise ValueError(
@@ -199,6 +208,12 @@ class MPPIControlNode(Node):
         self._shelf_scan_history: deque[tuple[float, ShelfScan]] = deque()
         self._shelf_relative_active = False
         self._shelf_clearance_m: float | None = None
+        self._straight_followup_anchor_state: VehicleState | None = None
+        self._straight_followup_anchor_ref: str | None = None
+        self._straight_followup_target: MissionCheckpoint | None = None
+        self._straight_followup_distance_m: float | None = None
+        self._straight_followup_remaining_m: float | None = None
+        self._straight_followup_cross_track_m: float | None = None
         trajectory = self._global_trajectory
         if trajectory.frame_id != self._map_frame:
             raise ValueError(
@@ -259,6 +274,12 @@ class MPPIControlNode(Node):
                 "controller goal heading tolerance must be positive and smaller "
                 "than checkpoint heading tolerance"
             )
+        self._controller_goal_position_tolerance_m = (
+            controller_goal_position_tolerance_m
+        )
+        self._controller_goal_heading_tolerance_rad = math.radians(
+            controller_goal_heading_tolerance_deg
+        )
         params = MPPIParams(
             control_dt_s=self._control_period_s,
             horizon_steps=int(self.declare_parameter("horizon_steps", 30).value),
@@ -290,10 +311,8 @@ class MPPIControlNode(Node):
                     0.05,
                 ).value
             ),
-            goal_position_tolerance_m=controller_goal_position_tolerance_m,
-            goal_heading_tolerance_rad=math.radians(
-                controller_goal_heading_tolerance_deg
-            ),
+            goal_position_tolerance_m=self._controller_goal_position_tolerance_m,
+            goal_heading_tolerance_rad=self._controller_goal_heading_tolerance_rad,
             progress_search_window_points=int(
                 self.declare_parameter("progress_search_window_points", 40).value
             ),
@@ -764,17 +783,49 @@ class MPPIControlNode(Node):
             now_s if observation is not None else None
         )
 
-    def _activate_checkpoint(self, checkpoint_index: int) -> None:
+    def _activate_checkpoint(
+        self,
+        checkpoint_index: int,
+        *,
+        calibrated_anchor_state: VehicleState | None = None,
+        calibrated_anchor_ref: str | None = None,
+    ) -> None:
         self._active_checkpoint_index = checkpoint_index
         self._accepted_local_geometry = None
         self._latest_local_plan_stamp_s = None
         self._precision_active = False
         self._controller.replace_trajectory(self._global_trajectory)
         self._reset_precision_controller()
+        checkpoint = self._mission_checkpoints[checkpoint_index]
+        required_anchor_ref = self._straight_followup_anchors.get(
+            checkpoint.ref_id
+        )
+        if (
+            required_anchor_ref is not None
+            and calibrated_anchor_state is not None
+            and calibrated_anchor_ref == required_anchor_ref
+        ):
+            anchor_checkpoint = self._mission_checkpoints[checkpoint_index - 1]
+            target, trajectory = calibrated_straight_reference(
+                calibrated_anchor_state,
+                anchor_checkpoint,
+                checkpoint,
+                speed_mps=self._checkpoint_max_speed_mps,
+            )
+            self._straight_followup_anchor_state = calibrated_anchor_state
+            self._straight_followup_anchor_ref = required_anchor_ref
+            self._straight_followup_target = target
+            self._straight_followup_distance_m = trajectory.points[-1].s
+            self._straight_followup_remaining_m = trajectory.points[-1].s
+            self._straight_followup_cross_track_m = 0.0
+            self._precision_controller = None
+            self._precision_active = True
+            self._precision_phase = "CALIBRATED_STRAIGHT"
+            self._local_plan_update_mode = "calibrated_straight_reference"
+            self._controller.replace_trajectory(trajectory)
         if self._replanning_enabled:
             self._local_stop_requested = True
         self._active_checkpoint_publisher.publish(UInt32(data=checkpoint_index))
-        checkpoint = self._mission_checkpoints[checkpoint_index]
         self._active_checkpoint_ref_publisher.publish(String(data=checkpoint.ref_id))
         self.get_logger().info(
             f"Activated mission checkpoint {checkpoint_index + 1}/"
@@ -788,15 +839,56 @@ class MPPIControlNode(Node):
         local_plan_age_s: float | None,
     ) -> BodyCommand:
         assert self._segmented_state_machine is not None
-        goal = self._mission_checkpoints[self._active_checkpoint_index]
+        semantic_goal = self._mission_checkpoints[self._active_checkpoint_index]
+        goal = self._straight_followup_target or semantic_goal
         position_error_m, heading_error_rad = checkpoint_errors(
             state,
             goal,
-            stop_line_length_m=self._stop_line_lengths_by_ref.get(goal.ref_id),
+            stop_line_length_m=self._stop_line_lengths_by_ref.get(
+                semantic_goal.ref_id
+            ),
         )
         longitudinal_error_m = checkpoint_longitudinal_error(state, goal)
         precision_decision = None
-        if self._route_enabled and self._precision_controller is not None:
+        if self._straight_followup_target is not None:
+            assert self._straight_followup_anchor_state is not None
+            assert self._straight_followup_distance_m is not None
+            anchor = self._straight_followup_anchor_state
+            dx = state.x - anchor.x
+            dy = state.y - anchor.y
+            cos_yaw = math.cos(anchor.yaw)
+            sin_yaw = math.sin(anchor.yaw)
+            travelled_m = cos_yaw * dx + sin_yaw * dy
+            self._straight_followup_cross_track_m = -sin_yaw * dx + cos_yaw * dy
+            self._straight_followup_remaining_m = (
+                self._straight_followup_distance_m - travelled_m
+            )
+            self._precision_phase = "CALIBRATED_STRAIGHT"
+            self._requested_motion_mode = RequestedMotionMode.DUAL_ACKERMANN.value
+            self._shelf_relative_active = False
+            self._shelf_clearance_m = None
+            if (
+                position_error_m > self._controller_goal_position_tolerance_m
+                or abs(heading_error_rad)
+                > self._controller_goal_heading_tolerance_rad
+            ):
+                # The mission state machine normally accepts a 0.10 m semantic
+                # stop.  A calibrated relative leg must reach the controller's
+                # tighter 0.03 m endpoint before its hold timer may start.
+                position_error_m = math.inf
+            if self._route_enabled and (
+                abs(self._straight_followup_cross_track_m)
+                > self._checkpoint_match_tolerance_m
+                or abs(heading_error_rad) > self._checkpoint_heading_tolerance_rad
+            ):
+                self._mission_phase = "CALIBRATED_STRAIGHT_HOLD"
+                return BodyCommand.hold(
+                    target_index=0,
+                    lateral_error_m=self._straight_followup_cross_track_m,
+                    heading_error_rad=heading_error_rad,
+                    status="CALIBRATED_STRAIGHT_HOLD",
+                )
+        elif self._route_enabled and self._precision_controller is not None:
             shelf_observation = self._fresh_shelf_observation(now_s)
             precision_decision = self._precision_controller.update(
                 now_s=now_s,
@@ -909,7 +1001,14 @@ class MPPIControlNode(Node):
         )
         self._mission_phase = decision.phase.value
         if decision.segment_changed:
-            self._activate_checkpoint(decision.active_segment_index)
+            calibrated_anchor_ready = (
+                precision_decision is not None and precision_decision.pose_ready
+            )
+            self._activate_checkpoint(
+                decision.active_segment_index,
+                calibrated_anchor_state=(state if calibrated_anchor_ready else None),
+                calibrated_anchor_ref=(goal.ref_id if calibrated_anchor_ready else None),
+            )
         if decision.allow_tracking:
             return shape_checkpoint_approach_command(
                 self._controller.compute_command(state),
@@ -918,7 +1017,11 @@ class MPPIControlNode(Node):
                 checkpoint_heading_tolerance_rad=(
                     self._checkpoint_heading_tolerance_rad
                 ),
-                capture_distance_m=self._checkpoint_match_tolerance_m,
+                capture_distance_m=(
+                    self._controller_goal_position_tolerance_m
+                    if self._straight_followup_target is not None
+                    else self._checkpoint_match_tolerance_m
+                ),
                 slowdown_distance_m=self._checkpoint_slowdown_distance_m,
                 min_speed_mps=self._checkpoint_min_speed_mps,
                 max_speed_mps=self._checkpoint_max_speed_mps,
@@ -1131,6 +1234,21 @@ class MPPIControlNode(Node):
                         "shelf_scan_fusion_frames": len(
                             self._shelf_scan_history
                         ),
+                        "straight_followup_active": (
+                            self._straight_followup_target is not None
+                        ),
+                        "straight_followup_anchor_ref": (
+                            self._straight_followup_anchor_ref
+                        ),
+                        "straight_followup_distance_m": (
+                            self._straight_followup_distance_m
+                        ),
+                        "straight_followup_remaining_m": (
+                            self._straight_followup_remaining_m
+                        ),
+                        "straight_followup_cross_track_m": (
+                            self._straight_followup_cross_track_m
+                        ),
                     },
                     separators=(",", ":"),
                 )
@@ -1143,7 +1261,7 @@ class MPPIControlNode(Node):
         return now_s - self._latest_local_plan_stamp_s
 
     def _active_precision_config(self) -> PrecisionDockingConfig | None:
-        if not self._mission_checkpoints:
+        if not self._mission_checkpoints or self._straight_followup_target is not None:
             return None
         checkpoint = self._mission_checkpoints[self._active_checkpoint_index]
         return self._precision_configs.get(checkpoint.ref_id)
@@ -1175,6 +1293,12 @@ class MPPIControlNode(Node):
         self._shelf_scan_history.clear()
         self._shelf_relative_active = False
         self._shelf_clearance_m = None
+        self._straight_followup_anchor_state = None
+        self._straight_followup_anchor_ref = None
+        self._straight_followup_target = None
+        self._straight_followup_distance_m = None
+        self._straight_followup_remaining_m = None
+        self._straight_followup_cross_track_m = None
         if not self._mission_checkpoints:
             self._precision_controller = None
             return

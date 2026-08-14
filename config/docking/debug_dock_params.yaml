@@ -7,6 +7,12 @@ max_speed_mps: 0.20
 min_speed_mps: 0.05
 max_retries: 2
 arm_max_retries: 3
+# The front stop calibrates the vehicle against each shelf.  The immediately
+# following rear stop reuses that pose and drives the semantic-point separation
+# as one straight segment; it does not fit the shelf again.
+straight_followups:
+  pickup_rear: pickup_front
+  drop_rear: drop_front
 precision_profiles:
   shelf_dock:
     # Enter before ordinary inflated-costmap rejection can block the exact pose.
