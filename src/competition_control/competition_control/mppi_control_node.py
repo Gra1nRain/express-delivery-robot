@@ -31,6 +31,10 @@ from competition_planning.artifact_provenance import (
 )
 from competition_planning.semantic_planner import PathPoint
 from competition_planning.trajectory_parameterizer import parameterize_local_path
+from competition_control.control_safety import (
+    segmented_safety_stop_requested,
+    update_local_hard_stop_latch,
+)
 from competition_control.local_plan_continuity import (
     checkpoint_errors,
     checkpoint_longitudinal_error,
@@ -170,6 +174,7 @@ class MPPIControlNode(Node):
         ):
             raise ValueError("local plan reuse tolerances must be non-negative")
         self._local_stop_requested = self._replanning_enabled
+        self._local_hard_stop_requested = False
         self._control_period_s = 1.0 / float(
             self.declare_parameter("frequency_hz", 20.0).value
         )
@@ -572,6 +577,17 @@ class MPPIControlNode(Node):
                 self._local_stop_callback,
                 10,
             )
+            self.create_subscription(
+                String,
+                str(
+                    self.declare_parameter(
+                        "local_status_topic",
+                        "/planning/local_replan_status",
+                    ).value
+                ),
+                self._local_status_callback,
+                10,
+            )
         self._timer = self.create_timer(self._control_period_s, self._control_cycle)
         self.get_logger().info(
             f"MPPI ready: trajectory={trajectory_file}, "
@@ -620,6 +636,7 @@ class MPPIControlNode(Node):
             self._reset_precision_controller()
         self._accepted_local_geometry = None
         self._local_plan_update_mode = "waiting"
+        self._local_hard_stop_requested = False
         self._executed_poses.clear()
         self.get_logger().info(
             "Received /initialpose; holding zero command for "
@@ -737,6 +754,18 @@ class MPPIControlNode(Node):
 
     def _local_stop_callback(self, message: Bool) -> None:
         self._local_stop_requested = bool(message.data)
+
+    def _local_status_callback(self, message: String) -> None:
+        try:
+            status = json.loads(message.data)
+        except (json.JSONDecodeError, TypeError):
+            return
+        if not isinstance(status, dict):
+            return
+        self._local_hard_stop_requested = update_local_hard_stop_latch(
+            self._local_hard_stop_requested,
+            status,
+        )
 
     def _route_enable_callback(self, message: Bool) -> None:
         self._route_enabled = bool(message.data)
@@ -941,19 +970,21 @@ class MPPIControlNode(Node):
             self._shelf_relative_active = False
             self._shelf_clearance_m = None
 
-        local_plan_unavailable = (
-            self._replanning_enabled
-            and not self._precision_active
-            and (
-                self._local_stop_requested
-                or local_plan_age_s is None
+        safety_stop_requested = segmented_safety_stop_requested(
+            replanning_enabled=self._replanning_enabled,
+            precision_active=self._precision_active,
+            local_stop_requested=self._local_stop_requested,
+            local_hard_stop_requested=self._local_hard_stop_requested,
+            local_plan_stale=(
+                local_plan_age_s is None
                 or local_plan_age_s > self._local_trajectory_timeout_s
-            )
+            ),
+            avoidance_stop_requested=self._avoidance_stop_requested,
         )
         if (
             precision_decision is not None
             and self._precision_active
-            and not self._avoidance_stop_requested
+            and not safety_stop_requested
             and not precision_decision.pose_ready
         ):
             self._mission_phase = precision_decision.phase.value
@@ -995,9 +1026,7 @@ class MPPIControlNode(Node):
                 now_s=now_s,
                 enabled=self._route_enabled,
                 state_valid=True,
-                stop_requested=(
-                    self._avoidance_stop_requested or local_plan_unavailable
-                ),
+                stop_requested=safety_stop_requested,
                 position_error_m=position_error_m,
                 heading_error_rad=heading_error_rad,
                 speed_mps=state.linear_speed_mps,
@@ -1203,6 +1232,9 @@ class MPPIControlNode(Node):
                         "pose_prediction_s": pose_prediction_s,
                         "local_plan_age_s": self._local_plan_age_s(now_s),
                         "local_plan_error": self._local_plan_error,
+                        "local_hard_stop_requested": (
+                            self._local_hard_stop_requested
+                        ),
                         "local_plan_update_mode": self._local_plan_update_mode,
                         "local_plan_reuse_count": self._local_plan_reuse_count,
                         "local_plan_replace_count": self._local_plan_replace_count,
