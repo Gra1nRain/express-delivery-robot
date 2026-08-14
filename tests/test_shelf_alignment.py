@@ -2,6 +2,7 @@ import math
 import pathlib
 import sys
 import unittest
+from dataclasses import replace
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -134,6 +135,39 @@ class ShelfAlignmentEstimatorTest(unittest.TestCase):
         assert observation is not None
         self.assertAlmostEqual(observation.side_distance_m, 0.53, delta=0.01)
         self.assertGreaterEqual(observation.point_count, 10)
+
+    def test_nearest_shelf_line_wins_over_longer_background_wall(self) -> None:
+        angle_min = -math.pi / 2.0
+        increment = math.radians(0.5)
+        ranges = [math.inf] * 361
+        for index in range(len(ranges)):
+            angle = angle_min + index * increment
+            sine = math.sin(angle)
+            if sine >= -1e-6:
+                continue
+            near_range = -0.52 / sine
+            near_x = near_range * math.cos(angle)
+            far_range = -0.75 / sine
+            far_x = far_range * math.cos(angle)
+            if 0.0 <= near_x <= 0.38 and index % 4 == 0:
+                ranges[index] = near_range
+            elif 0.40 <= far_x <= 0.80:
+                ranges[index] = far_range
+
+        observation = estimate_shelf_from_scan(
+            ranges,
+            angle_min_rad=angle_min,
+            angle_increment_rad=increment,
+            config=replace(
+                self.config,
+                min_points=6,
+                max_side_distance_m=0.80,
+            ),
+        )
+
+        self.assertIsNotNone(observation)
+        assert observation is not None
+        self.assertAlmostEqual(observation.side_distance_m, 0.52, delta=0.02)
 
 
 if __name__ == "__main__":

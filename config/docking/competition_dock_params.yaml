@@ -46,8 +46,8 @@ precision_profiles:
         min_longitudinal_m: -0.60
         max_longitudinal_m: 0.80
         min_side_distance_m: 0.20
-        max_side_distance_m: 1.00
-        min_points: 10
+        max_side_distance_m: 0.80
+        min_points: 6
         min_span_m: 0.30
         max_residual_m: 0.035
         max_heading_error_deg: 15.0

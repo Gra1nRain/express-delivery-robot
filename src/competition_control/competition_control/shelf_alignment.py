@@ -136,6 +136,15 @@ def estimate_shelf_from_scans(
                 continue
             normal_x = -tangent_y
             normal_y = tangent_x
+            candidate_side_distance = side_sign * (
+                left[1] - tangent_y * left[0] / tangent_x
+            )
+            if not (
+                config.min_side_distance_m
+                <= candidate_side_distance
+                <= config.max_side_distance_m
+            ):
+                continue
             inliers = [
                 point
                 for point in fit_points
@@ -152,7 +161,10 @@ def estimate_shelf_from_scans(
                 for point in inliers
             ]
             span = max(projections) - min(projections)
-            score = (len(inliers), span, -pair_span)
+            # The working shelf is the nearest shelf-like parallel surface.
+            # Prioritizing raw inlier count can select a longer background wall
+            # after the vehicle passes the end of the shelf.
+            score = (-candidate_side_distance, len(inliers), span)
             if best is None or score > best[:3]:
                 best = (score[0], score[1], score[2], inliers)
     if best is None:
