@@ -184,6 +184,7 @@ class ScanMapResidualMonitor(Node):
         scan_age_s = now_s - scan_stamp_s
         if now_s - self._last_processed_s < self._update_period_s:
             return
+        self._last_processed_s = now_s
         if self._distance_field is None or scan_age_s > self._max_scan_age_s:
             return
         try:
@@ -227,7 +228,6 @@ class ScanMapResidualMonitor(Node):
         except ValueError as exc:
             self.get_logger().warning(f"Scan-map residual unavailable: {exc}")
             return
-        self._last_processed_s = now_s
         stationary = self._is_stationary(now_s)
         if stationary and result.confident:
             self._stationary_samples.append(
