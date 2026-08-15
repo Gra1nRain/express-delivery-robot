@@ -63,10 +63,6 @@ def _launch_setup(context, *args, **kwargs):
         LaunchConfiguration("replanning_enabled").perform(context),
         default=bool(replanning["enabled"]),
     )
-    alignment_enabled = _bool_override(
-        LaunchConfiguration("start_alignment").perform(context),
-        default=True,
-    )
     safety = safety_config["safety"]
     scan_projection = safety_config["pointcloud_to_laserscan"]
     scan_projection_parameters = {
@@ -132,22 +128,6 @@ def _launch_setup(context, *args, **kwargs):
                 "robot_model": "ranger_mini_v3",
                 "rviz": "false",
             }.items(),
-        ),
-        Node(
-            package="competition_localization",
-            executable="scan_map_residual_monitor_node",
-            name="scan_map_residual_monitor",
-            output="screen",
-            condition=IfCondition(LaunchConfiguration("start_alignment")),
-            parameters=[LaunchConfiguration("scan_map_residual_params_file")],
-        ),
-        Node(
-            package="competition_localization",
-            executable="startup_alignment_node",
-            name="startup_alignment",
-            output="screen",
-            condition=IfCondition(LaunchConfiguration("start_alignment")),
-            parameters=[LaunchConfiguration("startup_alignment_params_file")],
         ),
         Node(
             package="competition_control",
@@ -225,15 +205,6 @@ def _launch_setup(context, *args, **kwargs):
                     "max_position_jump_m": estimator["max_position_jump_m"],
                     "max_heading_jump_deg": estimator["max_heading_jump_deg"],
                     "initial_pose_settle_s": estimator["initial_pose_settle_s"],
-                    "startup_alignment_required": estimator.get(
-                        "startup_alignment_required",
-                        False,
-                    )
-                    and alignment_enabled,
-                    "alignment_status_timeout_s": estimator.get(
-                        "alignment_status_timeout_s",
-                        1.0,
-                    ),
                     "reference_path_topic": visualization[
                         "reference_path_topic"
                     ],
@@ -648,24 +619,6 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument(
-                "scan_map_residual_params_file",
-                default_value=os.path.join(
-                    competition_ws,
-                    "config",
-                    "localization",
-                    "scan_map_residual_params.yaml",
-                ),
-            ),
-            DeclareLaunchArgument(
-                "startup_alignment_params_file",
-                default_value=os.path.join(
-                    competition_ws,
-                    "config",
-                    "localization",
-                    "startup_alignment_params.yaml",
-                ),
-            ),
-            DeclareLaunchArgument(
                 "safety_params_file",
                 default_value=os.path.join(
                     competition_ws,
@@ -708,13 +661,6 @@ def generate_launch_description():
             DeclareLaunchArgument("start_livox", default_value="true"),
             DeclareLaunchArgument("start_fast_lio", default_value="true"),
             DeclareLaunchArgument("start_proximity_stop", default_value="true"),
-            DeclareLaunchArgument(
-                "start_alignment",
-                default_value="true",
-                description=(
-                    "Run stationary scan-map startup and checkpoint alignment."
-                ),
-            ),
             DeclareLaunchArgument("start_local_replanner", default_value="true"),
             DeclareLaunchArgument(
                 "replanning_enabled",

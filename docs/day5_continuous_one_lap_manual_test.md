@@ -81,12 +81,6 @@ semantic_map_control_validation.yaml
 
 未验证：自旋、平移模式和模式反馈超时已经过离线测试，但仍需在空旷区域先做受监督低速实车验证，之后才能靠近货架测试。
 
-### 启动与检查点地图校准
-
-事实：终端5默认启动静止扫描—静态地图校准。人工 `2D Pose Estimate` 只提供粗初值；系统必须在车辆静止时收集稳定残差、应用一次受限锚点修正并完成复核，之后才报告 `startup_ready=true`。不要再用“发布初始位姿后固定等待1秒”代替校准状态检查。
-
-事实：每个任务检查点进入停车保持后，控制器会自动请求一次静态地图校准。对应检查点校准完成前不会切换下一路线段；低置信度、状态超时或复核失败时保持停车，不需要操作员手动发布校准命令。
-
 ## 0. 测试前准备
 
 1. 小车上电，清空行驶区域，确认物理急停随时可按。
@@ -203,7 +197,6 @@ ros2 launch competition_bringup day5_motion_control.launch.py \
   start_base:=true \
   start_map_server:=true \
   start_proximity_stop:=true \
-  start_alignment:=true \
   start_local_replanner:=true \
   replanning_enabled:=true \
   command_output_topic:=/cmd_vel_safe \
@@ -216,7 +209,7 @@ ros2 launch competition_bringup day5_motion_control.launch.py \
 保持终端5运行。日志应包含：
 
 ```text
-continuous_points=236
+continuous_points=226
 mission_checkpoints=5
 ```
 
@@ -236,21 +229,7 @@ export XDG_RUNTIME_DIR=/run/user/1000
 rviz2 -d /home/agilex/competition_ws/install/competition_bringup/share/competition_bringup/rviz/day5_motion_control.rviz
 ```
 
-在RViz中使用 `2D Pose Estimate` 发布初始位姿。可以反复调整，以最后一次为准。发布后不要发车，回到终端3执行：
-
-```bash
-ros2 topic echo /localization/alignment_status
-```
-
-必须看到同一条状态中同时满足：
-
-```text
-"phase":"READY"
-"startup_ready":true
-"checkpoint_hold":false
-```
-
-看到后按 `Ctrl+C` 结束状态查看。如果持续为 `COLLECTING`、`REJECTED`，或者原因提示低置信度、搜索触边、锚点写入失败，不要发车；保留终端5输出并重新检查初始位姿、静态地图和扫描质量。
+在RViz中使用 `2D Pose Estimate` 发布初始位姿。可以反复调整，以最后一次为准。确认雷达点云与静态地图重合后等待至少1秒。
 
 ## 终端7：启动被动诊断
 
@@ -281,25 +260,22 @@ ros2 topic echo /system_state --once
 echo '===== 3. 定位状态必须 true ====='
 ros2 topic echo /control/state_valid --once
 
-echo '===== 4. 启动地图校准必须 READY ====='
-ros2 topic echo /localization/alignment_status --once
-
-echo '===== 5. 避障停车必须 false ====='
+echo '===== 4. 避障停车必须 false ====='
 ros2 topic echo /avoidance/stop_request --once
 
-echo '===== 6. 控制状态 ====='
+echo '===== 5. 控制状态 ====='
 ros2 topic echo /control/status --once
 
-echo '===== 7. 局部规划状态 ====='
+echo '===== 6. 局部规划状态 ====='
 ros2 topic echo /planning/local_replan_status --once
 
-echo '===== 8. Safety状态 ====='
+echo '===== 7. Safety状态 ====='
 ros2 topic echo /safety/event --once
 
-echo '===== 9. 发车前 /cmd_vel 发布者必须为0 ====='
+echo '===== 8. 发车前 /cmd_vel 发布者必须为0 ====='
 ros2 topic info /cmd_vel
 
-echo '===== 10. 发车前车速必须为0 ====='
+echo '===== 9. 发车前车速必须为0 ====='
 ros2 topic echo /odom --once --field twist.twist.linear.x
 ```
 
@@ -308,7 +284,6 @@ ros2 topic echo /odom --once --field twist.twist.linear.x
 - 点云为 `ready`；
 - `/system_state` 中 `control_mode: 1`、`error_code: 0`，电池电压不是 `0.0`；
 - `/control/state_valid` 为 `true`；
-- `/localization/alignment_status` 同时为 `phase=READY`、`startup_ready=true`、`checkpoint_hold=false`；
 - `/avoidance/stop_request` 为 `false`；
 - `/control/status` 没有 `INVALID_STATE`、`FAULT_HOLD` 或定位跳变原因；
 - `/planning/local_replan_status` 的 `stop_requested` 为 `false`；
@@ -323,9 +298,8 @@ ros2 topic echo /odom --once --field twist.twist.linear.x
 1. 场地清空，人员远离；
 2. 物理急停可随时按下；
 3. RViz点云与地图已经对齐；
-4. 启动地图校准已经报告 `startup_ready=true`；
-5. 发车前总检查全部通过；
-6. 已取得本轮明确的发车许可。
+4. 发车前总检查全部通过；
+5. 已取得本轮明确的发车许可。
 
 复制完整代码块：
 
@@ -363,7 +337,7 @@ fi
 1. `pickup_front`：必须减速到零并保持，不得直接穿过。
    距检查点 0.50 m 内的预期前进速度为 `0.05-0.08 m/s`；航向尚未进入
    `±4°` 时保持 `0.05 m/s`，不应再出现毫米级持续微挪。
-2. 保持完成后：先进入检查点地图校准保持；对应 ref 校准 READY 后，当前检查点才应推进为 `pickup_rear` 并继续行驶。正常情况下这里会比旧流程多等待十几秒。
+2. 保持完成后：当前检查点应推进为 `pickup_rear`，再继续行驶。
 3. `pickup_rear`、`drop_front`、`drop_rear`：依次停车。
 4. `finish_park`：完成一圈后停车并结束。
 5. 遇到局部规划失败或临时状态过期：应发布零速度进入 `SAFETY_HOLD`；数据或路径恢复后才继续。

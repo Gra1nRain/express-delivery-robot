@@ -18,17 +18,7 @@
 
 `/planning/optimized_trajectory` 的 Day5 连续 artifact 字段为：`x`、`y`、`yaw`、`s`、`curvature`、`v`、`a`、`jerk`、`yaw_rate`、`t`、`ref_id`。顶层 `source_manifest` 保存路线、语义图、规划/优化参数、栅格地图 YAML 和栅格图像的 SHA-256；控制节点启动前逐项复算，不一致即拒绝运行。正式 ROS2 msg 尚未冻结；控制节点当前从 YAML 加载冻结轨迹，避免在线规划抖动直接进入底盘闭环。
 
-定位唯一权威链为锚定 FAST-LIO 的 `map -> camera_init -> body`；`/odom` 只提供 RANGER 速度反馈，不发布竞争性的 `map -> odom`。Day5 launch 不启动 AMCL。`fastlio_anchor_node` 是 `map -> camera_init` 的唯一写入者：人工 `/initialpose` 只生成粗锚点，启动校准协调器在车辆静止、扫描匹配连续稳定且质量达标时申请一次有版本号的精修；路线执行期间只允许在控制器已经进入检查点停车保持后申请精修。每次精修后必须通过新的静止扫描复核，失败则回滚并保持停车。
-
-| 定位校准接口 | 方向 | 说明 |
-|---|---|---|
-| `/localization/scan_map_residual` | residual monitor -> alignment | JSON；同时包含雷达原点处的残差修正及换算后的全局 SE(2) 锚点修正，只在静止且匹配可信时可成为校准证据 |
-| `/localization/anchor_update_request` | alignment -> fastlio anchor | JSON；带 `request_id`、期望锚点 revision、模式、全局修正和雷达处位移修正 |
-| `/localization/anchor_status` | fastlio anchor -> alignment | transient-local JSON；报告粗锚点或精修是否应用、revision、安全状态和当前锚点 |
-| `/localization/alignment_status` | alignment -> control/anchor | transient-local JSON；报告启动校准、检查点校准、复核、回滚和就绪状态 |
-| `/localization/checkpoint_alignment_request` | control -> alignment | 当前静态检查点 `ref_id`；只有 DOCK_HOLD 到达后才发布 |
-
-启用 `startup_alignment_required` 时，控制器对校准状态采用 fail-closed：状态超时、启动校准未就绪或检查点校准正在执行都只允许零速保持；当前检查点没有相同 `ref_id` 的校准就绪确认时，不允许切换到下一路线段。校准节点和残差节点不发布 TF 或速度命令。
+定位唯一权威链为锚定 FAST-LIO 的 `map -> camera_init -> body`；`/odom` 只提供 RANGER 速度反馈，不发布竞争性的 `map -> odom`。Day5 launch 不启动 AMCL。
 
 最终输出 `/cmd_vel_safe` 由 `competition_safety` 独占。实车驱动实际订阅 `/cmd_vel` 时，只允许把 safety 的 `command_output_topic` 显式设为 `/cmd_vel`，控制节点不得直接 remap 到该 topic。
 

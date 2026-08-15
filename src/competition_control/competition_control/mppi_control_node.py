@@ -31,11 +31,6 @@ from competition_planning.artifact_provenance import (
 )
 from competition_planning.semantic_planner import PathPoint
 from competition_planning.trajectory_parameterizer import parameterize_local_path
-from competition_control.control_safety import (
-    alignment_gate_decision,
-    segmented_safety_stop_requested,
-    update_local_hard_stop_latch,
-)
 from competition_control.local_plan_continuity import (
     checkpoint_errors,
     checkpoint_longitudinal_error,
@@ -78,7 +73,6 @@ from competition_control.shelf_alignment import (
 from competition_control.segmented_route_state_machine import (
     SegmentedRouteConfig,
     SegmentedRouteObservation,
-    SegmentedRoutePhase,
     SegmentedRouteStateMachine,
     state_failure_requires_rearm,
 )
@@ -176,7 +170,6 @@ class MPPIControlNode(Node):
         ):
             raise ValueError("local plan reuse tolerances must be non-negative")
         self._local_stop_requested = self._replanning_enabled
-        self._local_hard_stop_requested = False
         self._control_period_s = 1.0 / float(
             self.declare_parameter("frequency_hz", 20.0).value
         )
@@ -344,22 +337,6 @@ class MPPIControlNode(Node):
             random_seed=int(self.declare_parameter("random_seed", 7).value),
         )
         self._route_enabled = False
-        self._alignment_required = bool(
-            self.declare_parameter("startup_alignment_required", False).value
-        ) and self._checkpoint_route_enabled
-        self._alignment_status_timeout_s = float(
-            self.declare_parameter("alignment_status_timeout_s", 1.0).value
-        )
-        if self._alignment_status_timeout_s <= 0.0:
-            raise ValueError("alignment_status_timeout_s must be positive")
-        self._startup_alignment_ready = not self._alignment_required
-        self._checkpoint_alignment_hold = False
-        self._checkpoint_alignment_ready_ref: str | None = None
-        self._alignment_status_stamp_s: float | None = None
-        self._alignment_reason: str | None = None
-        self._alignment_anchor_revision: int | None = None
-        self._last_alignment_request_ref: str | None = None
-        self._last_alignment_request_stamp_s: float | None = None
         self._avoidance_stop_requested = self._checkpoint_route_enabled
         self._mission_phase = (
             "MISSION_DISARMED" if self._checkpoint_route_enabled else "CONTINUOUS_ROUTE"
@@ -524,16 +501,6 @@ class MPPIControlNode(Node):
             ),
             1,
         )
-        self._checkpoint_alignment_request_publisher = self.create_publisher(
-            String,
-            str(
-                self.declare_parameter(
-                    "checkpoint_alignment_request_topic",
-                    "/localization/checkpoint_alignment_request",
-                ).value
-            ),
-            10,
-        )
         self._executed_path_min_separation_m = float(
             self.declare_parameter("executed_path_min_separation_m", 0.05).value
         )
@@ -563,18 +530,6 @@ class MPPIControlNode(Node):
                 self._route_enable_callback,
                 10,
             )
-            if self._alignment_required:
-                self.create_subscription(
-                    String,
-                    str(
-                        self.declare_parameter(
-                            "alignment_status_topic",
-                            "/localization/alignment_status",
-                        ).value
-                    ),
-                    self._alignment_status_callback,
-                    path_qos,
-                )
             self.create_subscription(
                 Bool,
                 str(
@@ -615,17 +570,6 @@ class MPPIControlNode(Node):
                     ).value
                 ),
                 self._local_stop_callback,
-                10,
-            )
-            self.create_subscription(
-                String,
-                str(
-                    self.declare_parameter(
-                        "local_status_topic",
-                        "/planning/local_replan_status",
-                    ).value
-                ),
-                self._local_status_callback,
                 10,
             )
         self._timer = self.create_timer(self._control_period_s, self._control_cycle)
@@ -676,7 +620,6 @@ class MPPIControlNode(Node):
             self._reset_precision_controller()
         self._accepted_local_geometry = None
         self._local_plan_update_mode = "waiting"
-        self._local_hard_stop_requested = False
         self._executed_poses.clear()
         self.get_logger().info(
             "Received /initialpose; holding zero command for "
@@ -795,51 +738,8 @@ class MPPIControlNode(Node):
     def _local_stop_callback(self, message: Bool) -> None:
         self._local_stop_requested = bool(message.data)
 
-    def _local_status_callback(self, message: String) -> None:
-        try:
-            status = json.loads(message.data)
-        except (json.JSONDecodeError, TypeError):
-            return
-        if not isinstance(status, dict):
-            return
-        self._local_hard_stop_requested = update_local_hard_stop_latch(
-            self._local_hard_stop_requested,
-            status,
-        )
-
     def _route_enable_callback(self, message: Bool) -> None:
         self._route_enabled = bool(message.data)
-        if not self._route_enabled:
-            self._last_alignment_request_ref = None
-            self._last_alignment_request_stamp_s = None
-
-    def _alignment_status_callback(self, message: String) -> None:
-        try:
-            status = json.loads(message.data)
-        except (json.JSONDecodeError, TypeError):
-            return
-        if not isinstance(status, dict):
-            return
-        self._startup_alignment_ready = status.get("startup_ready") is True
-        self._checkpoint_alignment_hold = status.get("checkpoint_hold") is True
-        ready_ref = status.get("checkpoint_ready_ref")
-        self._checkpoint_alignment_ready_ref = (
-            ready_ref if isinstance(ready_ref, str) and ready_ref else None
-        )
-        reason = status.get("reason")
-        self._alignment_reason = reason if isinstance(reason, str) else None
-        revision = status.get("anchor_revision")
-        if isinstance(revision, int) and revision != self._alignment_anchor_revision:
-            if self._alignment_anchor_revision is not None:
-                # A gated anchor correction is an intentional TF discontinuity.
-                # Accept the first post-correction state instead of latching the
-                # normal unexpected-jump guard at a stopped checkpoint.
-                self._state_estimator.reset()
-                self._controller.reset()
-            self._alignment_anchor_revision = revision
-        self._alignment_status_stamp_s = (
-            self.get_clock().now().nanoseconds * 1e-9
-        )
 
     def _avoidance_stop_callback(self, message: Bool) -> None:
         self._avoidance_stop_requested = bool(message.data)
@@ -1041,34 +941,19 @@ class MPPIControlNode(Node):
             self._shelf_relative_active = False
             self._shelf_clearance_m = None
 
-        alignment_gate = alignment_gate_decision(
-            required=self._alignment_required,
-            route_enabled=self._route_enabled,
-            status_age_s=self._alignment_status_age_s(now_s),
-            status_timeout_s=self._alignment_status_timeout_s,
-            startup_ready=self._startup_alignment_ready,
-            checkpoint_hold=self._checkpoint_alignment_hold,
-            checkpoint_ready_ref=self._checkpoint_alignment_ready_ref,
-            active_checkpoint_ref=semantic_goal.ref_id,
-            dock_hold_reached=False,
-        )
-        safety_stop_requested = alignment_gate.hold_requested or (
-            segmented_safety_stop_requested(
-                replanning_enabled=self._replanning_enabled,
-                precision_active=self._precision_active,
-                local_stop_requested=self._local_stop_requested,
-                local_hard_stop_requested=self._local_hard_stop_requested,
-                local_plan_stale=(
-                    local_plan_age_s is None
-                    or local_plan_age_s > self._local_trajectory_timeout_s
-                ),
-                avoidance_stop_requested=self._avoidance_stop_requested,
+        local_plan_unavailable = (
+            self._replanning_enabled
+            and not self._precision_active
+            and (
+                self._local_stop_requested
+                or local_plan_age_s is None
+                or local_plan_age_s > self._local_trajectory_timeout_s
             )
         )
         if (
             precision_decision is not None
             and self._precision_active
-            and not safety_stop_requested
+            and not self._avoidance_stop_requested
             and not precision_decision.pose_ready
         ):
             self._mission_phase = precision_decision.phase.value
@@ -1110,28 +995,16 @@ class MPPIControlNode(Node):
                 now_s=now_s,
                 enabled=self._route_enabled,
                 state_valid=True,
-                stop_requested=safety_stop_requested,
+                stop_requested=(
+                    self._avoidance_stop_requested or local_plan_unavailable
+                ),
                 position_error_m=position_error_m,
                 heading_error_rad=heading_error_rad,
                 speed_mps=state.linear_speed_mps,
                 longitudinal_error_m=longitudinal_error_m,
-                completion_allowed=alignment_gate.completion_allowed,
             )
         )
         self._mission_phase = decision.phase.value
-        checkpoint_request = alignment_gate_decision(
-            required=self._alignment_required,
-            route_enabled=self._route_enabled,
-            status_age_s=self._alignment_status_age_s(now_s),
-            status_timeout_s=self._alignment_status_timeout_s,
-            startup_ready=self._startup_alignment_ready,
-            checkpoint_hold=self._checkpoint_alignment_hold,
-            checkpoint_ready_ref=self._checkpoint_alignment_ready_ref,
-            active_checkpoint_ref=semantic_goal.ref_id,
-            dock_hold_reached=(decision.phase == SegmentedRoutePhase.DOCK_HOLD),
-        )
-        if checkpoint_request.request_checkpoint:
-            self._request_checkpoint_alignment(semantic_goal.ref_id, now_s)
         if decision.segment_changed:
             calibrated_anchor_ready = (
                 precision_decision is not None and precision_decision.pose_ready
@@ -1330,29 +1203,12 @@ class MPPIControlNode(Node):
                         "pose_prediction_s": pose_prediction_s,
                         "local_plan_age_s": self._local_plan_age_s(now_s),
                         "local_plan_error": self._local_plan_error,
-                        "local_hard_stop_requested": (
-                            self._local_hard_stop_requested
-                        ),
                         "local_plan_update_mode": self._local_plan_update_mode,
                         "local_plan_reuse_count": self._local_plan_reuse_count,
                         "local_plan_replace_count": self._local_plan_replace_count,
                         "local_plan_error_count": self._local_plan_error_count,
                         "mission_phase": self._mission_phase,
                         "route_enabled": self._route_enabled,
-                        "alignment_required": self._alignment_required,
-                        "startup_alignment_ready": (
-                            self._startup_alignment_ready
-                        ),
-                        "checkpoint_alignment_hold": (
-                            self._checkpoint_alignment_hold
-                        ),
-                        "checkpoint_alignment_ready_ref": (
-                            self._checkpoint_alignment_ready_ref
-                        ),
-                        "alignment_status_age_s": self._alignment_status_age_s(
-                            now_s
-                        ),
-                        "alignment_reason": self._alignment_reason,
                         "active_checkpoint_index": self._active_checkpoint_index,
                         "active_checkpoint_ref": (
                             self._mission_checkpoints[
@@ -1408,22 +1264,6 @@ class MPPIControlNode(Node):
         if self._latest_local_plan_stamp_s is None:
             return None
         return now_s - self._latest_local_plan_stamp_s
-
-    def _alignment_status_age_s(self, now_s: float) -> float | None:
-        if self._alignment_status_stamp_s is None:
-            return None
-        return max(0.0, now_s - self._alignment_status_stamp_s)
-
-    def _request_checkpoint_alignment(self, reference: str, now_s: float) -> None:
-        if (
-            self._last_alignment_request_ref == reference
-            and self._last_alignment_request_stamp_s is not None
-            and now_s - self._last_alignment_request_stamp_s < 1.0
-        ):
-            return
-        self._last_alignment_request_ref = reference
-        self._last_alignment_request_stamp_s = now_s
-        self._checkpoint_alignment_request_publisher.publish(String(data=reference))
 
     def _active_precision_config(self) -> PrecisionDockingConfig | None:
         if not self._mission_checkpoints or self._straight_followup_target is not None:
