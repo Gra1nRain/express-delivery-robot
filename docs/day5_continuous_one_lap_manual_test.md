@@ -23,6 +23,16 @@ start
   -> finish_park（终点停车）
 ```
 
+固定物理起点定义为连续轨迹的第一个 `start` 点：
+
+```text
+map x   = -0.376 m
+map y   =  0.112 m
+map yaw =  0.020 rad（约 1.15°）
+```
+
+每次测试必须先把小车停回已标记的同一物理位置和朝向，再发布下面记录的固定初始位姿。不要通过修改初始位姿数值补偿停车位置不一致。
+
 使用文件：
 
 ```text
@@ -85,7 +95,7 @@ semantic_map_control_validation.yaml
 
 1. 小车上电，清空行驶区域，确认物理急停随时可按。
 2. 确认底盘CAN-USB线和雷达线连接正常。
-3. 确认小车位于起点附近。
+3. 确认小车准确停在已标记的固定物理起点，车身朝向与起点方向线一致。
 4. 如果已有旧节点，回到相应终端依次按 `Ctrl+C`，不要重复启动同名节点。
 5. 此时不要启动任何向 `/cmd_vel` 发布的节点。
 
@@ -215,7 +225,7 @@ mission_checkpoints=5
 
 此时命令只输出到 `/cmd_vel_safe`，小车不应运动。
 
-## 终端6：启动RViz并发布初始位姿
+## 终端6：启动RViz并发布固定初始位姿
 
 ```bash
 conda deactivate 2>/dev/null || true
@@ -229,7 +239,18 @@ export XDG_RUNTIME_DIR=/run/user/1000
 rviz2 -d /home/agilex/competition_ws/install/competition_bringup/share/competition_bringup/rviz/day5_motion_control.rviz
 ```
 
-在RViz中使用 `2D Pose Estimate` 发布初始位姿。可以反复调整，以最后一次为准。确认雷达点云与静态地图重合后等待至少1秒。
+保持RViz运行，另开一个临时终端执行以下命令，只发布一次固定初始位姿：
+
+```bash
+conda deactivate 2>/dev/null || true
+cd /home/agilex/competition_ws
+source scripts/car_source_env.sh
+
+ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+  "{header: {frame_id: map}, pose: {pose: {position: {x: -0.376, y: 0.112, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0099998333, w: 0.9999500004}}, covariance: [0.0025, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0025, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0003046]}}"
+```
+
+发布后等待至少1秒，确认RViz中雷达点云与静态地图重合。若不重合，不要用 `2D Pose Estimate` 临时改数值；先检查小车是否准确回到固定物理起点及方向线，再停止测试并保留现象。
 
 ## 终端7：启动被动诊断
 
