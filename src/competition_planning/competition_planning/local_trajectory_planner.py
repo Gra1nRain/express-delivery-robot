@@ -127,6 +127,7 @@ class LocalTrajectoryPlanner:
         current_pose: PathPoint,
         dynamic_obstacle_points: Iterable[tuple[float, float]],
         previous_reference_index: int = 0,
+        departure_context: bool = False,
     ) -> LocalPlan:
         if len(reference_path) < 2:
             raise ValueError("local replanning requires at least two reference points")
@@ -173,10 +174,20 @@ class LocalTrajectoryPlanner:
             )
             <= checkpoint_advance_distance_m + 1e-9
         )
+        planning_horizon_m = self._config.lookahead_distance_m
+        if departure_context:
+            # A rear-dock departure only needs to reach a collision-free pose
+            # beyond the shelf before normal rolling replanning resumes.  Do
+            # not couple that first constrained search to a distant checkpoint
+            # pose; two turning radii retain enough forward-only recovery room.
+            planning_horizon_m = min(
+                planning_horizon_m,
+                2.0 * self._config.min_turning_radius_m,
+            )
         rolling_rejoin_index = _lookahead_index(
             reference_path,
             start_index,
-            self._config.lookahead_distance_m,
+            planning_horizon_m,
         )
         if relaxed_span is None:
             rejoin_index = rolling_rejoin_index

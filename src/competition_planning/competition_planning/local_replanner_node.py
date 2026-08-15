@@ -531,6 +531,7 @@ class LocalReplannerNode(Node):
     def _planning_cycle(self) -> None:
         now = self.get_clock().now()
         now_s = now.nanoseconds / 1e9
+        docking_departure_context = False
         if self._obstacle_points_map is None or self._obstacle_received_s <= 0.0:
             self._publish_stop("WAITING_FOR_COSTMAP")
             return
@@ -602,6 +603,11 @@ class LocalReplannerNode(Node):
                 activation_distance_m=self._docking_activation_distance_m,
             )
             docking_mode = docking_checkpoint is not None
+            docking_departure_context = (
+                docking_mode
+                and docking_checkpoint_ref is not None
+                and docking_checkpoint_ref != self._active_checkpoint_ref
+            )
             if docking_mode != self._docking_mode:
                 self._docking_mode = docking_mode
                 self._planner = LocalTrajectoryPlanner(
@@ -648,6 +654,7 @@ class LocalReplannerNode(Node):
                 current_pose=current_pose,
                 dynamic_obstacle_points=obstacle_points,
                 previous_reference_index=self._previous_reference_index,
+                departure_context=docking_departure_context,
             )
             planning_time_ms = (time.perf_counter() - started_at) * 1000.0
         except HybridAStarTimeout as exc:
@@ -657,6 +664,7 @@ class LocalReplannerNode(Node):
                 obstacle_age_s=obstacle_age_s,
                 odom_age_s=odom_age_s,
                 planning_time_ms=(time.perf_counter() - started_at) * 1000.0,
+                docking_departure_context=docking_departure_context,
                 docking_filtered_obstacle_count=docking_filtered_obstacle_count,
             )
             return
@@ -666,6 +674,7 @@ class LocalReplannerNode(Node):
                 detail=str(exc),
                 obstacle_age_s=obstacle_age_s,
                 odom_age_s=odom_age_s,
+                docking_departure_context=docking_departure_context,
                 docking_filtered_obstacle_count=docking_filtered_obstacle_count,
             )
             return
@@ -694,6 +703,7 @@ class LocalReplannerNode(Node):
             planning_grid_cell_count=result.planning_grid_cell_count,
             docking_mode=self._docking_mode,
             docking_context_ref=docking_checkpoint_ref,
+            docking_departure_context=docking_departure_context,
             docking_filtered_obstacle_count=docking_filtered_obstacle_count,
         )
 

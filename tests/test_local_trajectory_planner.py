@@ -628,6 +628,114 @@ def _relaxed_config(**changes: object) -> LocalReplanConfig:
 
 
 class LocalTrajectoryPlannerTest(unittest.TestCase):
+    def test_latest_drop_rear_stop_uses_bounded_departure_horizon(self) -> None:
+        """Regress the finish_park timeout from the 20260815_114326 run."""
+
+        runtime = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "planning"
+                / "local_hybrid_astar_runtime_params_day5.yaml"
+            ).read_text(encoding="utf-8")
+        )["local_hybrid_astar_runtime"]
+        semantic_map = yaml.safe_load(
+            (REPO_ROOT / "maps" / "debug" / "semantic_map.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        artifact = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "docs"
+                / "evidence"
+                / "day5"
+                / "debug_indoor_one_lap_continuous_trajectory.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        reference = tuple(
+            PathPoint(
+                float(point["x"]),
+                float(point["y"]),
+                float(point["yaw"]),
+                point.get("ref_id"),
+            )
+            for point in artifact["points"]
+        )
+        finish_record = semantic_map["points"]["finish_park"]
+        finish = PathPoint(
+            float(finish_record["x"]),
+            float(finish_record["y"]),
+            float(finish_record["yaw"]),
+            "finish_park",
+        )
+        reference = reference_prefix_to_checkpoint(
+            reference,
+            finish,
+            exact_pose=False,
+        )
+        drop_rear_index = next(
+            index
+            for index, point in enumerate(reference)
+            if point.ref_id == "drop_rear"
+        )
+        planner = LocalTrajectoryPlanner(
+            OccupancyGridMap.from_yaml(REPO_ROOT / semantic_map["source_map"]),
+            LocalReplanConfig(
+                lookahead_distance_m=runtime["lookahead_distance_m"],
+                inflation_radius_m=0.0,
+                search_padding_m=runtime["search_padding_m"],
+                sample_spacing_m=runtime["sample_spacing_m"],
+                min_turning_radius_m=runtime["docking_min_turning_radius_m"],
+                step_length_m=runtime["step_length_m"],
+                curvature_bins=runtime["curvature_bins"],
+                heading_bins=runtime["heading_bins"],
+                goal_position_tolerance_m=runtime["goal_position_tolerance_m"],
+                goal_heading_tolerance_rad=math.radians(
+                    runtime["goal_heading_tolerance_deg"]
+                ),
+                reference_deviation_weight=runtime[
+                    "reference_deviation_weight"
+                ],
+                max_expansions=runtime["max_expansions"],
+                planning_timeout_s=runtime["planning_timeout_s"],
+                reference_search_window_points=runtime[
+                    "reference_search_window_points"
+                ],
+                footprint=AsymmetricFootprint(
+                    vehicle_length_m=runtime["docking_vehicle_length_m"],
+                    vehicle_width_m=runtime["docking_vehicle_width_m"],
+                    front_clearance_m=runtime["docking_front_clearance_m"],
+                    rear_clearance_m=runtime["docking_rear_clearance_m"],
+                    left_clearance_m=runtime[
+                        "docking_non_work_side_clearance_m"
+                    ],
+                    right_clearance_m=runtime[
+                        "docking_work_side_clearance_m"
+                    ],
+                ),
+            ),
+        )
+
+        result = planner.plan(
+            reference_path=reference,
+            current_pose=PathPoint(1.6259561666, 3.4824277087, -3.115),
+            dynamic_obstacle_points=(),
+            previous_reference_index=drop_rear_index,
+            departure_context=True,
+        )
+
+        self.assertEqual(result.status, "REPLANNED")
+        self.assertTrue(result.path_is_navigable)
+        self.assertLess(result.rejoin_index, len(reference) - 1)
+        self.assertGreater(
+            math.hypot(
+                result.path[-1].x - reference[drop_rear_index].x,
+                result.path[-1].y - reference[drop_rear_index].y,
+            ),
+            runtime["docking_activation_distance_m"],
+        )
+
     def test_pickup_front_docking_mode_waits_for_the_alignment_zone(self) -> None:
         runtime = yaml.safe_load(
             (
