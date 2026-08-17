@@ -51,6 +51,7 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
         heading_error_rad: float = 0.0,
         speed_mps: float = 0.0,
         longitudinal_error_m: float = -1.0,
+        release_segment_index: int | None = None,
     ) -> SegmentedRouteObservation:
         return SegmentedRouteObservation(
             now_s=now_s,
@@ -61,6 +62,7 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
             heading_error_rad=heading_error_rad,
             speed_mps=speed_mps,
             longitudinal_error_m=longitudinal_error_m,
+            release_segment_index=release_segment_index,
         )
 
     def test_overshot_checkpoint_holds_instead_of_micro_crawling(self) -> None:
@@ -132,7 +134,7 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
         self.assertTrue(state_failure_requires_rearm(("unknown_failure",)))
         self.assertTrue(state_failure_requires_rearm(()))
 
-    def test_advances_only_after_pose_heading_speed_and_hold_are_satisfied(self) -> None:
+    def test_waits_for_explicit_release_after_stable_stop(self) -> None:
         self.machine.update(self.observation(0.0))
 
         decision = self.machine.update(
@@ -165,10 +167,35 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
                 speed_mps=0.02,
             )
         )
-        self.assertEqual(decision.phase, SegmentedRoutePhase.TRACKING)
-        self.assertEqual(decision.active_segment_index, 1)
-        self.assertTrue(decision.segment_changed)
+        self.assertEqual(decision.phase, SegmentedRoutePhase.WAIT_RELEASE)
+        self.assertEqual(decision.active_segment_index, 0)
+        self.assertFalse(decision.segment_changed)
         self.assertFalse(decision.allow_tracking)
+
+        still_waiting = self.machine.update(
+            self.observation(
+                20.0,
+                position_error_m=0.05,
+                heading_error_rad=math.radians(2.0),
+                speed_mps=0.02,
+            )
+        )
+        self.assertEqual(still_waiting.phase, SegmentedRoutePhase.WAIT_RELEASE)
+        self.assertFalse(still_waiting.segment_changed)
+
+        released = self.machine.update(
+            self.observation(
+                20.1,
+                position_error_m=0.05,
+                heading_error_rad=math.radians(2.0),
+                speed_mps=0.02,
+                release_segment_index=1,
+            )
+        )
+        self.assertEqual(released.phase, SegmentedRoutePhase.TRACKING)
+        self.assertEqual(released.active_segment_index, 1)
+        self.assertTrue(released.segment_changed)
+        self.assertFalse(released.allow_tracking)
 
     def test_captures_dock_pose_before_vehicle_has_fully_stopped(self) -> None:
         self.machine.update(self.observation(0.0))
@@ -202,6 +229,19 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
                 position_error_m=0.07,
                 heading_error_rad=math.radians(4.0),
                 speed_mps=0.02,
+            )
+        )
+        self.assertEqual(decision.phase, SegmentedRoutePhase.WAIT_RELEASE)
+        self.assertEqual(decision.active_segment_index, 0)
+        self.assertFalse(decision.segment_changed)
+
+        decision = self.machine.update(
+            self.observation(
+                2.6,
+                position_error_m=0.07,
+                heading_error_rad=math.radians(4.0),
+                speed_mps=0.02,
+                release_segment_index=1,
             )
         )
         self.assertEqual(decision.active_segment_index, 1)
@@ -264,10 +304,18 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
             self.observation(2.0, position_error_m=0.0, speed_mps=0.0)
         )
         self.machine.update(
-            self.observation(2.1, position_error_m=0.0, speed_mps=0.0)
+            self.observation(
+                2.1,
+                position_error_m=0.0,
+                speed_mps=0.0,
+                release_segment_index=1,
+            )
+        )
+        self.machine.update(
+            self.observation(2.2, position_error_m=0.0, speed_mps=0.0)
         )
         decision = self.machine.update(
-            self.observation(3.1, position_error_m=0.0, speed_mps=0.0)
+            self.observation(3.2, position_error_m=0.0, speed_mps=0.0)
         )
 
         self.assertEqual(decision.phase, SegmentedRoutePhase.COMPLETED)
@@ -278,6 +326,33 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
         decision = self.machine.update(self.observation(4.0, enabled=False))
         self.assertEqual(decision.phase, SegmentedRoutePhase.DISARMED)
         self.assertEqual(decision.active_segment_index, 0)
+
+    def test_release_can_skip_intermediate_checkpoint(self) -> None:
+        machine = SegmentedRouteStateMachine(
+            segment_count=4,
+            config=SegmentedRouteConfig(dock_hold_s=0.5),
+        )
+        machine.update(self.observation(0.0))
+        machine.update(
+            self.observation(1.0, position_error_m=0.0, speed_mps=0.0)
+        )
+        ready = machine.update(
+            self.observation(1.5, position_error_m=0.0, speed_mps=0.0)
+        )
+        self.assertEqual(ready.phase, SegmentedRoutePhase.WAIT_RELEASE)
+
+        released = machine.update(
+            self.observation(
+                1.6,
+                position_error_m=0.0,
+                speed_mps=0.0,
+                release_segment_index=3,
+            )
+        )
+
+        self.assertEqual(released.phase, SegmentedRoutePhase.TRACKING)
+        self.assertEqual(released.active_segment_index, 3)
+        self.assertTrue(released.segment_changed)
 
 
 class SegmentedTrajectoryArtifactTest(unittest.TestCase):
@@ -339,11 +414,6 @@ class SegmentedTrajectoryArtifactTest(unittest.TestCase):
                 "finish_park",
             ],
         )
-        self.assertNotIn(
-            "traffic_light_stop_line",
-            [checkpoint.ref_id for checkpoint in checkpoints],
-        )
-
     def test_loads_current_ten_segment_artifact(self) -> None:
         import yaml
 

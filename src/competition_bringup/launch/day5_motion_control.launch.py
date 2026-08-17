@@ -422,6 +422,22 @@ def _launch_setup(context, *args, **kwargs):
             ],
         ),
         Node(
+            package="competition_mission",
+            executable="mission_node",
+            name="competition_mission",
+            output="screen",
+            condition=IfCondition(
+                LaunchConfiguration("start_competition_mission")
+            ),
+            parameters=[
+                {
+                    "mission_config_file": LaunchConfiguration(
+                        "mission_config_file"
+                    )
+                }
+            ],
+        ),
+        Node(
             package="competition_safety",
             executable="proximity_stop_node",
             name="proximity_stop",
@@ -729,6 +745,23 @@ def generate_launch_description():
                 description=(
                     "Subscribe to the existing wrist RGB topic for flag and "
                     "traffic-light recognition; this does not start the camera."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "start_competition_mission",
+                default_value="false",
+                description=(
+                    "Start the competition mission state machine. The route "
+                    "remains disarmed until a new flag event is received."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "mission_config_file",
+                default_value=os.path.join(
+                    competition_ws,
+                    "config",
+                    "mission",
+                    "indoor_competition_mission.yaml",
                 ),
             ),
             DeclareLaunchArgument(

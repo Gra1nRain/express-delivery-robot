@@ -21,6 +21,7 @@ class SegmentedRoutePhase(str, Enum):
     DISARMED = "MISSION_DISARMED"
     TRACKING = "SEGMENT_TRACKING"
     DOCK_HOLD = "DOCK_HOLD"
+    WAIT_RELEASE = "WAIT_RELEASE"
     SAFETY_HOLD = "SAFETY_HOLD"
     OVERSHOOT_HOLD = "DOCK_OVERSHOOT_HOLD"
     FAULT_HOLD = "FAULT_HOLD"
@@ -58,6 +59,7 @@ class SegmentedRouteObservation:
     heading_error_rad: float
     speed_mps: float
     longitudinal_error_m: float = math.nan
+    release_segment_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -112,6 +114,23 @@ class SegmentedRouteStateMachine:
             self._phase = SegmentedRoutePhase.FAULT_HOLD
             self._dock_hold_started_s = None
             return self._decision(allow_tracking=False)
+
+        if self._phase == SegmentedRoutePhase.WAIT_RELEASE:
+            if observation.stop_requested:
+                return self._decision(allow_tracking=False)
+            release_index = observation.release_segment_index
+            if release_index is None:
+                return self._decision(allow_tracking=False)
+            if not (
+                self._active_segment_index < release_index < self._segment_count
+            ):
+                return self._decision(allow_tracking=False)
+            self._active_segment_index = release_index
+            self._phase = SegmentedRoutePhase.TRACKING
+            return self._decision(
+                allow_tracking=False,
+                segment_changed=True,
+            )
 
         if observation.stop_requested:
             self._phase = SegmentedRoutePhase.SAFETY_HOLD
@@ -178,12 +197,8 @@ class SegmentedRouteStateMachine:
             if self._active_segment_index >= self._segment_count - 1:
                 self._phase = SegmentedRoutePhase.COMPLETED
                 return self._decision(allow_tracking=False)
-            self._active_segment_index += 1
-            self._phase = SegmentedRoutePhase.TRACKING
-            return self._decision(
-                allow_tracking=False,
-                segment_changed=True,
-            )
+            self._phase = SegmentedRoutePhase.WAIT_RELEASE
+            return self._decision(allow_tracking=False)
 
         raise RuntimeError(f"unsupported segmented route phase: {self._phase}")
 

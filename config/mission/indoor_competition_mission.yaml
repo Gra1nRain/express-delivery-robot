@@ -1,0 +1,21 @@
+mission:
+  refs:
+    traffic_marker: traffic_light_vision_on
+    traffic_stop: traffic_light_stop_line
+    pickup_front: pickup_front
+    pickup_rear: pickup_rear
+    drop_front: drop_front
+    drop_rear: drop_rear
+    finish: finish_park
+  traffic:
+    # Starts only after ARRIVED_AND_STOPPED. Red/yellow samples reset it.
+    no_result_timeout_s: 15.0
+  arm:
+    # Initial competition defaults. Re-measure complete task durations before
+    # the first integrated vehicle run; front and rear share these values.
+    pickup:
+      max_attempts: 3
+      total_timeout_s: 120.0
+    drop:
+      max_attempts: 3
+      total_timeout_s: 90.0

@@ -43,6 +43,10 @@ from competition_control.mission_checkpoints import (
     MissionCheckpoint,
     mission_checkpoints_from_route,
 )
+from competition_control.mission_markers import (
+    MissionMarkerTracker,
+    mission_markers_from_route,
+)
 from competition_control.mppi_controller import (
     BodyCommand,
     ControlTrajectory,
@@ -187,9 +191,18 @@ class MPPIControlNode(Node):
         )
         self._checkpoint_route_enabled = bool(self._mission_checkpoints)
         self._active_checkpoint_index = 0
+        self._requested_release_segment_index: int | None = None
         checkpoint_refs = {
             checkpoint.ref_id for checkpoint in self._mission_checkpoints
         }
+        self._mission_marker_tracker = MissionMarkerTracker(
+            mission_markers_from_route(
+                self._route,
+                checkpoint_refs=tuple(
+                    checkpoint.ref_id for checkpoint in self._mission_checkpoints
+                ),
+            )
+        )
         self._straight_followup_anchors = straight_followup_anchors_from_config(
             precision_config,
             tuple(checkpoint.ref_id for checkpoint in self._mission_checkpoints),
@@ -491,6 +504,16 @@ class MPPIControlNode(Node):
             ),
             path_qos,
         )
+        self._mission_marker_publisher = self.create_publisher(
+            String,
+            str(
+                self.declare_parameter(
+                    "mission_marker_topic",
+                    "/mission/marker_passed",
+                ).value
+            ),
+            10,
+        )
         self._executed_path_publisher = self.create_publisher(
             NavPath,
             str(
@@ -528,6 +551,17 @@ class MPPIControlNode(Node):
                     ).value
                 ),
                 self._route_enable_callback,
+                10,
+            )
+            self.create_subscription(
+                String,
+                str(
+                    self.declare_parameter(
+                        "checkpoint_release_topic",
+                        "/mission/checkpoint_release",
+                    ).value
+                ),
+                self._checkpoint_release_callback,
                 10,
             )
             self.create_subscription(
@@ -613,6 +647,8 @@ class MPPIControlNode(Node):
         self._controller.reset()
         if self._segmented_state_machine is not None:
             self._route_enabled = False
+            self._requested_release_segment_index = None
+            self._mission_marker_tracker.reset()
             self._segmented_state_machine.reset()
             self._controller.replace_trajectory(self._global_trajectory)
             self._activate_checkpoint(0)
@@ -740,6 +776,30 @@ class MPPIControlNode(Node):
 
     def _route_enable_callback(self, message: Bool) -> None:
         self._route_enabled = bool(message.data)
+        if not self._route_enabled:
+            self._requested_release_segment_index = None
+
+    def _checkpoint_release_callback(self, message: String) -> None:
+        checkpoint_ref = str(message.data).strip()
+        release_index = next(
+            (
+                index
+                for index, checkpoint in enumerate(self._mission_checkpoints)
+                if checkpoint.ref_id == checkpoint_ref
+            ),
+            None,
+        )
+        if release_index is None:
+            self.get_logger().warning(
+                f"Ignoring release to unknown checkpoint {checkpoint_ref!r}"
+            )
+            return
+        if release_index <= self._active_checkpoint_index:
+            self.get_logger().warning(
+                f"Ignoring non-forward checkpoint release {checkpoint_ref!r}"
+            )
+            return
+        self._requested_release_segment_index = release_index
 
     def _avoidance_stop_callback(self, message: Bool) -> None:
         self._avoidance_stop_requested = bool(message.data)
@@ -854,6 +914,12 @@ class MPPIControlNode(Node):
             ),
         )
         longitudinal_error_m = checkpoint_longitudinal_error(state, goal)
+        if self._route_enabled:
+            for marker_ref in self._mission_marker_tracker.update(
+                active_checkpoint_ref=semantic_goal.ref_id,
+                distance_to_checkpoint_m=position_error_m,
+            ):
+                self._mission_marker_publisher.publish(String(data=marker_ref))
         precision_decision = None
         if self._straight_followup_target is not None:
             assert self._straight_followup_anchor_state is not None
@@ -1002,10 +1068,12 @@ class MPPIControlNode(Node):
                 heading_error_rad=heading_error_rad,
                 speed_mps=state.linear_speed_mps,
                 longitudinal_error_m=longitudinal_error_m,
+                release_segment_index=self._requested_release_segment_index,
             )
         )
         self._mission_phase = decision.phase.value
         if decision.segment_changed:
+            self._requested_release_segment_index = None
             calibrated_anchor_ready = (
                 precision_decision is not None and precision_decision.pose_ready
             )
@@ -1215,6 +1283,13 @@ class MPPIControlNode(Node):
                                 self._active_checkpoint_index
                             ].ref_id
                             if self._mission_checkpoints
+                            else None
+                        ),
+                        "requested_release_checkpoint_ref": (
+                            self._mission_checkpoints[
+                                self._requested_release_segment_index
+                            ].ref_id
+                            if self._requested_release_segment_index is not None
                             else None
                         ),
                         "checkpoint_count": len(self._mission_checkpoints),

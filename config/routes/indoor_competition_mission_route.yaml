@@ -1,0 +1,84 @@
+route_name: indoor_competition_mission_route
+profile: debug
+warning: Indoor route for integrated mission-state-machine validation.
+semantic_map_file: maps/debug/semantic_map.yaml
+continuous_planning_mode: joined_step_paths
+mission_checkpoints:
+  - traffic_light_stop_line
+  - pickup_front
+  - pickup_rear
+  - drop_front
+  - drop_rear
+  - finish_park
+mission_markers:
+  - id: traffic_light_vision_on
+    before_checkpoint_ref: traffic_light_stop_line
+    # Initial indoor pre-trigger distance. Verify camera warm-up timing before
+    # the first integrated run; this marker does not alter motion control.
+    trigger_distance_m: 1.0
+# Only semantic assignments live in the route. Geometry and tuning are selected
+# from config/docking/debug_dock_params.yaml so a field swap needs no code edit.
+precision_docking:
+  checkpoints:
+    pickup_front: shelf_dock
+    pickup_rear: shelf_dock
+    drop_front: shelf_dock
+    drop_rear: shelf_dock
+steps:
+  - id: pickup_transit_1
+    type: RUN_SEGMENT
+    traffic_light_guard: false
+    avoidance_required: true
+    docking_approach: true
+    soft_intermediate_refs: true
+    corridor_ref: go_to_pickup_aligned
+    target_ref: pickup_front
+  - id: pickup_1_dock
+    type: DOCK
+    dock_type: PICKUP
+    cycle_index: 1
+    dock_pose_ref: pickup_front
+  - id: pickup_1_rear
+    type: RUN_SEGMENT
+    docking_approach: true
+    corridor_ref: pickup_front_to_rear
+    target_ref: pickup_rear
+  - id: pickup_1_rear_dock
+    type: DOCK
+    dock_type: PICKUP
+    cycle_index: 1
+    dock_pose_ref: pickup_rear
+  # Route-shaping interval only: leave the shelf parallel, then take the
+  # ordinary 0.81 m-radius turn. It is not a mission checkpoint or stop.
+  - id: pickup_departure_wide
+    type: RUN_SEGMENT
+    docking_approach: false
+    corridor_ref: pickup_departure_wide
+    target_ref: cone_lane_change_entry
+  - id: drop_transit_1
+    type: CONE_LANE_CHANGE
+    docking_approach: true
+    soft_intermediate_refs: true
+    corridor_ref: pickup_to_drop_aligned
+    entry_ref: cone_lane_change_entry
+    exit_ref: cone_lane_change_exit
+    target_ref: drop_front
+  - id: drop_1_dock
+    type: DOCK
+    dock_type: DROP
+    cycle_index: 1
+    dock_pose_ref: drop_front
+  - id: drop_1_rear
+    type: RUN_SEGMENT
+    docking_approach: true
+    corridor_ref: drop_front_to_rear
+    target_ref: drop_rear
+  - id: drop_1_rear_dock
+    type: DOCK
+    dock_type: DROP
+    cycle_index: 1
+    dock_pose_ref: drop_rear
+  - id: finish_park
+    type: FINISH_PARK
+    corridor_ref: finish_return
+    target_ref: finish_park
