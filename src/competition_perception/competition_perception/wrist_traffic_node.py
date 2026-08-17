@@ -67,6 +67,9 @@ class WristTrafficPerceptionNode(Node):
                 self.declare_parameter("flag_value_threshold", 100).value
             ),
             min_area_px=float(self.declare_parameter("flag_min_area_px", 800.0).value),
+            border_margin_px=int(
+                self.declare_parameter("flag_border_margin_px", 8).value
+            ),
         )
         self._flag_wave = FlagWaveDetector(
             WaveConfig(
@@ -140,6 +143,7 @@ class WristTrafficPerceptionNode(Node):
     def _image_callback(self, message: Image) -> None:
         now_s = self._now_s()
         frame = self._bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
+        waiting_for_flag = not self._rules.decision.started
         flag = self._flag_color.detect(frame)
         triggered = self._flag_wave.update(
             centroid_y=None if flag is None else float(flag.centroid_y),
@@ -151,6 +155,9 @@ class WristTrafficPerceptionNode(Node):
             self.get_logger().info("Start flag wave confirmed")
 
         self._frame_index += 1
+        if waiting_for_flag:
+            self._last_frame_s = self._now_s()
+            return
         if self._frame_index % self._inference_stride != 0:
             self._last_frame_s = self._now_s()
             return

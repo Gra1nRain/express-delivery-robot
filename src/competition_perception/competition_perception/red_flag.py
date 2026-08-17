@@ -26,10 +26,12 @@ class RedFlagColorDetector:
         saturation_threshold: int = 100,
         value_threshold: int = 100,
         min_area_px: float = 800.0,
+        border_margin_px: int = 8,
     ) -> None:
         self._saturation_threshold = int(saturation_threshold)
         self._value_threshold = int(value_threshold)
         self._min_area_px = float(min_area_px)
+        self._border_margin_px = max(0, int(border_margin_px))
         self._kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 
     def detect(self, frame: np.ndarray) -> RedFlagDetection | None:
@@ -55,13 +57,25 @@ class RedFlagColorDetector:
         contours, _ = cv2.findContours(
             mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
-        if not contours:
+        frame_height, frame_width = mask.shape[:2]
+        candidates: list[tuple[float, int, int, int, int]] = []
+        for contour in contours:
+            area = float(cv2.contourArea(contour))
+            if area < self._min_area_px:
+                continue
+            x, y, width, height = cv2.boundingRect(contour)
+            margin = self._border_margin_px
+            if (
+                x < margin
+                or y < margin
+                or x + width > frame_width - margin
+                or y + height > frame_height - margin
+            ):
+                continue
+            candidates.append((area, x, y, width, height))
+        if not candidates:
             return None
-        largest = max(contours, key=cv2.contourArea)
-        area = float(cv2.contourArea(largest))
-        if area < self._min_area_px:
-            return None
-        x, y, width, height = cv2.boundingRect(largest)
+        area, x, y, width, height = max(candidates, key=lambda item: item[0])
         return RedFlagDetection(
             centroid_x=x + width // 2,
             centroid_y=y + height // 2,
