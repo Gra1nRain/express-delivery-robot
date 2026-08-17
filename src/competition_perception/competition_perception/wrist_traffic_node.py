@@ -153,16 +153,20 @@ class WristTrafficPerceptionNode(Node):
     def _image_callback(self, message: Image) -> None:
         now_s = self._now_s()
         frame = self._bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
-        flag = self._flag_color.detect(frame)
-        triggered = self._flag_wave.update(
-            centroid_x=None if flag is None else float(flag.centroid_x),
-            centroid_y=None if flag is None else float(flag.centroid_y),
-            timestamp_s=now_s,
-        )
-        if triggered and not self._rules.decision.started:
-            self._rules.observe_flag_wave()
-            self._flag_publisher.publish(Bool(data=True))
-            self.get_logger().info("Start red motion confirmed")
+        flag = None
+        if not self._rules.decision.started:
+            flag = self._flag_color.detect(frame)
+            triggered = self._flag_wave.update(
+                centroid_x=None if flag is None else float(flag.centroid_x),
+                centroid_y=None if flag is None else float(flag.centroid_y),
+                timestamp_s=now_s,
+            )
+            if triggered:
+                self._rules.observe_flag_wave()
+                self._flag_publisher.publish(Bool(data=True))
+                self.get_logger().info(
+                    "Start red motion confirmed; flag detector stopped"
+                )
 
         self._publish_debug_image(frame, message, flag)
         self._last_frame_s = self._now_s()
@@ -250,6 +254,7 @@ class WristTrafficPerceptionNode(Node):
 
         decision = self._rules.decision
         started_text = "CONFIRMED" if decision.started else "WAITING"
+        flag_text = "DONE" if decision.started else self._flag_wave.state.value.upper()
         light_text = (
             decision.light.value.upper() if self._traffic_active else "DISABLED"
         )
@@ -263,7 +268,7 @@ class WristTrafficPerceptionNode(Node):
             -1,
         )
         lines = (
-            f"FLAG: {self._flag_wave.state.value.upper()}",
+            f"FLAG: {flag_text}",
             f"START: {started_text}",
             f"LIGHT: {light_text}  CONF: {self._last_light_confidence:.2f}",
         )
@@ -307,6 +312,7 @@ class WristTrafficPerceptionNode(Node):
                 data=json.dumps(
                     {
                         "started": decision.started,
+                        "flag_active": not decision.started,
                         "traffic_active": self._traffic_active,
                         "light": decision.light.value,
                         "light_confidence": round(self._last_light_confidence, 4),

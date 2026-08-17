@@ -19,6 +19,8 @@ def test_yolo_isolated_from_flag_and_view_node() -> None:
     assert "from ultralytics import YOLO" not in wrist_node
     assert "from ultralytics import YOLO" in light_node
     assert '"/perception/traffic_light_enable"' in light_node
+    assert "if not self._rules.decision.started:" in wrist_node
+    assert '"flag_active": not decision.started' in wrist_node
 
 
 def test_launch_starts_one_camera_and_two_perception_nodes() -> None:
