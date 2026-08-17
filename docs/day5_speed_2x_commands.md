@@ -1,4 +1,61 @@
-# Day 5 提速档必要命令
+# Day 5 提速档完整命令
+
+## 终端1：CAN
+
+```bash
+sudo ip link set can3 down 2>/dev/null || true
+sudo ip link set can3 type can bitrate 500000 restart-ms 100
+sudo ip link set can3 up
+
+ip -details -statistics link show can3
+```
+
+## 终端2：Livox
+
+```bash
+conda deactivate 2>/dev/null || true
+cd /home/agilex/competition_ws
+source scripts/car_source_env.sh
+
+ros2 launch competition_bringup day1_mapping.launch.py \
+  start_livox:=true \
+  force_livox_host_timestamps:=true \
+  start_fast_lio:=false \
+  start_base:=false \
+  start_scan:=false \
+  start_slam:=false \
+  start_anchor:=false \
+  rviz:=false
+```
+
+## 终端3：Livox 检查
+
+```bash
+conda deactivate 2>/dev/null || true
+cd /home/agilex/competition_ws
+source scripts/car_source_env.sh
+
+sleep 5
+
+/usr/bin/python3 scripts/day5_sensor_freshness_gate.py \
+  --mode livox \
+  --timeout-s 20 \
+  --max-p95-age-s 0.45 \
+  --sample-count 20
+```
+
+## 终端4：FAST-LIO
+
+```bash
+conda deactivate 2>/dev/null || true
+cd /home/agilex/competition_ws
+source scripts/car_source_env.sh
+
+ros2 launch fast_lio mapping.launch.py \
+  config_path:=/home/agilex/competition_ws/config/mapping \
+  config_file:=fast_lio_mid360_day5_control.yaml \
+  rviz:=false
+```
 
 ## 终端5：主控制栈
 
@@ -28,7 +85,21 @@ ros2 launch competition_bringup day5_motion_control.launch.py \
   dock_params_file:=/home/agilex/competition_ws/config/docking/debug_dock_params.yaml
 ```
 
-## 发布初始位姿
+## 终端6：RViz
+
+```bash
+conda deactivate 2>/dev/null || true
+cd /home/agilex/competition_ws
+source scripts/car_source_env.sh
+
+export DISPLAY=:1
+export XAUTHORITY=/run/user/1000/gdm/Xauthority
+export XDG_RUNTIME_DIR=/run/user/1000
+
+rviz2 -d /home/agilex/competition_ws/install/competition_bringup/share/competition_bringup/rviz/day5_motion_control.rviz
+```
+
+## 终端7：发布初始位姿
 
 ```bash
 conda deactivate 2>/dev/null || true
@@ -86,3 +157,21 @@ else
     --max-odom-mps 0.28
 fi
 ```
+
+## 停车后检查
+
+```bash
+cd /home/agilex/competition_ws
+source scripts/car_source_env.sh
+
+ros2 topic info /cmd_vel
+ros2 topic echo /odom --once --field twist.twist.linear.x
+```
+
+## 关闭顺序
+
+1. 终端8：发车中继
+2. 终端6：RViz
+3. 终端5：主控制栈
+4. 终端4：FAST-LIO
+5. 终端2：Livox
