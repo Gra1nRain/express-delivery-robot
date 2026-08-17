@@ -95,6 +95,10 @@ class TrafficRuleControllerTest(unittest.TestCase):
         started = rules.observe_flag_wave()
         self.assertFalse(started.stop_required)
 
+        pending = rules.set_traffic_active(True)
+        self.assertTrue(pending.stop_required)
+        self.assertEqual(pending.reason, "traffic_pending")
+
         rules.observe_light("red")
         stopped = rules.observe_light("red")
         self.assertTrue(stopped.stop_required)
@@ -107,6 +111,7 @@ class TrafficRuleControllerTest(unittest.TestCase):
 
     def test_green_light_cannot_bypass_start_flag(self) -> None:
         rules = TrafficRuleController(confirm_frames=1)
+        rules.set_traffic_active(True)
 
         decision = rules.observe_light("green")
 
@@ -117,20 +122,44 @@ class TrafficRuleControllerTest(unittest.TestCase):
     def test_single_frame_false_positive_is_ignored(self) -> None:
         rules = TrafficRuleController(confirm_frames=3)
         rules.observe_flag_wave()
+        rules.set_traffic_active(True)
 
         rules.observe_light("red")
         decision = rules.observe_light(None)
 
-        self.assertFalse(decision.stop_required)
+        self.assertTrue(decision.stop_required)
         self.assertEqual(decision.light, LightState.UNKNOWN)
+        self.assertEqual(decision.reason, "traffic_pending")
 
     def test_yellow_and_off_are_fail_safe_stops(self) -> None:
         for observation in ("yellow", "off"):
             with self.subTest(observation=observation):
                 rules = TrafficRuleController(confirm_frames=1)
                 rules.observe_flag_wave()
+                rules.set_traffic_active(True)
                 decision = rules.observe_light(observation)
                 self.assertTrue(decision.stop_required)
+
+    def test_disabled_traffic_recognition_cannot_change_start_decision(self) -> None:
+        rules = TrafficRuleController(confirm_frames=1)
+        rules.observe_flag_wave()
+
+        ignored = rules.observe_light("red")
+
+        self.assertFalse(ignored.stop_required)
+        self.assertEqual(ignored.light, LightState.UNKNOWN)
+
+    def test_disabling_traffic_check_releases_a_started_vehicle(self) -> None:
+        rules = TrafficRuleController(confirm_frames=1)
+        rules.observe_flag_wave()
+        rules.set_traffic_active(True)
+        rules.observe_light("red")
+
+        disabled = rules.set_traffic_active(False)
+
+        self.assertFalse(disabled.stop_required)
+        self.assertEqual(disabled.light, LightState.UNKNOWN)
+        self.assertEqual(disabled.reason, "traffic_inactive")
 
 
 if __name__ == "__main__":

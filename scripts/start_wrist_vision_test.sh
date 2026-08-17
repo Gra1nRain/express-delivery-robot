@@ -9,6 +9,8 @@ IMAGE_TOPIC="/left_wrist_camera/camera/color/image_raw"
 DISPLAY_TOPIC="/perception/wrist_traffic_annotated"
 PERCEPTION_NODE="/wrist_traffic_perception"
 STATUS_TOPIC="/perception/traffic_rules_status"
+TRAFFIC_LIGHT_NODE="/traffic_light_recognition"
+TRAFFIC_LIGHT_ENABLE_TOPIC="/perception/traffic_light_enable"
 LOG_DIR="$COMPETITION_WS/log"
 WRIST_USB_DEVICE="/sys/bus/usb/devices/2-3.3.2"
 STARTED_PROCESS_GROUP=""
@@ -20,6 +22,10 @@ image_stream_is_live() {
 
 perception_is_running() {
   ros2 node list 2>/dev/null | grep -Fxq "$PERCEPTION_NODE"
+}
+
+traffic_light_is_running() {
+  ros2 node list 2>/dev/null | grep -Fxq "$TRAFFIC_LIGHT_NODE"
 }
 
 wait_until_ready() {
@@ -77,12 +83,37 @@ show_status() {
   exec ros2 topic echo "$STATUS_TOPIC"
 }
 
+set_traffic_light_enabled() {
+  local value="$1"
+  if ! ros2 node list 2>/dev/null | grep -Fxq "$TRAFFIC_LIGHT_NODE"; then
+    echo "ERROR: traffic-light recognition node is not running." >&2
+    echo "Run $0 first, then retry." >&2
+    exit 1
+  fi
+  ros2 topic pub --once \
+    "$TRAFFIC_LIGHT_ENABLE_TOPIC" \
+    std_msgs/msg/Bool \
+    "{data: $value}" \
+    >/dev/null
+  echo "Traffic-light recognition $([[ "$value" == "true" ]] && echo enabled || echo disabled)."
+}
+
 if [[ "${1:-}" == "--status" ]]; then
   show_status
 fi
 
+if [[ "${1:-}" == "--enable-light" ]]; then
+  set_traffic_light_enabled true
+  exit 0
+fi
+
+if [[ "${1:-}" == "--disable-light" ]]; then
+  set_traffic_light_enabled false
+  exit 0
+fi
+
 if [[ -n "${1:-}" ]]; then
-  echo "usage: $0" >&2
+  echo "usage: $0 [--enable-light|--disable-light]" >&2
   exit 2
 fi
 
@@ -122,11 +153,21 @@ if image_stream_is_live; then
     wait_until_ready "traffic recognition" perception_is_running
     keep_started_process
   fi
+  if ! traffic_light_is_running; then
+    TRAFFIC_LIGHT_LOG="$LOG_DIR/traffic_light_recognition_manual.log"
+    echo "Starting on-demand traffic-light recognition; log: $TRAFFIC_LIGHT_LOG"
+    start_managed_process ros2 run competition_perception traffic_light_node \
+      --ros-args \
+      --params-file "$COMPETITION_WS/config/perception/wrist_traffic_rules.yaml" \
+      >"$TRAFFIC_LIGHT_LOG" 2>&1 </dev/null
+    wait_until_ready "traffic-light recognition" traffic_light_is_running
+    keep_started_process
+  fi
 else
   if (( ${#EXISTING_LAUNCH_PIDS[@]} == 1 )); then
     echo "Existing wrist vision launch has no live image; restarting it."
     stop_process_group "${EXISTING_LAUNCH_PIDS[0]}"
-  elif perception_is_running; then
+  elif perception_is_running || traffic_light_is_running; then
     echo "ERROR: recognition is running but no live wrist image is available." >&2
     echo "No managed camera launch was found, so unrelated camera processes were left untouched." >&2
     exit 1
@@ -142,6 +183,7 @@ else
     >"$CAMERA_LOG" 2>&1 </dev/null
   wait_until_ready "live wrist camera image" image_stream_is_live
   wait_until_ready "traffic recognition" perception_is_running
+  wait_until_ready "traffic-light recognition" traffic_light_is_running
   keep_started_process
 fi
 

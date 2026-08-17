@@ -28,6 +28,7 @@ setup(
     entry_points={
         "console_scripts": [
             "wrist_traffic_node = competition_perception.wrist_traffic_node:main",
+            "traffic_light_node = competition_perception.traffic_light_node:main",
         ],
     },
 )

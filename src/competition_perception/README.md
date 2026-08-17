@@ -1,9 +1,10 @@
 # competition_perception
 
-本包复用机械臂左腕 RealSense 的彩色图像话题，同时完成：
+本包复用机械臂左腕 RealSense 的彩色图像话题，通过两个独立节点完成：
 
-- HSV 红旗区域追踪和“挥下”动作状态机；
-- YOLO 交通灯识别，类别以权重内嵌的 `red/green/off/yellow` 为准；
+- `wrist_traffic_node`：HSV 红色移动检测、交通规则和流畅标注画面；
+- `traffic_light_node`：按需启用的 YOLO 交通灯识别，类别以权重内嵌的
+  `red/green/off/yellow` 为准；
 - `/perception/traffic_stop_request` 安全停车请求。
 
 节点不会再次打开 `/dev/video*`，也不会启动机械臂或底盘。它订阅现有
@@ -20,8 +21,20 @@ ros2 launch competition_perception wrist_traffic.launch.py
 `Piper_Grasp_Humble_Migration_20260723/run_grasp_single.sh` 时，脚本会检查 RGB、
 对齐深度和 camera_info 是否都有发布者；三路健康时保留相机并直接复用。
 
-规则为：未识别到挥旗时停车；挥旗下压确认后允许发车；红灯、黄灯和灭灯停车；
-连续确认绿灯后恢复；相机断流时停车。交通灯默认连续 3 帧确认，避免单帧误检。
+规则为：未识别到红色移动时停车；红色目标明显移动后允许发车。YOLO 默认关闭，
+到达红绿灯识别点后向 `/perception/traffic_light_enable` 发布 `true` 才开始推理；
+启用后在得到稳定结果前停车，红灯、黄灯和灭灯停车，连续确认绿灯后恢复。
+离开识别阶段发布 `false`。相机断流时停车。
+
+现场独立测试可以复用一键脚本：
+
+```bash
+./scripts/start_wrist_vision_test.sh
+./scripts/start_wrist_vision_test.sh --enable-light
+./scripts/start_wrist_vision_test.sh --disable-light
+```
+
+禁用期间 YOLO 不执行推理，红旗检测和标注画面不会被模型阻塞。
 
 如果常驻感知已经运行，比赛模式只需要求安全层接收它的停车请求，不要重复启动
 第二个感知节点：

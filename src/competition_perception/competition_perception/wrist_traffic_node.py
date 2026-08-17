@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
-"""Run flag-wave and traffic-light recognition on the existing wrist RGB topic."""
+"""Run lightweight flag, traffic-rule, and visualization processing."""
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-from ament_index_python.packages import get_package_share_directory
 import cv2
 from cv_bridge import CvBridge
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool, String
-from ultralytics import YOLO
 
 from competition_perception.red_flag import RedFlagColorDetector
 from competition_perception.traffic_rules import (
@@ -24,43 +26,26 @@ from competition_perception.traffic_rules import (
 )
 
 
+def _event_qos() -> QoSProfile:
+    return QoSProfile(
+        depth=1,
+        reliability=ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    )
+
+
 class WristTrafficPerceptionNode(Node):
     def __init__(self) -> None:
         super().__init__("wrist_traffic_perception")
-        default_model = Path(get_package_share_directory("competition_perception")) / (
-            "models/best_traffic_nano_yolo.pt"
-        )
-        model_path = Path(
-            str(self.declare_parameter("model_path", str(default_model)).value)
-        ).expanduser()
-        if not model_path.is_file():
-            raise FileNotFoundError(f"traffic-light model not found: {model_path}")
-
-        self._confidence = float(self.declare_parameter("confidence", 0.30).value)
-        self._device = str(self.declare_parameter("device", "cpu").value)
         self._camera_timeout_s = float(
             self.declare_parameter("camera_timeout_s", 1.0).value
-        )
-        self._frame_index = 0
-        self._inference_stride = max(
-            1, int(self.declare_parameter("inference_stride", 1).value)
         )
         self._last_frame_s: float | None = None
         self._last_light_confidence = 0.0
         self._last_light_observation: str | None = None
         self._last_light_bbox: tuple[int, int, int, int] | None = None
+        self._traffic_active = False
         self._bridge = CvBridge()
-        self._model = YOLO(str(model_path))
-        self._class_names = {
-            int(class_id): str(name).strip().lower()
-            for class_id, name in dict(self._model.names).items()
-        }
-        missing = {"red", "green"} - set(self._class_names.values())
-        if missing:
-            raise ValueError(
-                "traffic-light model is missing required embedded classes: "
-                + ", ".join(sorted(missing))
-            )
 
         self._flag_color = RedFlagColorDetector(
             saturation_threshold=int(
@@ -86,7 +71,7 @@ class WristTrafficPerceptionNode(Node):
                     self.declare_parameter("flag_cooldown_s", 2.0).value
                 ),
                 max_lost_frames=int(
-                    self.declare_parameter("flag_max_lost_frames", 3).value
+                    self.declare_parameter("flag_max_lost_frames", 8).value
                 ),
             )
         )
@@ -101,10 +86,23 @@ class WristTrafficPerceptionNode(Node):
                 "stop_request_topic", "/perception/traffic_stop_request"
             ).value
         )
-        self._stop_publisher = self.create_publisher(Bool, stop_topic, 10)
-        self._flag_publisher = self.create_publisher(
-            Bool, "/perception/flag_wave_detected", 10
+        flag_topic = str(
+            self.declare_parameter(
+                "flag_event_topic", "/perception/flag_wave_detected"
+            ).value
         )
+        detection_topic = str(
+            self.declare_parameter(
+                "light_detection_topic", "/perception/traffic_light_detection"
+            ).value
+        )
+        active_topic = str(
+            self.declare_parameter(
+                "light_active_topic", "/perception/traffic_light_active"
+            ).value
+        )
+        self._stop_publisher = self.create_publisher(Bool, stop_topic, 10)
+        self._flag_publisher = self.create_publisher(Bool, flag_topic, _event_qos())
         self._light_publisher = self.create_publisher(
             String, "/perception/traffic_light_state", 10
         )
@@ -130,10 +128,23 @@ class WristTrafficPerceptionNode(Node):
             self._image_callback,
             qos_profile_sensor_data,
         )
+        self.create_subscription(
+            String,
+            detection_topic,
+            self._light_detection_callback,
+            10,
+        )
+        self.create_subscription(
+            Bool,
+            active_topic,
+            self._light_active_callback,
+            _event_qos(),
+        )
         self.create_timer(0.10, self._publish_state)
+        self._flag_publisher.publish(Bool(data=False))
         self.get_logger().info(
-            f"Wrist traffic perception ready; topic={image_topic}; "
-            f"model={model_path}; classes={self._class_names}"
+            f"Wrist flag/rules/view ready; image={image_topic}; "
+            f"light_detection={detection_topic}"
         )
 
     def _now_s(self) -> float:
@@ -142,62 +153,53 @@ class WristTrafficPerceptionNode(Node):
     def _image_callback(self, message: Image) -> None:
         now_s = self._now_s()
         frame = self._bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
-        waiting_for_flag = not self._rules.decision.started
         flag = self._flag_color.detect(frame)
         triggered = self._flag_wave.update(
             centroid_x=None if flag is None else float(flag.centroid_x),
             centroid_y=None if flag is None else float(flag.centroid_y),
             timestamp_s=now_s,
         )
-        if triggered:
+        if triggered and not self._rules.decision.started:
             self._rules.observe_flag_wave()
             self._flag_publisher.publish(Bool(data=True))
-            self.get_logger().info("Start flag wave confirmed")
+            self.get_logger().info("Start red motion confirmed")
 
-        self._frame_index += 1
-        if waiting_for_flag:
-            self._publish_debug_image(frame, message, flag)
-            self._last_frame_s = self._now_s()
-            return
-        if self._frame_index % self._inference_stride != 0:
-            self._publish_debug_image(frame, message, flag)
-            self._last_frame_s = self._now_s()
-            return
-        observation, confidence, bbox = self._detect_light(frame)
-        self._last_light_observation = observation
-        self._last_light_confidence = confidence
-        self._last_light_bbox = bbox
-        self._rules.observe_light(observation)
         self._publish_debug_image(frame, message, flag)
         self._last_frame_s = self._now_s()
 
-    def _detect_light(
-        self, frame
-    ) -> tuple[str | None, float, tuple[int, int, int, int] | None]:
-        results = self._model.predict(
-            frame,
-            conf=self._confidence,
-            device=self._device,
-            verbose=False,
-        )
-        best_name: str | None = None
-        best_confidence = 0.0
-        best_bbox: tuple[int, int, int, int] | None = None
-        if not results or results[0].boxes is None:
-            return best_name, best_confidence, best_bbox
-        for box in results[0].boxes:
-            class_id = int(box.cls.item())
-            confidence = float(box.conf.item())
-            name = self._class_names.get(class_id)
-            if (
-                name in {"red", "green", "yellow", "off"}
-                and confidence > best_confidence
-            ):
-                best_name = name
-                best_confidence = confidence
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                best_bbox = (int(x1), int(y1), int(x2), int(y2))
-        return best_name, best_confidence, best_bbox
+    def _light_active_callback(self, message: Bool) -> None:
+        active = bool(message.data)
+        if active == self._traffic_active:
+            return
+        self._traffic_active = active
+        self._rules.set_traffic_active(active)
+        self._last_light_observation = None
+        self._last_light_confidence = 0.0
+        self._last_light_bbox = None
+
+    def _light_detection_callback(self, message: String) -> None:
+        try:
+            payload = json.loads(message.data)
+        except (TypeError, ValueError):
+            self.get_logger().warning("Ignored malformed traffic-light detection")
+            return
+        if not self._traffic_active:
+            return
+        observation = payload.get("class_name")
+        if observation not in {"red", "green", "yellow", "off"}:
+            observation = None
+        bbox = payload.get("bbox")
+        if (
+            isinstance(bbox, list)
+            and len(bbox) == 4
+            and all(isinstance(value, (int, float)) for value in bbox)
+        ):
+            self._last_light_bbox = tuple(int(value) for value in bbox)
+        else:
+            self._last_light_bbox = None
+        self._last_light_observation = observation
+        self._last_light_confidence = float(payload.get("confidence", 0.0))
+        self._rules.observe_light(observation)
 
     def _publish_debug_image(self, frame, source_message: Image, flag) -> None:
         if self._debug_publisher.get_subscription_count() == 0:
@@ -248,14 +250,22 @@ class WristTrafficPerceptionNode(Node):
 
         decision = self._rules.decision
         started_text = "CONFIRMED" if decision.started else "WAITING"
+        light_text = (
+            decision.light.value.upper() if self._traffic_active else "DISABLED"
+        )
         action_text = "STOP" if decision.stop_required else "GO"
         action_color = (0, 0, 255) if decision.stop_required else (0, 255, 0)
-        cv2.rectangle(annotated, (0, 0), (annotated.shape[1], 104), (20, 20, 20), -1)
+        cv2.rectangle(
+            annotated,
+            (0, 0),
+            (annotated.shape[1], 104),
+            (20, 20, 20),
+            -1,
+        )
         lines = (
             f"FLAG: {self._flag_wave.state.value.upper()}",
             f"START: {started_text}",
-            f"LIGHT: {decision.light.value.upper()}  "
-            f"CONF: {self._last_light_confidence:.2f}",
+            f"LIGHT: {light_text}  CONF: {self._last_light_confidence:.2f}",
         )
         for index, text in enumerate(lines):
             cv2.putText(
@@ -291,13 +301,13 @@ class WristTrafficPerceptionNode(Node):
         stop_required = bool(camera_stale or decision.stop_required)
         reason = "wrist_camera_stale" if camera_stale else decision.reason
         self._stop_publisher.publish(Bool(data=stop_required))
-        self._flag_publisher.publish(Bool(data=False))
         self._light_publisher.publish(String(data=decision.light.value))
         self._status_publisher.publish(
             String(
                 data=json.dumps(
                     {
                         "started": decision.started,
+                        "traffic_active": self._traffic_active,
                         "light": decision.light.value,
                         "light_confidence": round(self._last_light_confidence, 4),
                         "flag_state": self._flag_wave.state.value,

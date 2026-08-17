@@ -58,6 +58,20 @@ def generate_launch_description() -> LaunchDescription:
                         "config",
                         "perception",
                         "wrist_traffic_rules.yaml",
+                    )
+                ],
+            ),
+            Node(
+                package="competition_perception",
+                executable="traffic_light_node",
+                name="traffic_light_recognition",
+                output="screen",
+                parameters=[
+                    os.path.join(
+                        competition_ws,
+                        "config",
+                        "perception",
+                        "wrist_traffic_rules.yaml",
                     ),
                     {
                         "model_path": os.path.join(

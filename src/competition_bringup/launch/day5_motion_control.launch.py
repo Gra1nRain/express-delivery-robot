@@ -406,6 +406,18 @@ def _launch_setup(context, *args, **kwargs):
             ),
             parameters=[
                 LaunchConfiguration("traffic_rules_params_file"),
+            ],
+        ),
+        Node(
+            package="competition_perception",
+            executable="traffic_light_node",
+            name="traffic_light_recognition",
+            output="screen",
+            condition=IfCondition(
+                LaunchConfiguration("start_wrist_traffic_perception")
+            ),
+            parameters=[
+                LaunchConfiguration("traffic_rules_params_file"),
                 {"model_path": LaunchConfiguration("traffic_model_path")},
             ],
         ),
