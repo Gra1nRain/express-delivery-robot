@@ -3,6 +3,7 @@ wrist_traffic_perception:
     image_topic: /left_wrist_camera/camera/color/image_raw
     stop_request_topic: /perception/traffic_stop_request
     flag_event_topic: /perception/flag_wave_detected
+    flag_reset_topic: /perception/flag_reset
     light_detection_topic: /perception/traffic_light_detection
     light_active_topic: /perception/traffic_light_active
     light_confirm_frames: 3

@@ -101,6 +101,11 @@ class WristTrafficPerceptionNode(Node):
                 "light_active_topic", "/perception/traffic_light_active"
             ).value
         )
+        reset_topic = str(
+            self.declare_parameter(
+                "flag_reset_topic", "/perception/flag_reset"
+            ).value
+        )
         self._stop_publisher = self.create_publisher(Bool, stop_topic, 10)
         self._flag_publisher = self.create_publisher(Bool, flag_topic, _event_qos())
         self._light_publisher = self.create_publisher(
@@ -140,6 +145,7 @@ class WristTrafficPerceptionNode(Node):
             self._light_active_callback,
             _event_qos(),
         )
+        self.create_subscription(Bool, reset_topic, self._flag_reset_callback, 10)
         self.create_timer(0.10, self._publish_state)
         self._flag_publisher.publish(Bool(data=False))
         self.get_logger().info(
@@ -180,6 +186,18 @@ class WristTrafficPerceptionNode(Node):
         self._last_light_observation = None
         self._last_light_confidence = 0.0
         self._last_light_bbox = None
+
+    def _flag_reset_callback(self, message: Bool) -> None:
+        if not message.data:
+            return
+        self._flag_wave.reset()
+        self._rules.reset()
+        self._traffic_active = False
+        self._last_light_observation = None
+        self._last_light_confidence = 0.0
+        self._last_light_bbox = None
+        self._flag_publisher.publish(Bool(data=False))
+        self.get_logger().info("Flag test reset; detector active")
 
     def _light_detection_callback(self, message: String) -> None:
         try:

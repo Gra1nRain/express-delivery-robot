@@ -11,6 +11,7 @@ PERCEPTION_NODE="/wrist_traffic_perception"
 STATUS_TOPIC="/perception/traffic_rules_status"
 TRAFFIC_LIGHT_NODE="/traffic_light_recognition"
 TRAFFIC_LIGHT_ENABLE_TOPIC="/perception/traffic_light_enable"
+FLAG_RESET_TOPIC="/perception/flag_reset"
 LOG_DIR="$COMPETITION_WS/log"
 WRIST_USB_DEVICE="/sys/bus/usb/devices/2-3.3.2"
 STARTED_PROCESS_GROUP=""
@@ -112,8 +113,19 @@ if [[ "${1:-}" == "--disable-light" ]]; then
   exit 0
 fi
 
+if [[ "${1:-}" == "--reset-flag" ]]; then
+  set_traffic_light_enabled false
+  ros2 topic pub --once \
+    "$FLAG_RESET_TOPIC" \
+    std_msgs/msg/Bool \
+    "{data: true}" \
+    >/dev/null
+  echo "Flag recognition reset and enabled."
+  exit 0
+fi
+
 if [[ -n "${1:-}" ]]; then
-  echo "usage: $0 [--enable-light|--disable-light]" >&2
+  echo "usage: $0 [--reset-flag|--enable-light|--disable-light]" >&2
   exit 2
 fi
 

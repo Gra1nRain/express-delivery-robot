@@ -86,6 +86,20 @@ class FlagWaveDetectorTest(unittest.TestCase):
 
         self.assertEqual(sum(triggered), 1)
 
+    def test_reset_rearms_motion_detection(self) -> None:
+        detector = FlagWaveDetector(WaveConfig(min_displacement_px=30.0))
+        for index, x in enumerate([100, 100, 101, 130, 150, 170]):
+            detector.update(
+                centroid_x=x,
+                centroid_y=120.0,
+                timestamp_s=index * 0.10,
+            )
+
+        detector.reset()
+
+        self.assertEqual(detector.state.value, "idle")
+        self.assertEqual(len(detector.trajectory), 0)
+
 
 class TrafficRuleControllerTest(unittest.TestCase):
     def test_flag_starts_then_red_stops_and_green_resumes(self) -> None:
@@ -160,6 +174,16 @@ class TrafficRuleControllerTest(unittest.TestCase):
         self.assertFalse(disabled.stop_required)
         self.assertEqual(disabled.light, LightState.UNKNOWN)
         self.assertEqual(disabled.reason, "traffic_inactive")
+
+    def test_reset_returns_rules_to_waiting_for_flag(self) -> None:
+        rules = TrafficRuleController(confirm_frames=1)
+        rules.observe_flag_wave()
+
+        rules.reset()
+
+        self.assertFalse(rules.decision.started)
+        self.assertTrue(rules.decision.stop_required)
+        self.assertEqual(rules.decision.reason, "waiting_for_flag")
 
 
 if __name__ == "__main__":

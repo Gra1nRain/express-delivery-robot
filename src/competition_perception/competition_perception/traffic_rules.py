@@ -34,6 +34,11 @@ class FlagWaveDetector:
         self.trajectory: deque[tuple[float, float, float]] = deque(
             maxlen=self.config.trajectory_window
         )
+        self.reset()
+
+    def reset(self) -> None:
+        self.state = WaveState.IDLE
+        self.trajectory.clear()
         self.last_trigger_s = float("-inf")
         self.lost_frames = 0
 
@@ -106,6 +111,9 @@ class TrafficRuleController:
         if confirm_frames <= 0:
             raise ValueError("confirm_frames must be positive")
         self._confirm_frames = confirm_frames
+        self.reset()
+
+    def reset(self) -> None:
         self._started = False
         self._light = LightState.UNKNOWN
         self._candidate = LightState.UNKNOWN

@@ -44,6 +44,7 @@ def test_manual_test_script_can_toggle_yolo() -> None:
 
     assert '"--enable-light"' in script
     assert '"--disable-light"' in script
+    assert '"--reset-flag"' in script
     assert 'TRAFFIC_LIGHT_ENABLE_TOPIC="/perception/traffic_light_enable"' in script
 
 
