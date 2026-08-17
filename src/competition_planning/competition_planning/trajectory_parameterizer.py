@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import math
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from competition_planning.local_trajectory_planner import concatenate_reference_paths
 from competition_planning.semantic_planner import (
@@ -291,6 +291,48 @@ def optimize_continuous_route_trajectory(
     )
 
 
+def retime_continuous_trajectory(
+    artifact: Mapping[str, Any],
+    optimizer_config: dict[str, Any] | None = None,
+) -> ContinuousRouteTrajectory:
+    """Apply a new speed profile while preserving frozen route geometry."""
+
+    raw_points = artifact.get("points")
+    if artifact.get("ok") is not True or not isinstance(raw_points, list):
+        raise ValueError("reference trajectory must be a successful continuous artifact")
+    if len(raw_points) < 2 or not all(isinstance(point, dict) for point in raw_points):
+        raise ValueError("reference trajectory requires at least two point mappings")
+    path = tuple(
+        PathPoint(
+            x=float(point["x"]),
+            y=float(point["y"]),
+            yaw=float(point["yaw"]),
+            ref_id=str(point["ref_id"]) if point.get("ref_id") else None,
+        )
+        for point in raw_points
+    )
+    distances = [float(point["s"]) for point in raw_points]
+    curvatures = [float(point["curvature"]) for point in raw_points]
+    params = (optimizer_config or {}).get("continuous_trajectory_optimizer", {})
+    optimizer_plugin = str(params.get("plugin", "jerk_limited_s_curve"))
+    if optimizer_plugin != "jerk_limited_s_curve":
+        raise ValueError(f"unsupported optimizer plugin {optimizer_plugin}")
+    points = _parameterize_continuous_path(
+        path,
+        params,
+        distances=distances,
+        curvatures=curvatures,
+    )
+    return ContinuousRouteTrajectory(
+        frame_id=str(artifact.get("frame_id", "map")),
+        route_name=str(artifact.get("route_name", "")),
+        planner_plugin=str(artifact.get("planner_plugin", "")),
+        optimizer_plugin=optimizer_plugin,
+        points=points,
+        failures=(),
+    )
+
+
 def _plan_joined_step_paths(
     route: dict[str, Any],
     semantic_map: dict[str, Any],
@@ -392,6 +434,9 @@ def _empty_continuous_trajectory(
 def _parameterize_continuous_path(
     path: Sequence[PathPoint],
     params: dict[str, Any],
+    *,
+    distances: Sequence[float] | None = None,
+    curvatures: Sequence[float] | None = None,
 ) -> tuple[ContinuousTrajectoryPoint, ...]:
     if len(path) < 2:
         raise ValueError("continuous route requires at least two path points")
@@ -418,10 +463,31 @@ def _parameterize_continuous_path(
         0.80,
     )
 
-    distances = _cumulative_distances(path)
+    distances = (
+        list(distances) if distances is not None else _cumulative_distances(path)
+    )
+    if len(distances) != len(path):
+        raise ValueError("continuous route distance count does not match path points")
     if any(current <= previous for previous, current in zip(distances, distances[1:])):
         raise ValueError("continuous route contains duplicate or reversed path samples")
-    curvatures = _path_curvatures(path)
+    curvatures = (
+        list(curvatures) if curvatures is not None else _path_curvatures(path)
+    )
+    if len(curvatures) != len(path):
+        raise ValueError("continuous route curvature count does not match path points")
+    if bool(params.get("spatial_speed_envelope", False)):
+        return _parameterize_spatial_speed_envelope(
+            path,
+            distances,
+            curvatures,
+            max_speed_mps=max_speed_mps,
+            max_acceleration_mps2=max_acceleration_mps2,
+            max_deceleration_mps2=max_deceleration_mps2,
+            max_jerk_mps3=max_jerk_mps3,
+            max_lateral_acceleration_mps2=max_lateral_acceleration_mps2,
+            max_curvature_rate_1pmps=max_curvature_rate_1pmps,
+        )
+
     curve_caps = [
         math.sqrt(max_lateral_acceleration_mps2 / abs(curvature))
         for curvature in curvatures
@@ -435,9 +501,7 @@ def _parameterize_continuous_path(
         in zip(distances, distances[1:], curvatures, curvatures[1:])
         if abs(current_curvature - previous_curvature) > 1e-9
     ]
-    profile_speed_mps = min(
-        [max_speed_mps, *curve_caps, *curvature_rate_caps]
-    )
+    profile_speed_mps = min([max_speed_mps, *curve_caps, *curvature_rate_caps])
     profile = _JerkLimitedProfile(
         distance_m=distances[-1],
         max_speed_mps=profile_speed_mps,
@@ -464,6 +528,127 @@ def _parameterize_continuous_path(
             )
         )
     result = tuple(output)
+    for previous, current in zip(result, result[1:]):
+        curvature_rate = abs(current.curvature - previous.curvature) / (
+            current.t - previous.t
+        )
+        if curvature_rate > max_curvature_rate_1pmps + 1e-9:
+            raise ValueError(
+                "continuous route curvature rate "
+                f"{curvature_rate:.6f} 1/m/s exceeds "
+                f"{max_curvature_rate_1pmps:.6f} 1/m/s"
+            )
+    return result
+
+
+def _parameterize_spatial_speed_envelope(
+    path: Sequence[PathPoint],
+    distances: Sequence[float],
+    curvatures: Sequence[float],
+    *,
+    max_speed_mps: float,
+    max_acceleration_mps2: float,
+    max_deceleration_mps2: float,
+    max_jerk_mps3: float,
+    max_lateral_acceleration_mps2: float,
+    max_curvature_rate_1pmps: float,
+) -> tuple[ContinuousTrajectoryPoint, ...]:
+    """Keep straight-line speed local instead of throttling the whole route."""
+
+    speed_caps = [
+        min(
+            max_speed_mps,
+            math.sqrt(max_lateral_acceleration_mps2 / abs(curvature))
+            if abs(curvature) > 1e-9
+            else max_speed_mps,
+        )
+        for curvature in curvatures
+    ]
+    segments = zip(distances, distances[1:], curvatures, curvatures[1:])
+    for index, (
+        previous_distance,
+        current_distance,
+        previous_curvature,
+        current_curvature,
+    ) in enumerate(segments):
+        curvature_delta = abs(current_curvature - previous_curvature)
+        if curvature_delta <= 1e-9:
+            continue
+        segment_cap = (
+            max_curvature_rate_1pmps
+            * (current_distance - previous_distance)
+            / curvature_delta
+        )
+        speed_caps[index] = min(speed_caps[index], segment_cap)
+        speed_caps[index + 1] = min(speed_caps[index + 1], segment_cap)
+    speed_caps[0] = 0.0
+    speed_caps[-1] = 0.0
+
+    speeds = _apply_acceleration_limits(
+        speed_caps,
+        distances,
+        max_acceleration_mps2,
+        max_deceleration_mps2,
+    )
+    times = _integrate_times(distances, speeds)
+    accelerations = [0.0]
+    jerks = [0.0]
+    for previous_speed, current_speed, previous_time, current_time in zip(
+        speeds, speeds[1:], times, times[1:]
+    ):
+        accelerations.append(
+            (current_speed - previous_speed) / (current_time - previous_time)
+        )
+    acceleration_segments = zip(
+        accelerations,
+        accelerations[1:],
+        times,
+        times[1:],
+    )
+    for (
+        previous_acceleration,
+        current_acceleration,
+        previous_time,
+        current_time,
+    ) in acceleration_segments:
+        jerks.append(
+            (current_acceleration - previous_acceleration)
+            / (current_time - previous_time)
+        )
+
+    if max(accelerations) > max_acceleration_mps2 + 1e-9:
+        raise ValueError("continuous route exceeds the acceleration limit")
+    if min(accelerations) < -max_deceleration_mps2 - 1e-9:
+        raise ValueError("continuous route exceeds the deceleration limit")
+    if max(abs(jerk) for jerk in jerks) > max_jerk_mps3 + 1e-9:
+        raise ValueError(
+            "continuous route spatial speed envelope exceeds the jerk limit"
+        )
+
+    result = tuple(
+        ContinuousTrajectoryPoint(
+            x=point.x,
+            y=point.y,
+            yaw=point.yaw,
+            s=distance,
+            curvature=curvature,
+            v=speed,
+            a=acceleration,
+            jerk=jerk,
+            yaw_rate=speed * curvature,
+            t=timestamp,
+            ref_id=point.ref_id,
+        )
+        for point, distance, curvature, speed, acceleration, jerk, timestamp in zip(
+            path,
+            distances,
+            curvatures,
+            speeds,
+            accelerations,
+            jerks,
+            times,
+        )
+    )
     for previous, current in zip(result, result[1:]):
         curvature_rate = abs(current.curvature - previous.curvature) / (
             current.t - previous.t

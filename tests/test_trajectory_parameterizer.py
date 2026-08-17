@@ -25,6 +25,7 @@ from competition_planning.trajectory_parameterizer import (
     optimize_route_trajectory,
     optimize_continuous_route_trajectory,
     parameterize_step_plan,
+    retime_continuous_trajectory,
 )
 
 
@@ -522,6 +523,54 @@ class TrajectoryParameterizerTest(unittest.TestCase):
         self.assertTrue(all(point.v > 0.0 for point in staged.points[1:-1]))
         self.assertLessEqual(max(abs(point.a) for point in staged.points), 0.20 + 1e-9)
         self.assertLessEqual(max(abs(point.jerk) for point in staged.points), 0.40 + 1e-9)
+
+    def test_spatial_speed_envelope_accelerates_straights_without_relaxing_turn_rate(
+        self,
+    ) -> None:
+        reference = load_yaml_file(
+            REPO_ROOT
+            / "docs"
+            / "evidence"
+            / "day5"
+            / "debug_indoor_one_lap_continuous_trajectory_8_14_1.yaml"
+        )
+        optimizer = load_yaml_file(
+            REPO_ROOT
+            / "config"
+            / "planning"
+            / "optimizer_params_day5_speed_2x.yaml"
+        )
+
+        result = retime_continuous_trajectory(reference, optimizer)
+
+        self.assertTrue(result.ok, result.failures)
+        self.assertAlmostEqual(max(point.v for point in result.points), 0.20)
+        self.assertGreaterEqual(
+            sum(abs(point.v - 0.20) <= 1e-9 for point in result.points),
+            200,
+        )
+        self.assertLess(result.duration_s, 130.0)
+        self.assertEqual(result.points[0].v, 0.0)
+        self.assertEqual(result.points[-1].v, 0.0)
+        self.assertTrue(all(point.v > 0.0 for point in result.points[1:-1]))
+        self.assertLessEqual(max(point.a for point in result.points), 0.16 + 1e-9)
+        self.assertGreaterEqual(min(point.a for point in result.points), -0.12 - 1e-9)
+        self.assertLessEqual(
+            max(abs(point.jerk) for point in result.points),
+            0.40 + 1e-9,
+        )
+        curvature_rates = [
+            abs(current.curvature - previous.curvature) / (current.t - previous.t)
+            for previous, current in zip(result.points, result.points[1:])
+        ]
+        self.assertLessEqual(max(curvature_rates), 0.80 + 1e-9)
+        for original, retimed in zip(reference["points"], result.points):
+            self.assertEqual(float(original["x"]), retimed.x)
+            self.assertEqual(float(original["y"]), retimed.y)
+            self.assertEqual(float(original["yaw"]), retimed.yaw)
+            self.assertEqual(float(original["s"]), retimed.s)
+            self.assertEqual(float(original["curvature"]), retimed.curvature)
+            self.assertEqual(original.get("ref_id"), retimed.ref_id)
 
     def test_semantic_stops_and_obstacle_zone_speed_caps_are_applied(self) -> None:
         plan = StepPlan(

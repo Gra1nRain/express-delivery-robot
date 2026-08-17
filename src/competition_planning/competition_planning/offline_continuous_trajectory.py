@@ -55,7 +55,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     with output_path.open("w", encoding="utf-8") as stream:
         yaml.safe_dump(artifact, stream, sort_keys=False, allow_unicode=True)
     if args.report:
-        _write_report(result, Path(args.report))
+        write_continuous_trajectory_report(result, Path(args.report))
 
     print(
         f"route={result.route_name} ok={result.ok} points={len(result.points)} "
@@ -66,7 +66,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0 if result.ok else 2
 
 
-def _write_report(result: ContinuousRouteTrajectory, path: Path) -> None:
+def write_continuous_trajectory_report(
+    result: ContinuousRouteTrajectory,
+    path: Path,
+) -> None:
     max_speed = max((point.v for point in result.points), default=0.0)
     max_acceleration = max((abs(point.a) for point in result.points), default=0.0)
     max_jerk = max((abs(point.jerk) for point in result.points), default=0.0)
