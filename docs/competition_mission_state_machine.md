@@ -49,6 +49,21 @@ WAIT_START_FLAG
 `ArmTask` 的 `PICKUP` feedback 明确包含图片识别、目标类型锁定、实物搜索、操作和
 确认阶段。前点已经锁定的 `target_type` 会作为后点 goal hint 复用。
 
+真实适配器是常驻节点 `piper_arm_task_node`：
+
+- 启动时加载一次视觉模型和 Piper controller，后续每个停车点复用同一实例。
+- 节点会检查迁移目录下独立构建的 `piper_ros/install/setup.bash`；若当前进程未加载该
+  overlay，会保留比赛工作空间环境并一次性重启到组合环境，然后再导入 `piper_msgs`。
+- 共享 RGBD 相机由整车 launch 常驻；适配器参数 `manage_camera=false`，不会重复拉起
+  相机。独立启动适配器时可保留默认 `manage_camera=true`，此时仅在目标 RGBD 话题
+  没有发布者时启动驱动。
+- PICKUP 会移动到观察位，若 goal 没有目标提示则先识别指令图片；随后定位实物、执行
+  抓取。旧脚本中的“抓取后立即放置”调用只在内存中的模块绑定上被屏蔽，原迁移源码
+  不变。
+- DROP 复用 PICKUP 锁定的目标类型，识别对应卸货图片后才调用独立放置函数。
+- PICKUP 仅在抓取流程无异常且最新夹爪开度不小于 `0.002 m` 时成功；DROP 仅在夹爪
+  开度不小于 `0.030 m` 时成功。反馈缺失也按失败处理并进入既定恢复分支。
+
 ## 配置与离线证据
 
 - 状态机参数：`config/mission/indoor_competition_mission.yaml`
@@ -58,15 +73,18 @@ WAIT_START_FLAG
 - 轨迹事实报告：
   `docs/evidence/day5/indoor_competition_mission_trajectory_summary.md`
 - 入口：`ros2 launch competition_bringup indoor_competition.launch.py`
+- 真实机械臂入口参数：`start_real_arm:=true`（不得与
+  `start_arm_simulator:=true` 同时使用）
 
 ## 未验证与风险
 
-- 真实 Piper 程序仍是用户未跟踪的迁移源码，当前没有结构化任务结果；本次没有修改
-  该目录。`ArmTask` 的真实常驻适配器尚未完成，现有模拟适配器不会发送机械臂命令。
-- 当前抓取代码尚未把夹爪角度/力反馈接入可靠的持物确认；Action server 必须完成该项
-  后才可返回 `PICKUP SUCCESS`。
+- 真实 Piper 程序仍是用户未跟踪的迁移源码；适配器运行时依赖车端
+  `/home/agilex/competition_ws/Piper_Grasp_Humble_Migration_20260723` 完整存在。本次没有
+  修改或提交该目录。
+- `0.002/0.030 m` 夹爪确认阈值是宽容的初始建议值，尚未用比赛物体做静态夹持采样；
+  它们是 ROS 参数，可在无底盘运动的机械臂单模块验证后调整。
 - `1.0 m` 红绿灯预触发距离和 `120/90 s` 机械臂总超时是初始配置，需在无底盘运动的
   单模块计时后复核。
 - 按已确认范围，第一版没有实现挥旗永久失败和导航不可达恢复。
-- 所有验证均为电脑端离线验证，不代表 ROS 2 车端构建、真实视觉、机械臂或底盘运动
-  已通过。
+- 当前适配器验证使用假后端，证明任务拆分、重试和返回契约，不代表 ROS 2 车端构建、
+  真实视觉、机械臂或底盘运动已通过。

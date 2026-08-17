@@ -21,6 +21,7 @@ setup(
         "console_scripts": [
             "mission_node = competition_mission.mission_node:main",
             "arm_task_simulator_node = competition_mission.arm_task_simulator_node:main",
+            "piper_arm_task_node = competition_mission.piper_arm_task_node:main",
         ],
     },
 )

@@ -11,6 +11,11 @@
   放行命令，并作为 `ArmTask` Action client。
 - `arm_task_simulator_node.py`：无运动的离线 Action 适配器，只用于验证整条状态链，
   不能作为机械臂实机通过证据。
+- `arm_task_runner.py`：与 ROS 无关的任务重试、总超时、取消和阶段反馈契约。
+- `piper_arm_backend.py`：复用现有 Piper 迁移脚本，但把抓取和放置拆成两个任务；
+  原迁移文件不会被改写。
+- `piper_arm_task_node.py`：常驻真实 Piper Action server。同一时刻只接受一个任务，
+  通过夹爪反馈确认抓取或释放结果。
 
 配置入口是 `config/mission/indoor_competition_mission.yaml`。室内整车启动入口是：
 
@@ -19,5 +24,7 @@ ros2 launch competition_bringup indoor_competition.launch.py
 ```
 
 该入口默认 `start_base=false`、`start_chassis_adapter=false`、
-`start_arm_simulator=false`，因此默认不会驱动车辆或机械臂。实车联调必须继续遵守项目
-关于初始位姿、人工确认和运动许可的规则。
+`start_real_arm=false`、`start_arm_simulator=false`；共享腕部相机默认常驻，但不会驱动
+底盘或机械臂。真实机械臂联调时显式设置 `start_real_arm:=true`，且不得同时启动
+`start_arm_simulator`。实车联调必须继续遵守项目关于初始位姿、人工确认和运动许可的
+规则。

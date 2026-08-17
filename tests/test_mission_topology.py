@@ -102,9 +102,42 @@ class MissionTopologyTest(unittest.TestCase):
 
         self.assertIn('"start_base", default_value="false"', launch)
         self.assertIn('"start_chassis_adapter", default_value="false"', launch)
+        self.assertIn('"start_wrist_camera", default_value="true"', launch)
+        self.assertIn('"start_real_arm", default_value="false"', launch)
         self.assertIn('"start_arm_simulator", default_value="false"', launch)
         self.assertIn('"start_competition_mission": "true"', launch)
         self.assertIn('"start_wrist_traffic_perception": "true"', launch)
+
+    def test_real_arm_adapter_is_persistent_and_reuses_shared_camera(self) -> None:
+        launch = (
+            REPO_ROOT
+            / "src"
+            / "competition_bringup"
+            / "launch"
+            / "indoor_competition.launch.py"
+        ).read_text(encoding="utf-8")
+        setup = (
+            REPO_ROOT / "src" / "competition_mission" / "setup.py"
+        ).read_text(encoding="utf-8")
+        backend = (
+            REPO_ROOT
+            / "src"
+            / "competition_mission"
+            / "competition_mission"
+            / "piper_arm_backend.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('executable="piper_arm_task_node"', launch)
+        self.assertIn('"manage_camera": False', launch)
+        self.assertIn("piper_arm_task_node =", setup)
+        self.assertIn(
+            "grasp_module.execute_place_after_grasp = lambda",
+            backend,
+        )
+        self.assertIn(
+            "self.place_module.execute_place_after_grasp(",
+            backend,
+        )
 
     def test_integrated_trajectory_matches_current_sources(self) -> None:
         trajectory_path = (
