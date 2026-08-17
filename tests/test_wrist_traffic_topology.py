@@ -54,3 +54,4 @@ def test_cpu_yolo_uses_benchmarked_input_size_and_starts_disabled() -> None:
     assert "inference_image_size: 320" in config
     assert "self._enabled = False" in light_node
     assert "if not self._enabled:" in light_node
+    assert "self.destroy_subscription(self._image_subscription)" in light_node

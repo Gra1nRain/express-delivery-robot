@@ -57,6 +57,7 @@ class TrafficLightRecognitionNode(Node):
 
         self._enabled = False
         self._last_inference_started_s = float("-inf")
+        self._image_subscription = None
         self._bridge = CvBridge()
         self._model = YOLO(str(model_path))
         self._class_names = {
@@ -85,7 +86,7 @@ class TrafficLightRecognitionNode(Node):
                 "enable_topic", "/perception/traffic_light_enable"
             ).value
         )
-        image_topic = str(
+        self._image_topic = str(
             self.declare_parameter(
                 "image_topic", "/left_wrist_camera/camera/color/image_raw"
             ).value
@@ -97,15 +98,9 @@ class TrafficLightRecognitionNode(Node):
             Bool, active_topic, _event_qos()
         )
         self.create_subscription(Bool, enable_topic, self._enable_callback, 10)
-        self.create_subscription(
-            Image,
-            image_topic,
-            self._image_callback,
-            qos_profile_sensor_data,
-        )
         self._active_publisher.publish(Bool(data=False))
         self.get_logger().info(
-            f"Traffic-light YOLO ready but disabled; image={image_topic}; "
+            f"Traffic-light YOLO ready but disabled; image={self._image_topic}; "
             f"enable={enable_topic}; imgsz={self._image_size}; model={model_path}"
         )
 
@@ -115,6 +110,16 @@ class TrafficLightRecognitionNode(Node):
             return
         self._enabled = enabled
         self._last_inference_started_s = float("-inf")
+        if enabled:
+            self._image_subscription = self.create_subscription(
+                Image,
+                self._image_topic,
+                self._image_callback,
+                qos_profile_sensor_data,
+            )
+        elif self._image_subscription is not None:
+            self.destroy_subscription(self._image_subscription)
+            self._image_subscription = None
         self._active_publisher.publish(Bool(data=enabled))
         if not enabled:
             self._publish_detection(None, 0.0, None, 0.0)
