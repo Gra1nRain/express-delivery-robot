@@ -3,6 +3,7 @@
 当前已落地脚本：
 
 - `car_source_env.sh`：小车端 ROS/工作空间环境加载辅助脚本。
+- `start_wrist_vision_test.sh`：在工控机图形桌面上一键复用或启动腕部相机与交通规则识别，打开彩色画面和识别状态窗口；不启动机械臂或底盘。
 - `day1_*.sh`：Day1 建图、底盘审计、预检和证据采集脚本。
 - `day3_follow_global_plan.py`：Day3 全局路径低速跟踪调试脚本，仅用于现场监督测试。
 - `day5_sequential_bringup.sh`：先单独启动并门控 Livox、再启动并门控 FAST-LIO，
