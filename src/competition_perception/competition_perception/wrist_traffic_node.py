@@ -139,7 +139,6 @@ class WristTrafficPerceptionNode(Node):
 
     def _image_callback(self, message: Image) -> None:
         now_s = self._now_s()
-        self._last_frame_s = now_s
         frame = self._bridge.imgmsg_to_cv2(message, desired_encoding="bgr8")
         flag = self._flag_color.detect(frame)
         triggered = self._flag_wave.update(
@@ -153,10 +152,12 @@ class WristTrafficPerceptionNode(Node):
 
         self._frame_index += 1
         if self._frame_index % self._inference_stride != 0:
+            self._last_frame_s = self._now_s()
             return
         observation, confidence = self._detect_light(frame)
         self._last_light_confidence = confidence
         self._rules.observe_light(observation)
+        self._last_frame_s = self._now_s()
 
     def _detect_light(self, frame) -> tuple[str | None, float]:
         results = self._model.predict(
