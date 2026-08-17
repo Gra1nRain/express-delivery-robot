@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
+import cv2
 from cv_bridge import CvBridge
 import rclpy
 from rclpy.node import Node
@@ -46,6 +47,8 @@ class WristTrafficPerceptionNode(Node):
         )
         self._last_frame_s: float | None = None
         self._last_light_confidence = 0.0
+        self._last_light_observation: str | None = None
+        self._last_light_bbox: tuple[int, int, int, int] | None = None
         self._bridge = CvBridge()
         self._model = YOLO(str(model_path))
         self._class_names = {
@@ -120,6 +123,14 @@ class WristTrafficPerceptionNode(Node):
         self._status_publisher = self.create_publisher(
             String, "/perception/traffic_rules_status", 10
         )
+        debug_image_topic = str(
+            self.declare_parameter(
+                "debug_image_topic", "/perception/wrist_traffic_annotated"
+            ).value
+        )
+        self._debug_publisher = self.create_publisher(
+            Image, debug_image_topic, qos_profile_sensor_data
+        )
         image_topic = str(
             self.declare_parameter(
                 "image_topic", "/left_wrist_camera/camera/color/image_raw"
@@ -156,17 +167,24 @@ class WristTrafficPerceptionNode(Node):
 
         self._frame_index += 1
         if waiting_for_flag:
+            self._publish_debug_image(frame, message, flag)
             self._last_frame_s = self._now_s()
             return
         if self._frame_index % self._inference_stride != 0:
+            self._publish_debug_image(frame, message, flag)
             self._last_frame_s = self._now_s()
             return
-        observation, confidence = self._detect_light(frame)
+        observation, confidence, bbox = self._detect_light(frame)
+        self._last_light_observation = observation
         self._last_light_confidence = confidence
+        self._last_light_bbox = bbox
         self._rules.observe_light(observation)
+        self._publish_debug_image(frame, message, flag)
         self._last_frame_s = self._now_s()
 
-    def _detect_light(self, frame) -> tuple[str | None, float]:
+    def _detect_light(
+        self, frame
+    ) -> tuple[str | None, float, tuple[int, int, int, int] | None]:
         results = self._model.predict(
             frame,
             conf=self._confidence,
@@ -175,8 +193,9 @@ class WristTrafficPerceptionNode(Node):
         )
         best_name: str | None = None
         best_confidence = 0.0
+        best_bbox: tuple[int, int, int, int] | None = None
         if not results or results[0].boxes is None:
-            return best_name, best_confidence
+            return best_name, best_confidence, best_bbox
         for box in results[0].boxes:
             class_id = int(box.cls.item())
             confidence = float(box.conf.item())
@@ -187,7 +206,91 @@ class WristTrafficPerceptionNode(Node):
             ):
                 best_name = name
                 best_confidence = confidence
-        return best_name, best_confidence
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                best_bbox = (int(x1), int(y1), int(x2), int(y2))
+        return best_name, best_confidence, best_bbox
+
+    def _publish_debug_image(self, frame, source_message: Image, flag) -> None:
+        if self._debug_publisher.get_subscription_count() == 0:
+            return
+
+        annotated = frame.copy()
+        if flag is not None:
+            cv2.rectangle(
+                annotated,
+                (flag.x, flag.y),
+                (flag.x + flag.width, flag.y + flag.height),
+                (0, 255, 0),
+                2,
+            )
+            cv2.circle(
+                annotated,
+                (flag.centroid_x, flag.centroid_y),
+                4,
+                (0, 255, 0),
+                -1,
+            )
+            cv2.putText(
+                annotated,
+                "RED FLAG COLOR",
+                (flag.x, max(20, flag.y - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 255, 0),
+                2,
+            )
+
+        if self._last_light_bbox is not None:
+            x1, y1, x2, y2 = self._last_light_bbox
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), (255, 180, 0), 2)
+            label = (
+                f"LIGHT {str(self._last_light_observation).upper()} "
+                f"{self._last_light_confidence:.2f}"
+            )
+            cv2.putText(
+                annotated,
+                label,
+                (x1, max(20, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (255, 180, 0),
+                2,
+            )
+
+        decision = self._rules.decision
+        started_text = "CONFIRMED" if decision.started else "WAITING"
+        action_text = "STOP" if decision.stop_required else "GO"
+        action_color = (0, 0, 255) if decision.stop_required else (0, 255, 0)
+        cv2.rectangle(annotated, (0, 0), (annotated.shape[1], 104), (20, 20, 20), -1)
+        lines = (
+            f"FLAG: {self._flag_wave.state.value.upper()}",
+            f"START: {started_text}",
+            f"LIGHT: {decision.light.value.upper()}  "
+            f"CONF: {self._last_light_confidence:.2f}",
+        )
+        for index, text in enumerate(lines):
+            cv2.putText(
+                annotated,
+                text,
+                (12, 24 + index * 26),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.62,
+                (255, 255, 255),
+                2,
+            )
+        cv2.putText(
+            annotated,
+            action_text,
+            (annotated.shape[1] - 100, 62),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.85,
+            action_color,
+            3,
+        )
+
+        debug_message = self._bridge.cv2_to_imgmsg(annotated, encoding="bgr8")
+        debug_message.header = source_message.header
+        self._debug_publisher.publish(debug_message)
 
     def _publish_state(self) -> None:
         now_s = self._now_s()

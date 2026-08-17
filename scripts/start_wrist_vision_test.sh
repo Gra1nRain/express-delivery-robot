@@ -6,6 +6,7 @@ export COMPETITION_WS="${COMPETITION_WS:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 source "$SCRIPT_DIR/car_source_env.sh"
 
 IMAGE_TOPIC="/left_wrist_camera/camera/color/image_raw"
+DISPLAY_TOPIC="/perception/wrist_traffic_annotated"
 PERCEPTION_NODE="/wrist_traffic_perception"
 STATUS_TOPIC="/perception/traffic_rules_status"
 LOG_DIR="$COMPETITION_WS/log"
@@ -149,7 +150,8 @@ gnome-terminal \
   --title="Wrist traffic recognition status" \
   -- "$SCRIPT_DIR/start_wrist_vision_test.sh" --status
 
-echo "Opening the wrist camera image. Closing the image window will leave the camera online."
+echo "Opening annotated recognition view: $DISPLAY_TOPIC"
+echo "Closing the image window will leave the wrist camera online."
 exec /usr/bin/python3 \
   /opt/ros/humble/lib/rqt_image_view/rqt_image_view \
-  "$IMAGE_TOPIC"
+  "$DISPLAY_TOPIC"
