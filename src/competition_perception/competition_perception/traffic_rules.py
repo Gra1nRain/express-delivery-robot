@@ -24,7 +24,7 @@ class WaveConfig:
     prepare_min_displacement_px: float = -15.0
     min_total_travel_px: float = 100.0
     cooldown_s: float = 2.0
-    max_lost_frames: int = 3
+    max_lost_frames: int = 8
 
 
 class FlagWaveDetector:

@@ -40,6 +40,25 @@ class FlagWaveDetectorTest(unittest.TestCase):
 
         self.assertFalse(any(triggered))
 
+    def test_wave_survives_brief_motion_blur_gap(self) -> None:
+        detector = FlagWaveDetector()
+        triggered = []
+
+        for index, y in enumerate([100.0, 80.0, 60.0]):
+            triggered.append(
+                detector.update(centroid_y=y, timestamp_s=index * 0.10)
+            )
+        for index in range(3, 11):
+            triggered.append(
+                detector.update(centroid_y=None, timestamp_s=index * 0.10)
+            )
+        for index, y in enumerate([100.0, 140.0, 180.0], start=11):
+            triggered.append(
+                detector.update(centroid_y=y, timestamp_s=index * 0.10)
+            )
+
+        self.assertEqual(sum(triggered), 1)
+
 
 class TrafficRuleControllerTest(unittest.TestCase):
     def test_flag_starts_then_red_stops_and_green_resumes(self) -> None:

@@ -18,4 +18,4 @@ wrist_traffic_perception:
     flag_prepare_min_displacement_px: -15.0
     flag_min_total_travel_px: 100.0
     flag_cooldown_s: 2.0
-    flag_max_lost_frames: 3
+    flag_max_lost_frames: 8
