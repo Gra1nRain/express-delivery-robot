@@ -33,6 +33,12 @@ class SafetyNode(Node):
         self._avoidance_timeout_s = float(
             self.declare_parameter("avoidance_timeout_s", 0.30).value
         )
+        self._require_traffic_rules = bool(
+            self.declare_parameter("require_traffic_rules", False).value
+        )
+        self._traffic_rules_timeout_s = float(
+            self.declare_parameter("traffic_rules_timeout_s", 1.0).value
+        )
         self._supervisor = SafetySupervisor(
             SafetyLimits(
                 command_timeout_s=float(
@@ -119,6 +125,9 @@ class SafetyNode(Node):
         self._avoidance_stop = False
         self._avoidance_seen = False
         self._avoidance_received_s = 0.0
+        self._traffic_rules_stop = False
+        self._traffic_rules_seen = False
+        self._traffic_rules_received_s = 0.0
         self._measured_speed_mps = 0.0
         self._system_state: SystemState | None = None
         self._system_received_s = 0.0
@@ -145,6 +154,17 @@ class SafetyNode(Node):
                 ).value
             ),
             self._avoidance_callback,
+            20,
+        )
+        self.create_subscription(
+            Bool,
+            str(
+                self.declare_parameter(
+                    "traffic_rules_stop_topic",
+                    "/perception/traffic_stop_request",
+                ).value
+            ),
+            self._traffic_rules_callback,
             20,
         )
         self.create_subscription(Odometry, "/odom", self._odom_callback, 20)
@@ -196,6 +216,11 @@ class SafetyNode(Node):
         self._avoidance_seen = True
         self._avoidance_received_s = self._now_s()
 
+    def _traffic_rules_callback(self, message: Bool) -> None:
+        self._traffic_rules_stop = bool(message.data)
+        self._traffic_rules_seen = True
+        self._traffic_rules_received_s = self._now_s()
+
     def _odom_callback(self, message: Odometry) -> None:
         self._measured_speed_mps = math.hypot(
             float(message.twist.twist.linear.x),
@@ -236,6 +261,14 @@ class SafetyNode(Node):
             or (
                 self._avoidance_seen
                 and now_s - self._avoidance_received_s <= self._avoidance_timeout_s
+            )
+        )
+        traffic_rules_ready = bool(
+            not self._require_traffic_rules
+            or (
+                self._traffic_rules_seen
+                and now_s - self._traffic_rules_received_s
+                <= self._traffic_rules_timeout_s
             )
         )
         system_state = self._system_state
@@ -289,6 +322,8 @@ class SafetyNode(Node):
                     "HEADING_TRIM",
                     "POSITION_TRIM",
                 },
+                traffic_rules_ready=traffic_rules_ready,
+                traffic_rules_stop=self._traffic_rules_stop,
             ),
         )
         message = Twist()

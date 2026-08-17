@@ -47,6 +47,8 @@ class SafetyContext:
     ackermann_mode: bool = True
     motion_mode: str = "dual_ackermann"
     precision_motion_allowed: bool = False
+    traffic_rules_ready: bool = True
+    traffic_rules_stop: bool = False
 
 
 @dataclass(frozen=True)
@@ -328,6 +330,10 @@ class SafetySupervisor:
             reasons.append("avoidance_stale")
         if context.avoidance_stop:
             reasons.append("avoidance_stop")
+        if not context.traffic_rules_ready:
+            reasons.append("traffic_rules_stale")
+        if context.traffic_rules_stop:
+            reasons.append("traffic_rules_stop")
         if context.chassis_fault:
             reasons.append("chassis_fault")
         if not context.system_ready:

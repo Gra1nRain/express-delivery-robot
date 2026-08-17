@@ -122,6 +122,21 @@ class SafetySupervisorTest(unittest.TestCase):
         )
         self.assertIn("avoidance_stop", obstacle_stop.reasons)
 
+    def test_traffic_rules_stop_or_stale_source_forces_safe_hold(self) -> None:
+        stopped = self.supervisor.filter_command(
+            _command(),
+            _healthy_context(traffic_rules_stop=True),
+        )
+        stale = self.supervisor.filter_command(
+            _command(),
+            _healthy_context(traffic_rules_ready=False),
+        )
+
+        self.assertEqual(stopped.status, "SAFE_HOLD")
+        self.assertEqual(stopped.linear_x_mps, 0.0)
+        self.assertIn("traffic_rules_stop", stopped.reasons)
+        self.assertIn("traffic_rules_stale", stale.reasons)
+
     def test_limits_acceleration_and_curvature_before_chassis(self) -> None:
         unsafe = _command(speed=0.50, yaw_rate=1.0)
 

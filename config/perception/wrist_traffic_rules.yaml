@@ -1,0 +1,20 @@
+wrist_traffic_perception:
+  ros__parameters:
+    image_topic: /left_wrist_camera/camera/color/image_raw
+    stop_request_topic: /perception/traffic_stop_request
+    confidence: 0.30
+    device: cpu
+    inference_stride: 1
+    light_confirm_frames: 3
+    camera_timeout_s: 1.0
+    flag_saturation_threshold: 100
+    flag_value_threshold: 100
+    flag_min_area_px: 800.0
+    flag_trajectory_window: 20
+    flag_min_downward_px: 40.0
+    flag_direct_min_speed_pxps: 80.0
+    flag_ready_min_speed_pxps: 50.0
+    flag_prepare_min_displacement_px: -15.0
+    flag_min_total_travel_px: 100.0
+    flag_cooldown_s: 2.0
+    flag_max_lost_frames: 3

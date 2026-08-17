@@ -11,6 +11,7 @@
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>competition_planning</exec_depend>
   <exec_depend>competition_control</exec_depend>
+  <exec_depend>competition_perception</exec_depend>
   <exec_depend>competition_localization</exec_depend>
   <exec_depend>competition_safety</exec_depend>
   <exec_depend>launch</exec_depend>

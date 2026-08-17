@@ -11,6 +11,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 import yaml
 
 
@@ -396,6 +397,19 @@ def _launch_setup(context, *args, **kwargs):
             ],
         ),
         Node(
+            package="competition_perception",
+            executable="wrist_traffic_node",
+            name="wrist_traffic_perception",
+            output="screen",
+            condition=IfCondition(
+                LaunchConfiguration("start_wrist_traffic_perception")
+            ),
+            parameters=[
+                LaunchConfiguration("traffic_rules_params_file"),
+                {"model_path": LaunchConfiguration("traffic_model_path")},
+            ],
+        ),
+        Node(
             package="competition_safety",
             executable="proximity_stop_node",
             name="proximity_stop",
@@ -532,6 +546,18 @@ def _launch_setup(context, *args, **kwargs):
                     "avoidance_stop_topic": safety["avoidance_stop_topic"],
                     "require_avoidance_source": safety["require_avoidance_source"],
                     "avoidance_timeout_s": safety["avoidance_timeout_s"],
+                    "traffic_rules_stop_topic": safety.get(
+                        "traffic_rules_stop_topic",
+                        "/perception/traffic_stop_request",
+                    ),
+                    "require_traffic_rules": ParameterValue(
+                        LaunchConfiguration("require_traffic_rules"),
+                        value_type=bool,
+                    ),
+                    "traffic_rules_timeout_s": safety.get(
+                        "traffic_rules_timeout_s",
+                        1.0,
+                    ),
                 }
             ],
         ),
@@ -561,6 +587,7 @@ def _launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     competition_ws = os.environ.get("COMPETITION_WS", "/home/agilex/competition_ws")
     bringup_share = get_package_share_directory("competition_bringup")
+    perception_share = get_package_share_directory("competition_perception")
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -684,6 +711,39 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument("start_map_server", default_value="true"),
+            DeclareLaunchArgument(
+                "start_wrist_traffic_perception",
+                default_value="false",
+                description=(
+                    "Subscribe to the existing wrist RGB topic for flag and "
+                    "traffic-light recognition; this does not start the camera."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "require_traffic_rules",
+                default_value="false",
+                description=(
+                    "Fail-safe the chassis output until fresh wrist traffic-rule "
+                    "messages are present. Enable for the competition run."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "traffic_rules_params_file",
+                default_value=os.path.join(
+                    competition_ws,
+                    "config",
+                    "perception",
+                    "wrist_traffic_rules.yaml",
+                ),
+            ),
+            DeclareLaunchArgument(
+                "traffic_model_path",
+                default_value=os.path.join(
+                    perception_share,
+                    "models",
+                    "best_traffic_nano_yolo.pt",
+                ),
+            ),
             DeclareLaunchArgument("rviz", default_value="false"),
             DeclareLaunchArgument(
                 "rviz_config",

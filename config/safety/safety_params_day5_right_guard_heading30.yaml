@@ -21,6 +21,9 @@ safety:
   avoidance_stop_topic: /avoidance/stop_request
   require_avoidance_source: true
   avoidance_timeout_s: 0.35
+  traffic_rules_stop_topic: /perception/traffic_stop_request
+  require_traffic_rules: false
+  traffic_rules_timeout_s: 1.0
   on_fault: SAFE_HOLD
 
 pointcloud_to_laserscan:
