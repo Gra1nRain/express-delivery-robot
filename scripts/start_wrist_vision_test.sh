@@ -9,10 +9,12 @@ IMAGE_TOPIC="/left_wrist_camera/camera/color/image_raw"
 PERCEPTION_NODE="/wrist_traffic_perception"
 STATUS_TOPIC="/perception/traffic_rules_status"
 LOG_DIR="$COMPETITION_WS/log"
+WRIST_USB_DEVICE="/sys/bus/usb/devices/2-3.3.2"
+STARTED_PROCESS_GROUP=""
 
-topic_has_publisher() {
-  ros2 topic info "$IMAGE_TOPIC" 2>/dev/null \
-    | grep -Eq 'Publisher count:[[:space:]]*[1-9]'
+image_stream_is_live() {
+  timeout 3 ros2 topic echo --once --field header "$IMAGE_TOPIC" \
+    >/dev/null 2>&1
 }
 
 perception_is_running() {
@@ -22,7 +24,7 @@ perception_is_running() {
 wait_until_ready() {
   local description="$1"
   local check_function="$2"
-  for _ in {1..30}; do
+  for _ in {1..15}; do
     if "$check_function"; then
       return 0
     fi
@@ -30,6 +32,42 @@ wait_until_ready() {
   done
   echo "ERROR: timed out waiting for $description" >&2
   return 1
+}
+
+managed_launch_pids() {
+  pgrep -u "$USER" -f \
+    '/opt/ros/humble/bin/ros2 launch competition_perception wrist_traffic\.launch\.py$' \
+    || true
+}
+
+stop_process_group() {
+  local process_group_pid="$1"
+  kill -TERM -- "-$process_group_pid" 2>/dev/null || true
+  for _ in {1..20}; do
+    kill -0 "$process_group_pid" 2>/dev/null || return 0
+    sleep 0.2
+  done
+  kill -KILL -- "-$process_group_pid" 2>/dev/null || true
+}
+
+cleanup_failed_start() {
+  if [[ -n "$STARTED_PROCESS_GROUP" ]]; then
+    stop_process_group "$STARTED_PROCESS_GROUP"
+  fi
+}
+
+start_managed_process() {
+  setsid "$@" &
+  STARTED_PROCESS_GROUP=$!
+  trap cleanup_failed_start EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+}
+
+keep_started_process() {
+  disown "$STARTED_PROCESS_GROUP" 2>/dev/null || true
+  STARTED_PROCESS_GROUP=""
+  trap - EXIT INT TERM
 }
 
 show_status() {
@@ -62,28 +100,48 @@ fi
 
 mkdir -p "$LOG_DIR"
 
-if topic_has_publisher; then
+mapfile -t EXISTING_LAUNCH_PIDS < <(managed_launch_pids)
+if (( ${#EXISTING_LAUNCH_PIDS[@]} > 1 )); then
+  echo "Found duplicate wrist vision launches; stopping them before a clean restart."
+  for pid in "${EXISTING_LAUNCH_PIDS[@]}"; do
+    stop_process_group "$pid"
+  done
+  EXISTING_LAUNCH_PIDS=()
+fi
+
+if image_stream_is_live; then
   echo "Wrist camera is already online; reusing it."
   if ! perception_is_running; then
     PERCEPTION_LOG="$LOG_DIR/wrist_traffic_perception_manual.log"
     echo "Starting traffic recognition; log: $PERCEPTION_LOG"
-    setsid -f ros2 run competition_perception wrist_traffic_node \
+    start_managed_process ros2 run competition_perception wrist_traffic_node \
       --ros-args \
       --params-file "$COMPETITION_WS/config/perception/wrist_traffic_rules.yaml" \
       >"$PERCEPTION_LOG" 2>&1 </dev/null
     wait_until_ready "traffic recognition" perception_is_running
+    keep_started_process
   fi
-elif perception_is_running; then
-  echo "ERROR: recognition is running but the wrist camera has no image publisher." >&2
-  echo "Inspect the existing camera service before retrying; no duplicate camera was started." >&2
-  exit 1
 else
+  if (( ${#EXISTING_LAUNCH_PIDS[@]} == 1 )); then
+    echo "Existing wrist vision launch has no live image; restarting it."
+    stop_process_group "${EXISTING_LAUNCH_PIDS[0]}"
+  elif perception_is_running; then
+    echo "ERROR: recognition is running but no live wrist image is available." >&2
+    echo "No managed camera launch was found, so unrelated camera processes were left untouched." >&2
+    exit 1
+  fi
+  if [[ ! -e "$WRIST_USB_DEVICE" ]]; then
+    echo "ERROR: wrist D435 is not present at USB port 2-3.3.2." >&2
+    echo "Check the wrist camera cable or powered USB hub, then retry." >&2
+    exit 1
+  fi
   CAMERA_LOG="$LOG_DIR/wrist_traffic_test_launch.log"
   echo "Starting wrist camera and traffic recognition; log: $CAMERA_LOG"
-  setsid -f ros2 launch competition_perception wrist_traffic.launch.py \
+  start_managed_process ros2 launch competition_perception wrist_traffic.launch.py \
     >"$CAMERA_LOG" 2>&1 </dev/null
-  wait_until_ready "wrist camera image" topic_has_publisher
+  wait_until_ready "live wrist camera image" image_stream_is_live
   wait_until_ready "traffic recognition" perception_is_running
+  keep_started_process
 fi
 
 echo "Wrist camera is ready: $IMAGE_TOPIC"
