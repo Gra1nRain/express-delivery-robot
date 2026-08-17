@@ -79,20 +79,8 @@ class WristTrafficPerceptionNode(Node):
                 trajectory_window=int(
                     self.declare_parameter("flag_trajectory_window", 20).value
                 ),
-                min_downward_displacement_px=float(
-                    self.declare_parameter("flag_min_downward_px", 40.0).value
-                ),
-                direct_min_speed_pxps=float(
-                    self.declare_parameter("flag_direct_min_speed_pxps", 80.0).value
-                ),
-                ready_min_speed_pxps=float(
-                    self.declare_parameter("flag_ready_min_speed_pxps", 50.0).value
-                ),
-                prepare_min_displacement_px=float(
-                    self.declare_parameter("flag_prepare_min_displacement_px", -15.0).value
-                ),
-                min_total_travel_px=float(
-                    self.declare_parameter("flag_min_total_travel_px", 100.0).value
+                min_displacement_px=float(
+                    self.declare_parameter("flag_min_motion_px", 30.0).value
                 ),
                 cooldown_s=float(
                     self.declare_parameter("flag_cooldown_s", 2.0).value
@@ -157,6 +145,7 @@ class WristTrafficPerceptionNode(Node):
         waiting_for_flag = not self._rules.decision.started
         flag = self._flag_color.detect(frame)
         triggered = self._flag_wave.update(
+            centroid_x=None if flag is None else float(flag.centroid_x),
             centroid_y=None if flag is None else float(flag.centroid_y),
             timestamp_s=now_s,
         )

@@ -12,10 +12,6 @@ wrist_traffic_perception:
     flag_min_area_px: 800.0
     flag_border_margin_px: 8
     flag_trajectory_window: 20
-    flag_min_downward_px: 40.0
-    flag_direct_min_speed_pxps: 80.0
-    flag_ready_min_speed_pxps: 50.0
-    flag_prepare_min_displacement_px: -15.0
-    flag_min_total_travel_px: 100.0
+    flag_min_motion_px: 30.0
     flag_cooldown_s: 2.0
     flag_max_lost_frames: 8

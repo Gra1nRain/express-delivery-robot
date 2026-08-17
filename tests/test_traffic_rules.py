@@ -15,17 +15,28 @@ from competition_perception.traffic_rules import (
 
 
 class FlagWaveDetectorTest(unittest.TestCase):
-    def test_fast_downward_wave_triggers_once(self) -> None:
-        detector = FlagWaveDetector(
-            WaveConfig(
-                min_downward_displacement_px=20.0,
-                direct_min_speed_pxps=40.0,
-                min_total_travel_px=80.0,
-            )
-        )
+    def test_horizontal_red_motion_triggers(self) -> None:
+        detector = FlagWaveDetector(WaveConfig(min_displacement_px=30.0))
         triggered = [
-            detector.update(centroid_y=y, timestamp_s=index * 0.10)
-            for index, y in enumerate([100, 90, 80, 70, 60, 90, 120, 150, 180])
+            detector.update(
+                centroid_x=x,
+                centroid_y=120.0,
+                timestamp_s=index * 0.10,
+            )
+            for index, x in enumerate([100, 100, 101, 130, 150, 170])
+        ]
+
+        self.assertEqual(sum(triggered), 1)
+
+    def test_upward_red_motion_triggers(self) -> None:
+        detector = FlagWaveDetector(WaveConfig(min_displacement_px=30.0))
+        triggered = [
+            detector.update(
+                centroid_x=100.0,
+                centroid_y=y,
+                timestamp_s=index * 0.10,
+            )
+            for index, y in enumerate([180, 180, 179, 150, 120, 90])
         ]
 
         self.assertEqual(sum(triggered), 1)
@@ -34,7 +45,11 @@ class FlagWaveDetectorTest(unittest.TestCase):
         detector = FlagWaveDetector()
 
         triggered = [
-            detector.update(centroid_y=120.0, timestamp_s=index * 0.10)
+            detector.update(
+                centroid_x=100.0 + index % 3,
+                centroid_y=120.0 + index % 2,
+                timestamp_s=index * 0.10,
+            )
             for index in range(30)
         ]
 
@@ -44,17 +59,29 @@ class FlagWaveDetectorTest(unittest.TestCase):
         detector = FlagWaveDetector()
         triggered = []
 
-        for index, y in enumerate([100.0, 80.0, 60.0]):
+        for index, x in enumerate([100.0, 100.0, 100.0]):
             triggered.append(
-                detector.update(centroid_y=y, timestamp_s=index * 0.10)
+                detector.update(
+                    centroid_x=x,
+                    centroid_y=100.0,
+                    timestamp_s=index * 0.10,
+                )
             )
         for index in range(3, 11):
             triggered.append(
-                detector.update(centroid_y=None, timestamp_s=index * 0.10)
+                detector.update(
+                    centroid_x=None,
+                    centroid_y=None,
+                    timestamp_s=index * 0.10,
+                )
             )
-        for index, y in enumerate([100.0, 140.0, 180.0], start=11):
+        for index, x in enumerate([110.0, 140.0, 170.0], start=11):
             triggered.append(
-                detector.update(centroid_y=y, timestamp_s=index * 0.10)
+                detector.update(
+                    centroid_x=x,
+                    centroid_y=100.0,
+                    timestamp_s=index * 0.10,
+                )
             )
 
         self.assertEqual(sum(triggered), 1)

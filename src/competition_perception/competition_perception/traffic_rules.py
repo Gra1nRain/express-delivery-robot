@@ -5,70 +5,57 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
+from math import hypot
 from statistics import mean
 
 
 class WaveState(str, Enum):
     IDLE = "idle"
     TRACKING = "tracking"
-    READY = "ready"
     TRIGGERED = "triggered"
 
 
 @dataclass(frozen=True)
 class WaveConfig:
     trajectory_window: int = 20
-    min_downward_displacement_px: float = 40.0
-    direct_min_speed_pxps: float = 80.0
-    ready_min_speed_pxps: float = 50.0
-    prepare_min_displacement_px: float = -15.0
-    min_total_travel_px: float = 100.0
+    min_displacement_px: float = 30.0
     cooldown_s: float = 2.0
     max_lost_frames: int = 8
 
 
 class FlagWaveDetector:
-    """Detect one downward flag wave from a stream of vertical centroids."""
+    """Detect visible red-flag motion in any image direction."""
 
     def __init__(self, config: WaveConfig | None = None) -> None:
         self.config = config or WaveConfig()
-        if self.config.trajectory_window < 5:
-            raise ValueError("trajectory_window must be at least 5")
+        if self.config.trajectory_window < 6:
+            raise ValueError("trajectory_window must be at least 6")
         self.state = WaveState.IDLE
-        self.trajectory: deque[tuple[float, float]] = deque(
+        self.trajectory: deque[tuple[float, float, float]] = deque(
             maxlen=self.config.trajectory_window
         )
         self.last_trigger_s = float("-inf")
         self.lost_frames = 0
-        self.peak_high_y: float | None = None
-        self.peak_low_y: float | None = None
 
     def update(
         self,
         *,
+        centroid_x: float | None,
         centroid_y: float | None,
         timestamp_s: float,
     ) -> bool:
-        if centroid_y is None:
+        if centroid_x is None or centroid_y is None:
             self.lost_frames += 1
             if self.lost_frames > self.config.max_lost_frames:
                 self._clear_tracking(WaveState.IDLE)
             return False
 
         self.lost_frames = 0
-        self.trajectory.append((timestamp_s, float(centroid_y)))
-        self.peak_high_y = (
-            float(centroid_y)
-            if self.peak_high_y is None
-            else min(self.peak_high_y, float(centroid_y))
-        )
-        self.peak_low_y = (
-            float(centroid_y)
-            if self.peak_low_y is None
-            else max(self.peak_low_y, float(centroid_y))
+        self.trajectory.append(
+            (timestamp_s, float(centroid_x), float(centroid_y))
         )
 
-        if len(self.trajectory) < 5:
+        if len(self.trajectory) < 6:
             if self.state == WaveState.IDLE:
                 self.state = WaveState.TRACKING
             return False
@@ -76,78 +63,24 @@ class FlagWaveDetector:
             return False
 
         samples = list(self.trajectory)
-        sample_count = len(samples)
-        third = max(3, sample_count // 3)
-        midpoint = sample_count // 2
-        early_y = mean(point[1] for point in samples[:midpoint])
-        late_y = mean(point[1] for point in samples[midpoint:])
-        recent_y = mean(point[1] for point in samples[-third:])
-        before_y = mean(point[1] for point in samples[:third])
-        full_dt = samples[-1][0] - samples[0][0]
-        short_dt = samples[-1][0] - samples[third][0]
-        if full_dt < 0.03 or short_dt <= 0.03:
-            return False
-
-        full_displacement = late_y - early_y
-        short_displacement = recent_y - before_y
-        full_speed = full_displacement / full_dt
-        short_speed = short_displacement / short_dt
-        total_travel = (
-            self.peak_low_y - self.peak_high_y
-            if self.peak_low_y is not None and self.peak_high_y is not None
-            else 0.0
-        )
-
-        if self.state in (WaveState.IDLE, WaveState.TRACKING):
-            if self._is_downward_wave(
-                short_displacement,
-                short_speed,
-                total_travel,
-                self.config.direct_min_speed_pxps,
-            ):
-                return self._trigger(timestamp_s)
-            if (
-                full_displacement < self.config.prepare_min_displacement_px
-                and abs(full_speed) > self.config.direct_min_speed_pxps * 0.4
-            ):
-                self.state = WaveState.READY
-        elif self.state == WaveState.READY and self._is_downward_wave(
-            short_displacement,
-            short_speed,
-            total_travel,
-            self.config.ready_min_speed_pxps,
-        ):
+        early_x = mean(point[1] for point in samples[:3])
+        early_y = mean(point[2] for point in samples[:3])
+        recent_x = mean(point[1] for point in samples[-3:])
+        recent_y = mean(point[2] for point in samples[-3:])
+        displacement = hypot(recent_x - early_x, recent_y - early_y)
+        if displacement >= self.config.min_displacement_px:
             return self._trigger(timestamp_s)
-        elif self.state == WaveState.TRIGGERED:
-            self.state = WaveState.TRACKING
         return False
-
-    def _is_downward_wave(
-        self,
-        displacement_px: float,
-        speed_pxps: float,
-        total_travel_px: float,
-        min_speed_pxps: float,
-    ) -> bool:
-        return bool(
-            displacement_px > self.config.min_downward_displacement_px
-            and speed_pxps > min_speed_pxps
-            and total_travel_px >= self.config.min_total_travel_px
-        )
 
     def _trigger(self, timestamp_s: float) -> bool:
         self.state = WaveState.TRIGGERED
         self.last_trigger_s = timestamp_s
         self.trajectory.clear()
-        self.peak_high_y = None
-        self.peak_low_y = None
         return True
 
     def _clear_tracking(self, state: WaveState) -> None:
         self.state = state
         self.trajectory.clear()
-        self.peak_high_y = None
-        self.peak_low_y = None
 
 
 class LightState(str, Enum):
