@@ -9,14 +9,25 @@
 节点不会再次打开 `/dev/video*`，也不会启动机械臂或底盘。它订阅现有
 `/left_wrist_camera/camera/color/image_raw`，因此可以与此前的抓取视觉共享相机。
 
+常驻启动入口只绑定机械臂腕部 D435 的稳定 USB 口 `2-3.3.2`，不会启动或使用
+前向相机：
+
+```bash
+ros2 launch competition_perception wrist_traffic.launch.py
+```
+
+该 launch 同时启动腕部 RGBD 相机和交通感知。后续执行
+`Piper_Grasp_Humble_Migration_20260723/run_grasp_single.sh` 时，脚本会检查 RGB、
+对齐深度和 camera_info 是否都有发布者；三路健康时保留相机并直接复用。
+
 规则为：未识别到挥旗时停车；挥旗下压确认后允许发车；红灯、黄灯和灭灯停车；
 连续确认绿灯后恢复；相机断流时停车。交通灯默认连续 3 帧确认，避免单帧误检。
 
-比赛模式启动参数：
+如果常驻感知已经运行，比赛模式只需要求安全层接收它的停车请求，不要重复启动
+第二个感知节点：
 
 ```bash
 ros2 launch competition_bringup day5_motion_control.launch.py \
-  start_wrist_traffic_perception:=true \
   require_traffic_rules:=true
 ```
 
