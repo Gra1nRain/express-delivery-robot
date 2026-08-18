@@ -399,6 +399,12 @@ class PiperMigrationBackend:
 
     def initialize_transit_pose(self) -> None:
         self._wait_until_ready(require_object_model=False)
+        if self.controller.wait_for_stable_can_control() is False:
+            self._fail(
+                ArmTaskOutcome.OPERATION_FAILED,
+                "failed_to_enter_stable_can_control",
+                "",
+            )
         gripper_m, _effort = self._fresh_gripper_feedback()
         self._return_to_transit_pose(
             gripper_m,

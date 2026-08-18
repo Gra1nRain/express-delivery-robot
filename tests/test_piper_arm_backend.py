@@ -49,6 +49,14 @@ class FakeController:
         self.joint_pose_calls = []
         self.failed_move_labels = set()
         self.worker_calls = 0
+        self.can_control_ready = True
+        self.can_control_wait_calls = 0
+        self.startup_events = []
+
+    def wait_for_stable_can_control(self):
+        self.can_control_wait_calls += 1
+        self.startup_events.append("can_control_stable")
+        return self.can_control_ready
 
     def move_to_observation_joint_pose(self):
         self.observation_moves += 1
@@ -88,6 +96,7 @@ class FakeController:
         gripper_m,
         timeout_s,
     ):
+        self.startup_events.append("joint_target")
         self.drop_pose_moves += 1
         self.joint_pose_calls.append(
             {
@@ -213,6 +222,11 @@ class PiperArmBackendTest(unittest.TestCase):
     def test_startup_moves_to_transit_pose_with_current_gripper(self):
         self.backend.initialize_transit_pose()
 
+        self.assertEqual(self.controller.can_control_wait_calls, 1)
+        self.assertEqual(
+            self.controller.startup_events,
+            ["can_control_stable", "joint_target"],
+        )
         self.assertEqual(len(self.controller.joint_pose_calls), 1)
         transit_move = self.controller.joint_pose_calls[0]
         self.assertEqual(
@@ -220,6 +234,23 @@ class PiperArmBackendTest(unittest.TestCase):
             COMPETITION_TRANSIT_JOINTS_RAD,
         )
         self.assertEqual(transit_move["gripper_m"], 0.020)
+
+    def test_startup_does_not_send_transit_target_without_stable_can_control(self):
+        self.controller.can_control_ready = False
+
+        with self.assertRaises(ArmExecutionFailure) as context:
+            self.backend.initialize_transit_pose()
+
+        self.assertEqual(self.controller.can_control_wait_calls, 1)
+        self.assertEqual(self.controller.joint_pose_calls, [])
+        self.assertEqual(
+            context.exception.outcome,
+            ArmTaskOutcome.OPERATION_FAILED,
+        )
+        self.assertIn(
+            "failed_to_enter_stable_can_control",
+            context.exception.detail,
+        )
 
     def test_pickup_can_pause_after_instruction_for_manual_image_removal(self):
         delays = []
