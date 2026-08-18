@@ -63,6 +63,10 @@ def prepare_competition_environment(migration_root: Path) -> int:
         "WRIST_PLACE_PRE_DETECT_ENTER_ENABLED": "0",
         "WRIST_RETRY_GRASP_ON_TARGET_FAILURE": "0",
         "WRIST_PLACE_AFTER_GRASP_ENABLED": "1",
+        "WRIST_INSTRUCTION_CONFIRM_FRAMES": "1",
+        "WRIST_OBSERVATION_SCAN_DETECTION_ATTEMPTS": "1",
+        "WRIST_PLACE_SCAN_ENABLED": "0",
+        "WRIST_PLACE_DETECT_REQUIRED_FRAMES": "1",
         "WRIST_YOLO_MODEL_PATH": str(migration_root / "best.pt"),
     }
     os.environ.update(overrides)
@@ -274,20 +278,18 @@ class PiperMigrationBackend:
         if target_type:
             self._set_target_type(target_type)
         else:
-            publish_phase(ArmTaskPhase.RECOGNIZING_INSTRUCTION, "")
-            try:
-                candidate = self.controller.select_target_from_instruction_sheet()
-            except Exception as exc:
-                self._fail(
-                    ArmTaskOutcome.INSTRUCTION_NOT_FOUND,
-                    f"instruction_recognition_failed: {exc}",
-                )
-            target_type = str(candidate.get("class_name", "")).strip()
-            if not target_type:
-                self._fail(
-                    ArmTaskOutcome.INSTRUCTION_NOT_FOUND,
-                    "instruction_recognition_returned_empty_target",
-                )
+            while not target_type:
+                publish_phase(ArmTaskPhase.RECOGNIZING_INSTRUCTION, "")
+                try:
+                    candidate = (
+                        self.controller.select_target_from_instruction_sheet()
+                    )
+                except Exception:
+                    self._sleep(0.10)
+                    continue
+                target_type = str(candidate.get("class_name", "")).strip()
+                if not target_type:
+                    self._sleep(0.10)
 
         publish_phase(ArmTaskPhase.TARGET_TYPE_LOCKED, target_type)
         if (

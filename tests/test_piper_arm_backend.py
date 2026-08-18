@@ -236,6 +236,33 @@ class PiperArmBackendTest(unittest.TestCase):
         backend.pickup_once("green_bottle", lambda *_args: None)
         self.assertEqual(delays, [])
 
+    def test_pickup_retries_center_instruction_recognition_without_repositioning(
+        self,
+    ):
+        selection_calls = 0
+
+        def select_instruction():
+            nonlocal selection_calls
+            selection_calls += 1
+            if selection_calls == 1:
+                raise RuntimeError("instruction temporarily not visible")
+            self.controller.target_class_id = 0
+            self.controller.target_model_class_name = "green_bottle"
+            return {"class_name": "green_bottle"}
+
+        self.controller.select_target_from_instruction_sheet = select_instruction
+
+        target = self.backend.pickup_once("", lambda *_args: None)
+
+        self.assertEqual(target, "green_bottle")
+        self.assertEqual(selection_calls, 2)
+        self.assertEqual(self.controller.observation_moves, 1)
+        self.assertEqual(len(self.controller.joint_pose_calls), 1)
+        self.assertEqual(
+            self.controller.joint_pose_calls[0]["joints"],
+            COMPETITION_TRANSIT_JOINTS_RAD,
+        )
+
     def test_drop_uses_locked_target_and_independent_place_function(self):
         phases = []
         self.backend.drop_once(
@@ -357,6 +384,33 @@ class PiperArmBackendTest(unittest.TestCase):
                 os.environ.pop(instruction_variable, None)
             else:
                 os.environ[instruction_variable] = previous_instruction
+
+    def test_competition_environment_uses_single_scan_cycle(self):
+        expected = {
+            "WRIST_INSTRUCTION_CONFIRM_FRAMES": "1",
+            "WRIST_OBSERVATION_SCAN_DETECTION_ATTEMPTS": "1",
+            "WRIST_PLACE_SCAN_ENABLED": "0",
+            "WRIST_PLACE_DETECT_REQUIRED_FRAMES": "1",
+        }
+        previous = {name: os.environ.get(name) for name in expected}
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                migration_root = pathlib.Path(directory)
+                (migration_root / "run_grasp_single.sh").write_text(
+                    "#!/usr/bin/env bash\n",
+                    encoding="utf-8",
+                )
+
+                prepare_competition_environment(migration_root)
+
+            for name, value in expected.items():
+                self.assertEqual(os.environ[name], value)
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
 
 
 if __name__ == "__main__":
