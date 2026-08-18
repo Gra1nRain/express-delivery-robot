@@ -49,6 +49,23 @@ class MissionTopologyTest(unittest.TestCase):
         self.assertIn("ActionClient", node)
         self.assertIn("ArmTask", node)
 
+    def test_mission_shutdown_does_not_publish_after_ros_context_closes(self) -> None:
+        node = (
+            REPO_ROOT
+            / "src"
+            / "competition_mission"
+            / "competition_mission"
+            / "mission_node.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "finally:\n"
+            "        if rclpy.ok():\n"
+            "            node._route_enable_publisher.publish(Bool(data=False))\n"
+            "            node._traffic_enable_publisher.publish(Bool(data=False))",
+            node,
+        )
+
     def test_control_waits_for_release_and_reports_non_stop_marker(self) -> None:
         state_machine = (
             REPO_ROOT

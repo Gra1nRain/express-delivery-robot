@@ -425,8 +425,9 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        node._route_enable_publisher.publish(Bool(data=False))
-        node._traffic_enable_publisher.publish(Bool(data=False))
+        if rclpy.ok():
+            node._route_enable_publisher.publish(Bool(data=False))
+            node._traffic_enable_publisher.publish(Bool(data=False))
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
