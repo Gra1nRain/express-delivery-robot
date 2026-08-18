@@ -28,20 +28,21 @@ Piper 使用 `can2`；Ranger 底盘仍由整车 launch 的控制参数使用 `ca
 启动前确认没有上一轮残留：
 
 ```bash
-pgrep -af 'indoor_competition|mission_node|piper_arm_task_node|arm_task_simulator_node|ranger_twist_adapter|ranger_base_node' || true
+pgrep -af 'indoor_competition|mission_node|piper_arm_task_node|piper_single_ctrl|arm_task_simulator_node|ranger_twist_adapter|ranger_base_node' || true
 ```
 
 若有残留，先确认它属于上一轮测试，再对准确 PID 发送 `SIGINT`；不要用宽泛的 `pkill`。
 
-启动比赛流程前，由操作员把机械臂摆到统一行驶/待机位姿；软件不把该姿态作为额外的
-启动前置判断：
+启动真机械臂后，软件会等待控制器和反馈就绪，再保持当前夹爪开度自动移动到统一
+行驶/待机位姿；该动作不会成为小车挥旗发车的前置判断：
 
 ```text
 joints_rad: [0.005760, 0.289742, -0.565347, -0.081856, 0.045605, 0.092502]
 joints_deg: [0.330, 16.601, -32.392, -4.690, 2.613, 5.300]
 ```
 
-夹爪开度不属于这个位姿约束。抓取后回位时保持夹紧，放置后回位时保持张开。
+夹爪开度不属于这个位姿约束。启动回位保持当前开度，抓取后回位保持夹紧，放置后
+回位保持张开。启动前必须确认机械臂到该位姿的运动空间无遮挡。
 
 ## 3. 第一级：底盘断开的静态机械臂测试
 
@@ -74,7 +75,10 @@ ros2 topic info /cmd_vel -v
 timeout 5s ros2 topic hz /left_wrist_camera/camera/color/image_raw
 ```
 
-预期：`ros2 action info` 显示 `Action servers: 1` 且服务端节点是 `/piper_arm_task`；节点列表中各有一个 `/piper_arm_task` 和 `/piper_controller`；任务状态是 `WAIT_START_FLAG`，`/cmd_vel` 不存在，相机持续出图。
+预期：日志出现 `Startup transit pose reached; ArmTask enabled`；`ros2 action info` 显示
+`Action servers: 1` 且服务端节点是 `/piper_arm_task`；节点列表中各有一个
+`/piper_arm_task` 和 `/piper_controller`；任务状态是 `WAIT_START_FLAG`，`/cmd_vel`
+不存在，相机持续出图。
 
 若需要观察目标是否在画面中央，在小车 Ubuntu 图形桌面的另一个终端运行：
 
@@ -265,7 +269,8 @@ ros2 topic info /cmd_vel
 ## 7. 尚未验证的风险
 
 - 真机械臂静态抓取和放置已经成功；持物行驶及整车自动触发装卸尚未验证。
-- 统一行驶位姿的自动返回逻辑已同步，并在整车启动后的挥旗阶段使用；持物行驶仍未验证。
+- 启动自动待机和装卸后的统一行驶位姿返回已通过 PC 自动测试；真机械臂启动回位和
+  持物行驶仍未验证。
 - 删除冗余 ROS 节点名重映射的修复已构建并同步；现场已确认 `/mission/arm_task` 只有一个 Action server。
 - 名义初始位姿来自当前轨迹首点，仍需现场摆车或 RViz 校正。
 - 红绿灯提前 `1.0 m` 只预热识别、到真实停止点才停车的拆分逻辑已通过 PC

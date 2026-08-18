@@ -167,6 +167,17 @@ class PiperArmBackendTest(unittest.TestCase):
         )
         self.assertEqual(transit_move["gripper_m"], 0.020)
 
+    def test_startup_moves_to_transit_pose_with_current_gripper(self):
+        self.backend.initialize_transit_pose()
+
+        self.assertEqual(len(self.controller.joint_pose_calls), 1)
+        transit_move = self.controller.joint_pose_calls[0]
+        self.assertEqual(
+            transit_move["joints"],
+            COMPETITION_TRANSIT_JOINTS_RAD,
+        )
+        self.assertEqual(transit_move["gripper_m"], 0.020)
+
     def test_pickup_can_pause_after_instruction_for_manual_image_removal(self):
         delays = []
         backend = PiperMigrationBackend(

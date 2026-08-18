@@ -15,7 +15,8 @@
 - `piper_arm_backend.py`：复用现有 Piper 迁移脚本，但把抓取和放置拆成两个任务；
   原迁移文件不会被改写。
 - `piper_arm_task_node.py`：常驻真实 Piper Action server。同一时刻只接受一个任务，
-  通过夹爪反馈确认抓取或释放结果。
+  通过夹爪反馈确认抓取或释放结果。控制器和反馈就绪后会自动保持当前夹爪开度移动到
+  统一待机位姿；完成前不接受装卸任务，但不阻止小车等待挥旗或发车。
 
 配置入口是 `config/mission/indoor_competition_mission.yaml`。室内整车启动入口是：
 

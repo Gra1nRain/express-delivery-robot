@@ -18,6 +18,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from competition_mission.arm_task_runner import (
+    ArmExecutionFailure,
     ArmTaskOutcome,
     ArmTaskPhase,
     ArmTaskRequest,
@@ -170,7 +171,7 @@ class PiperArmTaskNode(Node):
                 self.declare_parameter("manage_camera", True).value
             ),
         )
-        backend = PiperMigrationBackend(
+        self._backend = PiperMigrationBackend(
             self.piper_controller,
             grasp_module,
             place_module,
@@ -199,8 +200,9 @@ class PiperArmTaskNode(Node):
                 ).value
             ),
         )
-        self._runner = ArmTaskRunner(backend)
+        self._runner = ArmTaskRunner(self._backend)
         self._active = False
+        self._startup_ready = False
         self._active_lock = Lock()
         self._action_server = ActionServer(
             self,
@@ -216,10 +218,31 @@ class PiperArmTaskNode(Node):
             cancel_callback=self._cancel,
             callback_group=ReentrantCallbackGroup(),
         )
+        self._startup_timer = self.create_timer(
+            0.10,
+            self._initialize_startup_transit_pose,
+            callback_group=ReentrantCallbackGroup(),
+        )
         self.get_logger().info(
-            "Persistent Piper ArmTask server ready; "
+            "Persistent Piper ArmTask server ready; startup transit pending; "
             "PICKUP and DROP are independently supervised"
         )
+
+    def _initialize_startup_transit_pose(self) -> None:
+        self._startup_timer.cancel()
+        try:
+            self._backend.initialize_transit_pose()
+        except ArmExecutionFailure as exc:
+            self.get_logger().error(
+                f"Startup transit pose failed: {exc.detail}"
+            )
+            return
+        except Exception as exc:
+            self.get_logger().error(f"Startup transit pose failed: {exc}")
+            return
+        with self._active_lock:
+            self._startup_ready = True
+        self.get_logger().info("Startup transit pose reached; ArmTask enabled")
 
     def _goal(self, request) -> GoalResponse:
         valid = (
@@ -232,7 +255,7 @@ class PiperArmTaskNode(Node):
         if not valid:
             return GoalResponse.REJECT
         with self._active_lock:
-            if self._active:
+            if not self._startup_ready or self._active:
                 return GoalResponse.REJECT
             self._active = True
         return GoalResponse.ACCEPT

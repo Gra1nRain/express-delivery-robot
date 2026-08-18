@@ -216,6 +216,19 @@ class MissionTopologyTest(unittest.TestCase):
             backend,
         )
 
+    def test_real_arm_initializes_transit_pose_before_accepting_tasks(self) -> None:
+        node = (
+            REPO_ROOT
+            / "src"
+            / "competition_mission"
+            / "competition_mission"
+            / "piper_arm_task_node.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("self._startup_ready = False", node)
+        self.assertIn("self._backend.initialize_transit_pose()", node)
+        self.assertIn("if not self._startup_ready", node)
+
     def test_integrated_trajectory_matches_current_sources(self) -> None:
         trajectory_path = (
             REPO_ROOT

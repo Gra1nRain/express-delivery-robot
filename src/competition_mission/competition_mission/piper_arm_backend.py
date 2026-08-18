@@ -213,6 +213,15 @@ class PiperMigrationBackend:
         self._monotonic = monotonic
         self._sleep = sleep
 
+    def initialize_transit_pose(self) -> None:
+        self._wait_until_ready(require_object_model=False)
+        gripper_m, _effort = self._fresh_gripper_feedback()
+        self._return_to_transit_pose(
+            gripper_m,
+            "",
+            required=True,
+        )
+
     def pickup_once(
         self,
         target_hint: str,
