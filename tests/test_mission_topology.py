@@ -331,12 +331,34 @@ class MissionTopologyTest(unittest.TestCase):
                 REPO_ROOT / "config" / "planning" / "planning_params.yaml"
             ),
             optimizer_params_file=str(
-                REPO_ROOT / "config" / "planning" / "optimizer_params.yaml"
+                REPO_ROOT
+                / "config"
+                / "planning"
+                / "optimizer_params_indoor_competition.yaml"
             ),
         )
 
         validate_source_manifest(artifact, source_paths)
         self.assertTrue(artifact["ok"])
+
+    def test_integrated_trajectory_uses_slightly_faster_reference_speed(self) -> None:
+        artifact = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "docs"
+                / "evidence"
+                / "day5"
+                / "indoor_competition_mission_trajectory.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        moving_speeds = [
+            float(point["v"])
+            for point in artifact["points"]
+            if float(point["v"]) > 0.0
+        ]
+
+        self.assertGreaterEqual(max(moving_speeds), 0.115)
+        self.assertLessEqual(max(moving_speeds), 0.125)
 
     def test_mission_checkpoint_labels_are_near_semantic_points(self) -> None:
         route = yaml.safe_load(

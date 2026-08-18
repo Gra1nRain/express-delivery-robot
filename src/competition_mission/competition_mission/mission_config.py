@@ -39,12 +39,6 @@ def mission_config_from_dict(document: dict[str, Any]) -> MissionConfig:
             pickup.get("total_timeout_s", defaults.pickup_timeout_s)
         ),
         drop_timeout_s=float(drop.get("total_timeout_s", defaults.drop_timeout_s)),
-        pickup_vision_ready_timeout_s=float(
-            arm.get(
-                "vision_preload_timeout_s",
-                defaults.pickup_vision_ready_timeout_s,
-            )
-        ),
         pickup_max_attempts=int(
             pickup.get("max_attempts", defaults.pickup_max_attempts)
         ),

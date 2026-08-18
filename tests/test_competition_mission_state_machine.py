@@ -38,7 +38,6 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
                 drop_timeout_s=20.0,
                 pickup_max_attempts=3,
                 drop_max_attempts=2,
-                pickup_vision_ready_timeout_s=10.0,
                 allow_rear_pickup_fallback=True,
                 allow_skip_failed_pickup=True,
             )
@@ -122,15 +121,12 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
         self.assertEqual(config.pickup_max_attempts, 1)
         self.assertEqual(config.drop_max_attempts, 1)
         self.assertEqual(config.pickup_timeout_s, 180.0)
-        self.assertEqual(config.pickup_vision_ready_timeout_s, 30.0)
         self.assertTrue(config.allow_rear_pickup_fallback)
         self.assertTrue(config.allow_skip_failed_pickup)
         self.assertEqual(config.pickup_front_ref, "pickup_front")
 
-    def test_pickup_vision_preloads_only_after_traffic_release(self) -> None:
-        machine = CompetitionMissionStateMachine(
-            MissionConfig(pickup_vision_ready_timeout_s=10.0)
-        )
+    def test_pickup_vision_preloads_while_route_continues_after_traffic(self) -> None:
+        machine = CompetitionMissionStateMachine()
         start = machine.handle(FlagDetected(now_s=1.0))
         self.assertFalse(
             any(
@@ -145,43 +141,49 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
         waiting = machine.handle(
             StableLight(now_s=3.0, light=LightObservation.GREEN)
         )
-        self.assertEqual(waiting.state, MissionState.WAIT_PICKUP_VISION_READY)
+        self.assertEqual(waiting.state, MissionState.RUN_TO_PICKUP_FRONT)
         preload = self.command(waiting, CommandType.PRELOAD_ARM_VISION)
         self.assertTrue(preload.enabled)
         self.assertEqual(
             preload.reason,
             "stable_green_preload_pickup_vision",
         )
-        self.assertFalse(
-            any(
-                command.command_type == CommandType.RELEASE_TO_CHECKPOINT
-                for command in waiting.commands
-            )
+        self.assertEqual(
+            self.command(
+                waiting,
+                CommandType.RELEASE_TO_CHECKPOINT,
+            ).checkpoint_ref,
+            "pickup_front",
         )
 
         ready = machine.handle(ArmVisionReady(now_s=4.0))
         self.assertEqual(ready.state, MissionState.RUN_TO_PICKUP_FRONT)
-        self.assertEqual(
-            self.command(ready, CommandType.RELEASE_TO_CHECKPOINT).checkpoint_ref,
-            "pickup_front",
+        self.assertFalse(
+            any(
+                command.command_type == CommandType.RELEASE_TO_CHECKPOINT
+                for command in ready.commands
+            )
         )
 
-    def test_pickup_vision_preload_timeout_preserves_route_recovery(self) -> None:
-        machine = CompetitionMissionStateMachine(
-            MissionConfig(pickup_vision_ready_timeout_s=10.0)
-        )
+    def test_pickup_route_does_not_wait_for_vision_preload_timeout(self) -> None:
+        machine = CompetitionMissionStateMachine()
         machine.handle(FlagDetected(now_s=1.0))
         machine.handle(
             CheckpointReady(now_s=2.0, checkpoint_ref="traffic_light_stop_line")
         )
-        machine.handle(StableLight(now_s=3.0, light=LightObservation.GREEN))
-
+        released = machine.handle(
+            StableLight(now_s=3.0, light=LightObservation.GREEN)
+        )
         decision = machine.handle(Tick(now_s=13.0))
 
+        self.assertEqual(released.state, MissionState.RUN_TO_PICKUP_FRONT)
         self.assertEqual(decision.state, MissionState.RUN_TO_PICKUP_FRONT)
-        release = self.command(decision, CommandType.RELEASE_TO_CHECKPOINT)
-        self.assertEqual(release.checkpoint_ref, "pickup_front")
-        self.assertEqual(release.reason, "pickup_vision_preload_timeout")
+        self.assertFalse(
+            any(
+                command.command_type == CommandType.RELEASE_TO_CHECKPOINT
+                for command in decision.commands
+            )
+        )
 
     def test_pickup_failure_stays_stopped_without_explicit_fallback_policy(
         self,

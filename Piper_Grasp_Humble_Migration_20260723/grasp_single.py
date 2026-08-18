@@ -445,6 +445,9 @@ BLOCK_GRASP_LEFT_SHIFT_M = float(
 BLOCK_FORWARD_EXTRA_M = float(
     os.getenv("WRIST_BLOCK_FORWARD_EXTRA_M", "0.040")
 )
+BLOCK_EXTRA_DESCENT_M = float(
+    os.getenv("WRIST_BLOCK_EXTRA_DESCENT_M", "0.020")
+)
 
 # 直立瓶侧抓时，先保持 J2~J6 不变，只转 J1 让工具 +Z
 #（夹爪正前方）指向瓶子。之后再向前下方伸展到预抓位。
@@ -6660,6 +6663,8 @@ class PiperController(Node):
         target_center = object_grasp_center.copy()
         if upright_bottle_grasp:
             target_center[2] += height_offset
+        elif is_block_target:
+            target_center[2] -= BLOCK_EXTRA_DESCENT_M
         elif not is_block_target:
             target_center[2] += (
                 GRASP_CENTER_EXTRA_Z_M

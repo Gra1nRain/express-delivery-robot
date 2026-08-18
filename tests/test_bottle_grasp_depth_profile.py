@@ -70,6 +70,17 @@ class BottleGraspDepthProfileTests(unittest.TestCase):
         self.assertAlmostEqual(source_default("BOTTLE_FORWARD_EXTRA_M"), 0.055)
         self.assertAlmostEqual(source_default("BLOCK_FORWARD_EXTRA_M"), 0.040)
 
+    def test_block_descends_20mm_without_changing_bottle_height_policy(self):
+        source = GRASP_SOURCE.read_text(encoding="utf-8")
+
+        self.assertAlmostEqual(source_default("BLOCK_EXTRA_DESCENT_M"), 0.020)
+        self.assertIn(
+            "elif is_block_target:\n"
+            "            target_center[2] -= BLOCK_EXTRA_DESCENT_M",
+            source,
+        )
+        self.assertAlmostEqual(source_default("BOTTLE_GRASP_MIN_ABOVE_BOTTOM_M"), 0.020)
+
     def test_standalone_runner_uses_the_same_bottle_depth(self):
         script = RUN_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(

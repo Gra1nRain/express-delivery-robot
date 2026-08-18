@@ -83,6 +83,7 @@ class BlockGraspIkReplayTest(unittest.TestCase):
                 grasp.BOTTLE_GRASP_LEFT_SHIFT_M,
             )
             self.assertAlmostEqual(grasp.BLOCK_FORWARD_EXTRA_M, 0.040)
+            self.assertAlmostEqual(grasp.BLOCK_EXTRA_DESCENT_M, 0.020)
             self.assertAlmostEqual(grasp.BOTTLE_FORWARD_EXTRA_M, 0.055)
             selected_rotation = grasp.rotation_from_rpy_xyz(
                 plan["grasp_open"]["roll"],
@@ -105,6 +106,7 @@ class BlockGraspIkReplayTest(unittest.TestCase):
                 + expected_left_shift
                 + expected_forward_shift
             )
+            expected_target_center[2] -= grasp.BLOCK_EXTRA_DESCENT_M
             np.testing.assert_allclose(
                 plan["waypoints"][4],
                 expected_target_center,

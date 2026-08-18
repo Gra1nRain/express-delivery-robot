@@ -12,7 +12,6 @@ class MissionState(str, Enum):
     WAIT_START_FLAG = "WAIT_START_FLAG"
     RUN_TO_TRAFFIC_STOP = "RUN_TO_TRAFFIC_STOP"
     WAIT_TRAFFIC_LIGHT = "WAIT_TRAFFIC_LIGHT"
-    WAIT_PICKUP_VISION_READY = "WAIT_PICKUP_VISION_READY"
     RUN_TO_PICKUP_FRONT = "RUN_TO_PICKUP_FRONT"
     PICKUP_FRONT_TASK = "PICKUP_FRONT_TASK"
     RUN_TO_PICKUP_REAR = "RUN_TO_PICKUP_REAR"
@@ -76,7 +75,6 @@ class MissionConfig:
     traffic_no_result_timeout_s: float = 15.0
     pickup_timeout_s: float = 120.0
     drop_timeout_s: float = 90.0
-    pickup_vision_ready_timeout_s: float = 30.0
     pickup_max_attempts: int = 3
     drop_max_attempts: int = 3
     allow_rear_pickup_fallback: bool = False
@@ -101,7 +99,6 @@ class MissionConfig:
             self.traffic_no_result_timeout_s,
             self.pickup_timeout_s,
             self.drop_timeout_s,
-            self.pickup_vision_ready_timeout_s,
         )
         if any(not math.isfinite(value) or value <= 0.0 for value in timeouts):
             raise ValueError("mission timeouts must be finite and positive")
@@ -219,8 +216,6 @@ class CompetitionMissionStateMachine:
         self._target_type = ""
         self._traffic_enabled = False
         self._traffic_no_result_deadline_s: float | None = None
-        self._pickup_vision_ready = False
-        self._pickup_vision_deadline_s: float | None = None
         self._active_arm_task: ArmTaskRequest | None = None
         self._arm_deadline_s: float | None = None
         self._arm_task_counter = 0
@@ -264,12 +259,6 @@ class CompetitionMissionStateMachine:
                 return self._release_from_traffic(event.now_s, "stable_green")
             return self._decision()
         if isinstance(event, ArmVisionReady):
-            self._pickup_vision_ready = True
-            if self._state == MissionState.WAIT_PICKUP_VISION_READY:
-                return self._release_to_pickup(
-                    event.now_s,
-                    "pickup_vision_ready",
-                )
             return self._decision()
         if isinstance(event, ArmResult):
             return self._handle_arm_result(event)
@@ -384,15 +373,6 @@ class CompetitionMissionStateMachine:
         return self._decision()
 
     def _handle_tick(self, event: Tick) -> MissionDecision:
-        if (
-            self._state == MissionState.WAIT_PICKUP_VISION_READY
-            and self._pickup_vision_deadline_s is not None
-            and event.now_s >= self._pickup_vision_deadline_s
-        ):
-            return self._release_to_pickup(
-                event.now_s,
-                "pickup_vision_preload_timeout",
-            )
         if (
             self._state == MissionState.WAIT_TRAFFIC_LIGHT
             and self._traffic_no_result_deadline_s is not None
@@ -586,18 +566,10 @@ class CompetitionMissionStateMachine:
                 reason=f"{reason}_preload_pickup_vision",
             ),
         )
-        if self._pickup_vision_ready:
-            pickup_decision = self._release_to_pickup(now_s, reason)
-            return self._decision(*traffic_commands, *pickup_decision.commands)
-
-        self._transition(MissionState.WAIT_PICKUP_VISION_READY, now_s)
-        self._pickup_vision_deadline_s = (
-            now_s + self.config.pickup_vision_ready_timeout_s
-        )
-        return self._decision(*traffic_commands)
+        pickup_decision = self._release_to_pickup(now_s, reason)
+        return self._decision(*traffic_commands, *pickup_decision.commands)
 
     def _release_to_pickup(self, now_s: float, reason: str) -> MissionDecision:
-        self._pickup_vision_deadline_s = None
         return self._release_to(
             MissionState.RUN_TO_PICKUP_FRONT,
             self.config.pickup_front_ref,

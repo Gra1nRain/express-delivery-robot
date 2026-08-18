@@ -12,9 +12,8 @@ mission:
     no_result_timeout_s: 15.0
   arm:
     # Start both pickup YOLO stages only after traffic recognition releases.
-    # Hold at the traffic stop until both GPU YOLO stages report ready; this
-    # timeout preserves the mission's no-deadlock recovery policy.
-    vision_preload_timeout_s: 30.0
+    # Loading runs on the GPU while the CPU route controller immediately drives
+    # toward pickup. The pickup action still waits for both models before use.
     # The integrated arm can spend more than 120 s across instruction recognition,
     # observation scans, grasping, and the return-to-transit move. Keep a hard deadline,
     # but do not cancel a physically successful pickup while it is returning.

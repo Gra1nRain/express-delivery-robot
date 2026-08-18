@@ -133,7 +133,7 @@ def generate_launch_description() -> LaunchDescription:
                         competition_ws,
                         "config",
                         "planning",
-                        "optimizer_params.yaml",
+                        "optimizer_params_indoor_competition.yaml",
                     ),
                     "mission_config_file": os.path.join(
                         competition_ws,
