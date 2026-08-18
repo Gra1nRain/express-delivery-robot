@@ -90,7 +90,12 @@ source scripts/car_source_env.sh
 ros2 run rqt_image_view rqt_image_view
 ```
 
-在下拉框选择原始彩色图像 `/left_wrist_camera/camera/color/image_raw`。不要选择 `/perception/wrist_traffic_annotated`，后者是挥旗和红绿灯的标注画面。普通 SSH 没有图形转发时不会显示窗口。
+机械臂识别测试优先在下拉框选择
+`/perception/arm_recognition_annotated`。该画面顶部显示任务、阶段、目标类型、
+尝试次数和当前画面来源；下方复用机械臂已有的图纸 YOLO 或实物深度分割标注，
+不会启动第二套相机或重复推理。原始彩色图像仍可选择
+`/left_wrist_camera/camera/color/image_raw`；
+`/perception/wrist_traffic_annotated` 只用于挥旗和红绿灯。普通 SSH 没有图形转发时不会显示窗口。
 
 ### 3.2 手动执行一次前点抓取
 
@@ -151,6 +156,14 @@ ros2 launch competition_bringup indoor_competition.launch.py \
 ```
 
 该命令显式打开了两道底盘运动门：Ranger 驱动和 `/cmd_vel_safe -> /cmd_vel` 适配器。此时状态机仍应等待挥旗，底盘命令应为零。这里的 `10.0 s` 用于室内人工展示并移走抓取指令图片；正式自动比赛时若图片无需人工移走，可恢复默认 `0.0 s`。
+
+下一轮复核卸货段前，在终端 D 先记录控制、定位和局部路径证据：
+
+```bash
+scripts/day5_record_motion.sh competition_full_$(date +%Y%m%d_%H%M%S)
+```
+
+录制开始后再挥旗，整轮结束或人工接管后按 `Ctrl+C`。在没有这份执行轨迹前，不依据单次碰撞现象修改已单独验证过的名义路线。
 
 ### 4.2 发布名义初始位姿
 
@@ -279,7 +292,7 @@ ros2 topic info /cmd_vel
 - 删除冗余 ROS 节点名重映射的修复已构建并同步；现场已确认 `/mission/arm_task` 只有一个 Action server。
 - 名义初始位姿来自当前轨迹首点，仍需现场摆车或 RViz 校正。
 - 红绿灯提前 `1.0 m` 只预热识别、到真实停止点才停车的拆分逻辑已通过 PC
-  自动测试，仍需下一轮实车复核；抓取总超时 `120 s` 和放置总超时 `90 s` 是当前比赛参数。
+  自动测试，仍需下一轮实车复核；抓取总超时 `180 s` 和放置总超时 `90 s` 是当前比赛参数。
 - `FAULT_HOLD` 稳定 `0.5 s` 后自动恢复当前检查点已通过 PC 自动测试，尚需下一轮实车
   复核预热点后的继续行驶。
 - 当前状态机按既定范围不处理导航不可达；终点停车后由人工接管。

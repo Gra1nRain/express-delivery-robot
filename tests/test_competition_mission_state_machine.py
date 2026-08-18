@@ -115,6 +115,7 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
 
         self.assertEqual(config.traffic_no_result_timeout_s, 15.0)
         self.assertEqual(config.pickup_max_attempts, 3)
+        self.assertEqual(config.pickup_timeout_s, 180.0)
         self.assertEqual(config.pickup_front_ref, "pickup_front")
 
     def test_marker_enables_light_without_changing_drive_state(self) -> None:
