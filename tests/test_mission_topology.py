@@ -254,6 +254,9 @@ class MissionTopologyTest(unittest.TestCase):
 
         self.assertIn("/perception/arm_recognition_annotated", node)
         self.assertIn("compose_arm_recognition_frame", node)
+        self.assertIn("qos_profile_sensor_data", node)
+        self.assertIn('"recognition_visualization_hz", 15.0', node)
+        self.assertIn("1.0 / self._recognition_visualization_hz", node)
 
         runbook = (
             REPO_ROOT / "docs" / "competition_mission_manual_field_test.md"

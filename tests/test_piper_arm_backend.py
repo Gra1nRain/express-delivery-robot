@@ -385,11 +385,12 @@ class PiperArmBackendTest(unittest.TestCase):
             else:
                 os.environ[instruction_variable] = previous_instruction
 
-    def test_competition_environment_uses_single_scan_cycle(self):
+    def test_competition_environment_uses_single_detection_per_scan_view(self):
         expected = {
             "WRIST_INSTRUCTION_CONFIRM_FRAMES": "1",
             "WRIST_OBSERVATION_SCAN_DETECTION_ATTEMPTS": "1",
-            "WRIST_PLACE_SCAN_ENABLED": "0",
+            "WRIST_PLACE_SCAN_ENABLED": "1",
+            "WRIST_PLACE_SCAN_OFFSETS_DEG": "10,-10",
             "WRIST_PLACE_DETECT_REQUIRED_FRAMES": "1",
         }
         previous = {name: os.environ.get(name) for name in expected}
@@ -411,6 +412,25 @@ class PiperArmBackendTest(unittest.TestCase):
                     os.environ.pop(name, None)
                 else:
                     os.environ[name] = value
+
+    def test_drop_search_failure_keeps_carried_object_clamped(self):
+        self.controller.last_gripper_position_m = 0.0
+
+        def fail_selection(*_args, **_kwargs):
+            raise RuntimeError("placement marker not visible")
+
+        self.place._select_target_sheet_candidate_with_scan = fail_selection
+
+        with self.assertRaises(ArmExecutionFailure):
+            self.backend.drop_once("green_bottle", lambda *_args: None)
+
+        self.assertEqual(len(self.controller.joint_pose_calls), 2)
+        self.assertTrue(
+            all(
+                move["gripper_m"] == 0.0
+                for move in self.controller.joint_pose_calls
+            )
+        )
 
 
 if __name__ == "__main__":

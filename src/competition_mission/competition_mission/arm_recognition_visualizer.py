@@ -61,8 +61,6 @@ def select_arm_recognition_source(
     if phase_name in _OBJECT_PHASES:
         if object_overlay is not None:
             return object_overlay, "OBJECT_OVERLAY"
-        if instruction_overlay is not None:
-            return instruction_overlay, "INSTRUCTION_OVERLAY"
     return live_frame, "LIVE_CAMERA"
 
 

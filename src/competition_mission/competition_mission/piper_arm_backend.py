@@ -65,7 +65,8 @@ def prepare_competition_environment(migration_root: Path) -> int:
         "WRIST_PLACE_AFTER_GRASP_ENABLED": "1",
         "WRIST_INSTRUCTION_CONFIRM_FRAMES": "1",
         "WRIST_OBSERVATION_SCAN_DETECTION_ATTEMPTS": "1",
-        "WRIST_PLACE_SCAN_ENABLED": "0",
+        "WRIST_PLACE_SCAN_ENABLED": "1",
+        "WRIST_PLACE_SCAN_OFFSETS_DEG": "10,-10",
         "WRIST_PLACE_DETECT_REQUIRED_FRAMES": "1",
         "WRIST_YOLO_MODEL_PATH": str(migration_root / "best.pt"),
     }

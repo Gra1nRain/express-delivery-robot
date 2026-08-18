@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from copy import copy
 import os
 from pathlib import Path
 import shlex
@@ -16,6 +17,7 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 
 from competition_mission.arm_task_runner import (
@@ -216,6 +218,15 @@ class PiperArmTaskNode(Node):
         self._visual_attempt = 0
         self._visual_status = "STARTING"
         self._visual_warning_logged = False
+        self._recognition_visualization_hz = float(
+            self.declare_parameter(
+                "recognition_visualization_hz", 15.0
+            ).value
+        )
+        if self._recognition_visualization_hz <= 0.0:
+            raise ValueError("recognition_visualization_hz must be positive")
+        visual_qos = copy(qos_profile_sensor_data)
+        visual_qos.depth = 1
         self._visual_publisher = self.create_publisher(
             Image,
             str(
@@ -224,10 +235,10 @@ class PiperArmTaskNode(Node):
                     "/perception/arm_recognition_annotated",
                 ).value
             ),
-            1,
+            visual_qos,
         )
         self._visual_timer = self.create_timer(
-            0.20,
+            1.0 / self._recognition_visualization_hz,
             self._publish_recognition_visualization,
             callback_group=ReentrantCallbackGroup(),
         )

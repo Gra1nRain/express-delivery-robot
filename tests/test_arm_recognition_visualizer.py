@@ -43,6 +43,17 @@ class ArmRecognitionVisualizerTest(unittest.TestCase):
         self.assertIs(selected, self.object)
         self.assertEqual(source, "OBJECT_OVERLAY")
 
+    def test_object_search_without_result_keeps_live_camera_refreshing(self) -> None:
+        selected, source = select_arm_recognition_source(
+            self.raw,
+            self.instruction,
+            None,
+            phase="SEARCHING_TARGET_OBJECT",
+        )
+
+        self.assertIs(selected, self.raw)
+        self.assertEqual(source, "LIVE_CAMERA")
+
     def test_missing_overlay_falls_back_to_live_camera(self) -> None:
         selected, source = select_arm_recognition_source(
             self.raw,
