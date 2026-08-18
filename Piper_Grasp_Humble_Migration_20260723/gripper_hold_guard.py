@@ -6,6 +6,23 @@ import math
 from threading import Lock
 
 
+def choose_bottle_hold_position(
+    commanded_closed_m: float,
+    measured_opening_m: float,
+    preload_m: float,
+) -> float:
+    """Keep contact without repeatedly driving an obstructed gripper to zero."""
+    commanded_closed_m = float(commanded_closed_m)
+    measured_opening_m = float(measured_opening_m)
+    preload_m = float(preload_m)
+    values = (commanded_closed_m, measured_opening_m, preload_m)
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("gripper hold inputs must be finite")
+    if commanded_closed_m < 0.0 or measured_opening_m < 0.0 or preload_m < 0.0:
+        raise ValueError("gripper hold inputs must be non-negative")
+    return max(commanded_closed_m, measured_opening_m - preload_m)
+
+
 class GripperHoldGuard:
     """Clamp premature open commands until placement authorizes release."""
 

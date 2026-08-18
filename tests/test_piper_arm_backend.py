@@ -55,6 +55,7 @@ class FakeController:
         self.gripper_hold_active = False
         self.gripper_hold_m = None
         self.gripper_hold_target = ""
+        self.worker_hold_m = None
 
     def wait_for_stable_can_control(self):
         self.can_control_wait_calls += 1
@@ -68,6 +69,9 @@ class FakeController:
 
     def is_gripper_hold_active(self):
         return self.gripper_hold_active
+
+    def get_gripper_hold_position(self):
+        return self.gripper_hold_m if self.gripper_hold_active else None
 
     def authorize_gripper_release(self, _reason):
         if not self.gripper_hold_active:
@@ -102,6 +106,11 @@ class FakeController:
 
     def _execute_wrist_grasp_worker(self, skip_instruction_confirmation):
         self.worker_calls += 1
+        if self.worker_hold_m is not None:
+            self.activate_gripper_hold(
+                self.worker_hold_m,
+                self.target_model_class_name,
+            )
         self.last_gripper_position_m = 0.020
         self.last_gripper_feedback_at = time.monotonic()
 
@@ -207,6 +216,18 @@ class PiperArmBackendTest(unittest.TestCase):
         self.assertTrue(self.controller.gripper_hold_active)
         self.assertEqual(self.controller.gripper_hold_m, 0.0)
         self.assertEqual(self.controller.gripper_hold_target, "green_bottle")
+
+    def test_pickup_preserves_contact_based_hold_for_transit(self):
+        self.controller.worker_hold_m = 0.018
+
+        self.backend.pickup_once(
+            "green_bottle",
+            lambda *_args: None,
+        )
+
+        transit_move = self.controller.joint_pose_calls[0]
+        self.assertEqual(transit_move["gripper_m"], 0.018)
+        self.assertEqual(self.controller.gripper_hold_m, 0.018)
 
     def test_second_pickup_is_rejected_until_held_object_is_dropped(self):
         self.backend.pickup_once("green_bottle", lambda *_args: None)

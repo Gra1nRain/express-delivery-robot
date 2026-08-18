@@ -7,10 +7,25 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIGRATION_ROOT = REPO_ROOT / "Piper_Grasp_Humble_Migration_20260723"
 sys.path.insert(0, str(MIGRATION_ROOT))
 
-from gripper_hold_guard import GripperHoldGuard  # noqa: E402
+from gripper_hold_guard import (  # noqa: E402
+    GripperHoldGuard,
+    choose_bottle_hold_position,
+)
 
 
 class GripperHoldGuardTest(unittest.TestCase):
+    def test_bottle_hold_uses_contact_opening_with_small_preload(self):
+        self.assertAlmostEqual(
+            choose_bottle_hold_position(0.0, 0.032, 0.002),
+            0.030,
+        )
+
+    def test_bottle_hold_never_opens_past_measured_contact(self):
+        self.assertEqual(
+            choose_bottle_hold_position(0.010, 0.009, 0.002),
+            0.010,
+        )
+
     def test_unlocked_guard_preserves_requested_opening(self):
         guard = GripperHoldGuard()
 

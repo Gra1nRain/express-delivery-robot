@@ -505,10 +505,15 @@ class PiperMigrationBackend:
                 self.controller.target_class_id
             )["gripper_closed"]
         )
-        self.controller.activate_gripper_hold(
-            closed_gripper,
-            target_type,
-        )
+        if self.controller.is_gripper_hold_active():
+            held_gripper = self.controller.get_gripper_hold_position()
+            if held_gripper is not None:
+                closed_gripper = float(held_gripper)
+        else:
+            self.controller.activate_gripper_hold(
+                closed_gripper,
+                target_type,
+            )
         publish_phase(ArmTaskPhase.VERIFYING_OPERATION, target_type)
         self._verify_pickup(target_type)
         return target_type, closed_gripper
