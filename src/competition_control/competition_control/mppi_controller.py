@@ -190,6 +190,7 @@ class MPPIParams:
     max_speed_mps: float = 0.20
     max_acceleration_mps2: float = 0.20
     max_deceleration_mps2: float = 0.30
+    max_jerk_mps3: float = 2.00
     min_turning_radius_m: float = 0.81
     max_curvature_rate_1pmps: float = 0.80
     command_speed_memory_limit_mps: float = 0.05
@@ -236,6 +237,8 @@ class MPPIController:
             raise ValueError("control_dt_s must be positive")
         if params.command_speed_memory_limit_mps < 0.0:
             raise ValueError("command_speed_memory_limit_mps must be non-negative")
+        if params.max_jerk_mps3 <= 0.0:
+            raise ValueError("max_jerk_mps3 must be positive")
         if params.goal_heading_tolerance_rad < 0.0:
             raise ValueError("goal_heading_tolerance_rad must be non-negative")
         self._trajectory = trajectory
@@ -257,13 +260,17 @@ class MPPIController:
         self._nominal = np.zeros((params.horizon_steps, 2), dtype=float)
         self._progress_index = 0
         self._last_speed = 0.0
+        self._last_acceleration = 0.0
         self._last_curvature = 0.0
+        self._has_commanded = False
 
     def reset(self) -> None:
         self._nominal.fill(0.0)
         self._progress_index = 0
         self._last_speed = 0.0
+        self._last_acceleration = 0.0
         self._last_curvature = 0.0
+        self._has_commanded = False
 
     def replace_trajectory(self, trajectory: ControlTrajectory) -> None:
         """Switch to a newly parameterized local trajectory atomically."""
@@ -311,6 +318,8 @@ class MPPIController:
             and goal_heading_error <= self._params.goal_heading_tolerance_rad
         ):
             self._last_speed = 0.0
+            self._last_acceleration = 0.0
+            self._has_commanded = False
             return BodyCommand.hold(
                 target_index=len(self._trajectory.points) - 1,
                 lateral_error_m=lateral_error,
@@ -336,7 +345,10 @@ class MPPIController:
                 state.linear_speed_mps,
             )[0]
 
-        speed = float(self._nominal[0, 0])
+        speed = self._jerk_limited_output_speed(
+            float(self._nominal[0, 0]),
+            measured_speed_mps=state.linear_speed_mps,
+        )
         feedback_curvature = self._feedback_curvature(lateral_error, heading_error)
         blend = self._feedback_blend()
         stabilized_curvature = (
@@ -360,6 +372,7 @@ class MPPIController:
             ),
         )
         self._nominal[0, 1] = curvature
+        self._nominal[0, 0] = speed
         yaw_rate = speed * curvature
         self._last_speed = speed
         self._last_curvature = curvature
@@ -374,6 +387,61 @@ class MPPIController:
             heading_error_rad=heading_error,
             status="TRACKING",
         )
+
+    def _jerk_limited_output_speed(
+        self,
+        target_speed_mps: float,
+        *,
+        measured_speed_mps: float,
+    ) -> float:
+        """Shape normal tracking commands with an S-curve acceleration ramp."""
+
+        dt = self._params.control_dt_s
+        previous_speed = (
+            self._last_speed
+            if self._has_commanded
+            else max(0.0, measured_speed_mps)
+        )
+        previous_acceleration = self._last_acceleration if self._has_commanded else 0.0
+        desired_acceleration = min(
+            self._params.max_acceleration_mps2,
+            max(
+                -self._params.max_deceleration_mps2,
+                (target_speed_mps - previous_speed) / dt,
+            ),
+        )
+        speed_delta = target_speed_mps - previous_speed
+        acceleration_release_delta = (
+            previous_acceleration * previous_acceleration
+            / (2.0 * self._params.max_jerk_mps3)
+        )
+        if (
+            previous_acceleration > 0.0
+            and speed_delta <= acceleration_release_delta + 1e-12
+        ):
+            desired_acceleration = min(desired_acceleration, 0.0)
+        elif (
+            previous_acceleration < 0.0
+            and -speed_delta <= acceleration_release_delta + 1e-12
+        ):
+            desired_acceleration = max(desired_acceleration, 0.0)
+        jerk_step = self._params.max_jerk_mps3 * dt
+        acceleration = min(
+            self._params.max_acceleration_mps2,
+            previous_acceleration + jerk_step,
+            max(
+                -self._params.max_deceleration_mps2,
+                previous_acceleration - jerk_step,
+                desired_acceleration,
+            ),
+        )
+        speed = min(
+            self._params.max_speed_mps,
+            max(0.0, previous_speed + acceleration * dt),
+        )
+        self._last_acceleration = (speed - previous_speed) / dt
+        self._has_commanded = True
+        return speed
 
     def _nearest_index(self, state: VehicleState) -> int:
         start = max(0, self._progress_index - 3)
@@ -479,9 +547,13 @@ class MPPIController:
         max_curvature = 1.0 / self._params.min_turning_radius_m
         bounded[:, :, 0] = np.clip(bounded[:, :, 0], 0.0, self._params.max_speed_mps)
         bounded[:, :, 1] = np.clip(bounded[:, :, 1], -max_curvature, max_curvature)
-        remembered_speed = min(
-            self._last_speed,
-            self._params.command_speed_memory_limit_mps,
+        remembered_speed = (
+            min(
+                self._last_speed,
+                self._params.command_speed_memory_limit_mps,
+            )
+            if self._has_commanded
+            else 0.0
         )
         previous_speed = np.full(
             bounded.shape[0],

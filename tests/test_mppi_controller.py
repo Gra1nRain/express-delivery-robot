@@ -316,6 +316,74 @@ class MPPIControllerTest(unittest.TestCase):
         self.assertGreater(speeds[-1], speeds[0] + 0.02)
         self.assertEqual(speeds, sorted(speeds))
 
+    def test_tracking_speed_changes_respect_jerk_limit_through_odom_deadband(self) -> None:
+        params = replace(
+            self.params,
+            speed_noise_std_mps=0.0,
+            curvature_noise_std_1pm=0.0,
+            max_speed_mps=1.0,
+            max_acceleration_mps2=0.50,
+            max_deceleration_mps2=0.80,
+            command_speed_memory_limit_mps=1.0,
+        )
+        controller = MPPIController(
+            _straight_trajectory(),
+            params,
+            random_seed=47,
+        )
+        state = VehicleState(
+            x=0.0,
+            y=0.0,
+            yaw=0.0,
+            linear_speed_mps=0.0,
+        )
+
+        speeds = [controller.compute_command(state).linear_x_mps for _ in range(60)]
+        slow_trajectory = replace(
+            _straight_trajectory(),
+            points=tuple(
+                replace(point, v=0.05)
+                for point in _straight_trajectory().points
+            ),
+        )
+        controller.replace_trajectory(slow_trajectory)
+        speeds.extend(
+            controller.compute_command(state).linear_x_mps for _ in range(60)
+        )
+        accelerations = [
+            (current - previous) / params.control_dt_s
+            for previous, current in zip([0.0, *speeds[:-1]], speeds)
+        ]
+        jerks = [
+            (current - previous) / params.control_dt_s
+            for previous, current in zip([0.0, *accelerations[:-1]], accelerations)
+        ]
+
+        self.assertLessEqual(max(abs(jerk) for jerk in jerks), 2.0 + 1e-9)
+        self.assertTrue(all(speed > 0.0 for speed in speeds))
+        self.assertLess(speeds[-1], max(speeds))
+
+    def test_normal_curve_keeps_forward_speed(self) -> None:
+        params = replace(
+            self.params,
+            speed_noise_std_mps=0.0,
+            curvature_noise_std_1pm=0.0,
+            command_speed_memory_limit_mps=self.params.max_speed_mps,
+        )
+        controller = MPPIController(
+            _constant_curvature_trajectory(),
+            params,
+            random_seed=53,
+        )
+
+        command = controller.compute_command(
+            VehicleState(x=0.0, y=0.0, yaw=0.0, linear_speed_mps=0.10)
+        )
+
+        self.assertEqual(command.status, "TRACKING")
+        self.assertGreater(command.linear_x_mps, 0.05)
+        self.assertGreater(abs(command.yaw_rate_radps), 0.0)
+
     def test_goal_requires_heading_tolerance_when_configured(self) -> None:
         params = replace(
             self.params,

@@ -195,11 +195,10 @@ def _launch_setup(context, *args, **kwargs):
                     "max_speed_mps": motion["max_speed_mps"],
                     "max_acceleration_mps2": motion["max_acceleration_mps2"],
                     "max_deceleration_mps2": motion["max_deceleration_mps2"],
+                    "max_jerk_mps3": motion["max_jerk_mps3"],
                     "min_turning_radius_m": motion["min_turning_radius_m"],
                     "max_curvature_rate_1pmps": motion["max_curvature_rate_1pmps"],
-                    "command_speed_memory_limit_mps": motion[
-                        "docking_speed_min_mps"
-                    ],
+                    "command_speed_memory_limit_mps": motion["max_speed_mps"],
                     "pose_timeout_s": estimator["pose_timeout_s"],
                     "velocity_timeout_s": estimator["velocity_timeout_s"],
                     "max_pose_prediction_s": estimator["max_pose_prediction_s"],

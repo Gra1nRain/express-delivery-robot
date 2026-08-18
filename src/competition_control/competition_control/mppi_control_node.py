@@ -316,6 +316,9 @@ class MPPIControlNode(Node):
             max_deceleration_mps2=float(
                 self.declare_parameter("max_deceleration_mps2", 0.30).value
             ),
+            max_jerk_mps3=float(
+                self.declare_parameter("max_jerk_mps3", 2.00).value
+            ),
             min_turning_radius_m=float(
                 self.declare_parameter("min_turning_radius_m", 0.81).value
             ),

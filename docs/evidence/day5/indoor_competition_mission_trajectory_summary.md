@@ -9,10 +9,10 @@
 - optimizer_plugin: jerk_limited_s_curve
 - point_count: 236
 - path_length_m: 23.614
-- duration_s: 29.043
+- duration_s: 36.952
 - max_speed_mps: 1.000
-- max_abs_acceleration_mps2: 0.800
-- max_abs_jerk_mps3: 8.944
+- max_abs_acceleration_mps2: 0.448
+- max_abs_jerk_mps3: 1.982
 - max_abs_curvature_1pm: 1.234568
 - max_abs_curvature_rate_1pmps: 3.000000
 - stopped_refs_after_start: ['finish_park']

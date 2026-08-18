@@ -590,31 +590,14 @@ def _parameterize_spatial_speed_envelope(
         max_acceleration_mps2,
         max_deceleration_mps2,
     )
-    times = _integrate_times(distances, speeds)
-    accelerations = [0.0]
-    jerks = [0.0]
-    for previous_speed, current_speed, previous_time, current_time in zip(
-        speeds, speeds[1:], times, times[1:]
-    ):
-        accelerations.append(
-            (current_speed - previous_speed) / (current_time - previous_time)
-        )
-    acceleration_segments = zip(
-        accelerations,
-        accelerations[1:],
-        times,
-        times[1:],
+    speeds = _smooth_speed_profile_for_jerk(
+        speeds,
+        distances,
+        max_acceleration_mps2=max_acceleration_mps2,
+        max_deceleration_mps2=max_deceleration_mps2,
+        max_jerk_mps3=max_jerk_mps3,
     )
-    for (
-        previous_acceleration,
-        current_acceleration,
-        previous_time,
-        current_time,
-    ) in acceleration_segments:
-        jerks.append(
-            (current_acceleration - previous_acceleration)
-            / (current_time - previous_time)
-        )
+    times, accelerations, jerks = _speed_profile_kinematics(distances, speeds)
 
     if max(accelerations) > max_acceleration_mps2 + 1e-9:
         raise ValueError("continuous route exceeds the acceleration limit")
@@ -1177,6 +1160,72 @@ def _apply_acceleration_limits(
         reachable = math.sqrt(speeds[index + 1] ** 2 + 2.0 * max_deceleration_mps2 * ds)
         speeds[index] = min(speeds[index], reachable)
     return speeds
+
+
+def _smooth_speed_profile_for_jerk(
+    speed_limits: Sequence[float],
+    distances: Sequence[float],
+    *,
+    max_acceleration_mps2: float,
+    max_deceleration_mps2: float,
+    max_jerk_mps3: float,
+) -> list[float]:
+    """Broaden local speed transitions until the sampled profile is jerk limited.
+
+    The acceleration passes provide a fast feasible upper envelope. Repeated
+    symmetric smoothing only lowers that envelope, so curvature, speed,
+    acceleration, and deceleration constraints remain conservative while sharp
+    acceleration corners become an S-shaped transition.
+    """
+
+    upper_envelope = list(speed_limits)
+    speeds = list(speed_limits)
+    for _ in range(5_000):
+        _, _, jerks = _speed_profile_kinematics(distances, speeds)
+        if max(abs(jerk) for jerk in jerks) <= max_jerk_mps3 + 1e-9:
+            return speeds
+        previous = speeds
+        speeds = list(previous)
+        for index in range(1, len(speeds) - 1):
+            smoothed = (
+                0.25 * previous[index - 1]
+                + 0.50 * previous[index]
+                + 0.25 * previous[index + 1]
+            )
+            speeds[index] = min(upper_envelope[index], smoothed)
+        speeds = _apply_acceleration_limits(
+            speeds,
+            distances,
+            max_acceleration_mps2,
+            max_deceleration_mps2,
+        )
+    raise ValueError("continuous route could not satisfy the jerk limit")
+
+
+def _speed_profile_kinematics(
+    distances: Sequence[float],
+    speeds: Sequence[float],
+) -> tuple[list[float], list[float], list[float]]:
+    times = _integrate_times(distances, speeds)
+    accelerations = [0.0]
+    for previous_speed, current_speed, previous_time, current_time in zip(
+        speeds, speeds[1:], times, times[1:]
+    ):
+        accelerations.append(
+            (current_speed - previous_speed) / (current_time - previous_time)
+        )
+    jerks = [0.0]
+    for previous_acceleration, current_acceleration, previous_time, current_time in zip(
+        accelerations,
+        accelerations[1:],
+        times,
+        times[1:],
+    ):
+        jerks.append(
+            (current_acceleration - previous_acceleration)
+            / (current_time - previous_time)
+        )
+    return times, accelerations, jerks
 
 
 def _integrate_times(distances: Sequence[float], speeds: Sequence[float]) -> list[float]:

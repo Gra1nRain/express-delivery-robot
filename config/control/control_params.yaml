@@ -45,6 +45,8 @@ motion:
   turn_speed_mps: 0.70
   max_acceleration_mps2: 0.50
   max_deceleration_mps2: 0.80
+  # Ramp acceleration itself over 0.25 s instead of stepping immediately.
+  max_jerk_mps3: 2.00
   max_curvature_rate_1pmps: 0.80
   docking_speed_min_mps: 0.08
   docking_speed_max_mps: 0.12

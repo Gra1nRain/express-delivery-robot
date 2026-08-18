@@ -572,6 +572,46 @@ class TrajectoryParameterizerTest(unittest.TestCase):
             self.assertEqual(float(original["curvature"]), retimed.curvature)
             self.assertEqual(original.get("ref_id"), retimed.ref_id)
 
+    def test_indoor_speed_envelope_is_jerk_limited_without_stopping_in_turns(
+        self,
+    ) -> None:
+        reference = load_yaml_file(
+            REPO_ROOT
+            / "docs"
+            / "evidence"
+            / "day5"
+            / "indoor_competition_mission_trajectory.yaml"
+        )
+        optimizer = load_yaml_file(
+            REPO_ROOT
+            / "config"
+            / "planning"
+            / "optimizer_params_indoor_competition.yaml"
+        )
+        optimizer["continuous_trajectory_optimizer"]["max_jerk_mps3"] = 2.0
+
+        result = retime_continuous_trajectory(reference, optimizer)
+
+        self.assertTrue(result.ok, result.failures)
+        self.assertGreaterEqual(max(point.v for point in result.points), 0.999)
+        self.assertTrue(all(point.v > 0.05 for point in result.points[1:-1]))
+        self.assertLessEqual(
+            max(abs(point.jerk) for point in result.points),
+            2.0 + 1e-9,
+        )
+        curvature_rates = [
+            abs(current.curvature - previous.curvature) / (current.t - previous.t)
+            for previous, current in zip(result.points, result.points[1:])
+        ]
+        self.assertLessEqual(max(curvature_rates), 3.00 + 1e-9)
+        for original, retimed in zip(reference["points"], result.points):
+            self.assertEqual(float(original["x"]), retimed.x)
+            self.assertEqual(float(original["y"]), retimed.y)
+            self.assertEqual(float(original["yaw"]), retimed.yaw)
+            self.assertEqual(float(original["s"]), retimed.s)
+            self.assertEqual(float(original["curvature"]), retimed.curvature)
+            self.assertEqual(original.get("ref_id"), retimed.ref_id)
+
     def test_semantic_stops_and_obstacle_zone_speed_caps_are_applied(self) -> None:
         plan = StepPlan(
             step_id="go_pickup",
