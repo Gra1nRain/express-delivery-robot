@@ -79,6 +79,7 @@ from block_grasp_planner import (
     build_block_rpy_candidates,
     build_world_yz_pregrasp_pose,
     choose_reachable_block_candidate,
+    robust_point_cloud_box_center,
 )
 from target_detection_gate import (
     bbox_iou,
@@ -5909,24 +5910,43 @@ class PiperController(Node):
             @ object_points_h.T
         ).T[:, :3]
 
-        center = np.median(
+        median_center = np.median(
             object_points_base,
             axis=0,
         )
-        aabb_min = np.quantile(
-            object_points_base,
-            0.05,
-            axis=0,
+        geometric_center, aabb_min, aabb_max = (
+            robust_point_cloud_box_center(
+                object_points_base,
+                lower_quantile=0.05,
+                upper_quantile=0.95,
+            )
         )
-        aabb_max = np.quantile(
-            object_points_base,
-            0.95,
-            axis=0,
+        try:
+            is_block_target = int(self.target_class_id) == 1
+        except (TypeError, ValueError):
+            is_block_target = False
+        center = (
+            geometric_center.copy()
+            if is_block_target
+            else median_center.copy()
         )
+        diagnostics["grasp_center"] = {
+            "source": (
+                "robust_point_cloud_box_center"
+                if is_block_target
+                else "point_cloud_median"
+            ),
+            "median_center": median_center.tolist(),
+            "geometric_center": geometric_center.tolist(),
+        }
 
         axis_info = None
         grasp_yaw_deg = None
-        if USE_OBJECT_AXIS_YAW and len(object_points_base) >= 20:
+        if (
+            USE_OBJECT_AXIS_YAW
+            and not is_block_target
+            and len(object_points_base) >= 20
+        ):
             xy = object_points_base[:, :2]
             xy_centered = xy - np.median(xy, axis=0)
             cov = np.cov(xy_centered.T)
@@ -6241,6 +6261,8 @@ class PiperController(Node):
             is_block_target = int(target_class_id) == 1
         except (TypeError, ValueError):
             is_block_target = False
+        if is_block_target:
+            open_gripper = OPEN_GRIPPER_M
 
         yaw_locked_by_calibration = False
         if upright_bottle_grasp:
@@ -6465,7 +6487,7 @@ class PiperController(Node):
         target_center = object_grasp_center.copy()
         if upright_bottle_grasp:
             target_center[2] += height_offset
-        else:
+        elif not is_block_target:
             target_center[2] += (
                 GRASP_CENTER_EXTRA_Z_M
                 + height_offset
@@ -7179,7 +7201,7 @@ class PiperController(Node):
         candidate_specs = build_block_rpy_candidates(
             roll_deg=float(calibrated_rpy[0]),
             fallback_yaw_deg=float(calibrated_rpy[2]),
-            object_yaw_deg=object_result.get("grasp_yaw_deg"),
+            object_yaw_deg=None,
             pitch_candidates_deg=(
                 BLOCK_TERMINAL_PITCH_CANDIDATES_DEG
             ),

@@ -15,10 +15,47 @@ from block_grasp_planner import (  # noqa: E402
     build_tool_axis_pregrasp_pose,
     build_world_yz_pregrasp_pose,
     choose_reachable_block_candidate,
+    robust_point_cloud_box_center,
 )
 
 
 class BlockGraspPlannerTest(unittest.TestCase):
+    def test_uses_robust_box_center_for_uneven_block_point_density(self):
+        dense_left_face = np.repeat(
+            [[0.08, -0.42, 0.03]],
+            60,
+            axis=0,
+        )
+        sparse_right_face = np.repeat(
+            [[0.12, -0.38, 0.07]],
+            40,
+            axis=0,
+        )
+        gross_outliers = np.array(
+            [
+                [-1.0, -1.0, -1.0],
+                [-0.8, -0.9, -0.7],
+                [0.9, 0.8, 0.9],
+                [1.0, 1.0, 1.0],
+            ]
+        )
+        points = np.vstack(
+            [dense_left_face, sparse_right_face, gross_outliers]
+        )
+
+        center, bounds_min, bounds_max = robust_point_cloud_box_center(
+            points,
+            lower_quantile=0.05,
+            upper_quantile=0.95,
+        )
+
+        np.testing.assert_allclose(bounds_min, [0.08, -0.42, 0.03])
+        np.testing.assert_allclose(bounds_max, [0.12, -0.38, 0.07])
+        np.testing.assert_allclose(center, [0.10, -0.40, 0.05])
+        self.assertFalse(
+            np.allclose(np.median(points, axis=0), center)
+        )
+
     def test_builds_near_vertical_candidates_with_axis_aligned_yaw(self):
         candidates = build_block_rpy_candidates(
             roll_deg=-179.234,

@@ -22,6 +22,31 @@ def _rotation_from_rpy_xyz(roll, pitch, yaw):
     )
 
 
+def robust_point_cloud_box_center(
+    points,
+    lower_quantile=0.05,
+    upper_quantile=0.95,
+):
+    points_array = np.asarray(points, dtype=np.float64)
+    if points_array.ndim != 2 or points_array.shape[1] != 3:
+        raise ValueError("points must have shape (N, 3)")
+    if len(points_array) == 0:
+        raise ValueError("points must not be empty")
+
+    bounds_min = np.quantile(
+        points_array,
+        float(lower_quantile),
+        axis=0,
+    )
+    bounds_max = np.quantile(
+        points_array,
+        float(upper_quantile),
+        axis=0,
+    )
+    center = (bounds_min + bounds_max) * 0.5
+    return center, bounds_min, bounds_max
+
+
 def build_block_rpy_candidates(
     roll_deg,
     fallback_yaw_deg,

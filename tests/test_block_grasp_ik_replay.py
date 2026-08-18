@@ -72,7 +72,16 @@ class BlockGraspIkReplayTest(unittest.TestCase):
                 start_joints,
             )
 
-            self.assertEqual(abs(plan["yaw_offset_deg"]), 20.0)
+            self.assertEqual(plan["yaw_source"], "calibrated_fallback")
+            self.assertIn(abs(plan["yaw_offset_deg"]), (0.0, 20.0))
+            self.assertAlmostEqual(
+                plan["grasp_open"]["gripper"],
+                grasp.OPEN_GRIPPER_M,
+            )
+            np.testing.assert_allclose(
+                plan["waypoints"][4],
+                object_result["depth_grasp_center"],
+            )
             self.assertGreaterEqual(
                 plan["minimum_joint_margin_rad"],
                 grasp.BLOCK_MIN_JOINT_MARGIN_RAD,
