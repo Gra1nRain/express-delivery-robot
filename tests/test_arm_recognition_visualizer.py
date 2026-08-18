@@ -122,12 +122,15 @@ class ArmRecognitionVisualizerTest(unittest.TestCase):
             attempt=2,
             source="OBJECT_OVERLAY",
             status="RUNNING",
+            detection_confidence=0.92,
+            detection_bbox=[10.0, 20.0, 30.0, 40.0],
+            grasp_center=[0.1, 0.2, 0.3],
         )
 
-        self.assertEqual(result.shape, (172, 64, 3))
+        self.assertEqual(result.shape, (228, 64, 3))
         np.testing.assert_array_equal(self.object, before)
-        self.assertGreater(int(result[:124].max()), 0)
-        np.testing.assert_array_equal(result[124:], self.object)
+        self.assertGreater(int(result[:180].max()), 0)
+        np.testing.assert_array_equal(result[180:], self.object)
 
 
 if __name__ == "__main__":

@@ -17,8 +17,14 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from sensor_msgs.msg import Image
+from std_msgs.msg import Bool
 
 from competition_mission.arm_task_runner import (
     ArmExecutionFailure,
@@ -69,6 +75,14 @@ _OVERLAY_PATH_VARIABLES = (
     "LD_LIBRARY_PATH",
     "PYTHONPATH",
 )
+
+
+def _state_qos() -> QoSProfile:
+    return QoSProfile(
+        depth=1,
+        reliability=ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    )
 
 
 def _migration_root_from_environment() -> Path:
@@ -218,6 +232,33 @@ class PiperArmTaskNode(Node):
         self._visual_attempt = 0
         self._visual_status = "STARTING"
         self._visual_warning_logged = False
+        self._last_vision_ready: bool | None = None
+        self._vision_ready_publisher = self.create_publisher(
+            Bool,
+            str(
+                self.declare_parameter(
+                    "vision_ready_topic",
+                    "/mission/arm_vision_ready",
+                ).value
+            ),
+            _state_qos(),
+        )
+        self.create_subscription(
+            Bool,
+            str(
+                self.declare_parameter(
+                    "vision_preload_topic",
+                    "/mission/arm_vision_preload",
+                ).value
+            ),
+            self._vision_preload_callback,
+            _state_qos(),
+        )
+        self._vision_ready_timer = self.create_timer(
+            0.10,
+            self._publish_vision_ready,
+            callback_group=ReentrantCallbackGroup(),
+        )
         self._recognition_visualization_hz = float(
             self.declare_parameter(
                 "recognition_visualization_hz", 15.0
@@ -265,6 +306,36 @@ class PiperArmTaskNode(Node):
             "Persistent Piper ArmTask server ready; startup transit pending; "
             "PICKUP and DROP are independently supervised"
         )
+
+    def _vision_preload_callback(self, message: Bool) -> None:
+        if message.data:
+            self.piper_controller.start_vision_model_loading()
+
+    def _publish_vision_ready(self) -> None:
+        instruction_detector = getattr(
+            self.piper_controller,
+            "instruction_detector",
+            None,
+        )
+        object_detector = getattr(
+            self.piper_controller,
+            "vision_detector",
+            None,
+        )
+        ready = bool(
+            instruction_detector is not None
+            and getattr(instruction_detector, "is_loaded", False)
+            and object_detector is not None
+            and getattr(object_detector, "is_loaded", False)
+        )
+        if ready == self._last_vision_ready:
+            return
+        self._last_vision_ready = ready
+        self._vision_ready_publisher.publish(Bool(data=ready))
+        if ready:
+            self.get_logger().info(
+                "Paper and object YOLO preloaded; PICKUP vision is ready"
+            )
 
     def _initialize_startup_transit_pose(self) -> None:
         self._startup_timer.cancel()
@@ -319,6 +390,8 @@ class PiperArmTaskNode(Node):
             self._visual_status = "RUNNING"
         self.piper_controller.last_instruction_preview = None
         self.piper_controller.last_wrist_preview = None
+        self.piper_controller.last_arm_detection_metadata = {}
+        self.piper_controller.last_grasp_center = None
         try:
             result = self._runner.run(
                 ArmTaskRequest(
@@ -397,6 +470,18 @@ class PiperArmTaskNode(Node):
             phase=phase,
         )
         try:
+            detection_metadata = getattr(
+                self.piper_controller,
+                "last_arm_detection_metadata",
+                {},
+            )
+            if not isinstance(detection_metadata, dict):
+                detection_metadata = {}
+            grasp_center = getattr(
+                self.piper_controller,
+                "last_grasp_center",
+                None,
+            ) or detection_metadata.get("grasp_center")
             composed = compose_arm_recognition_frame(
                 source_frame,
                 task_type=task_type,
@@ -405,6 +490,9 @@ class PiperArmTaskNode(Node):
                 attempt=attempt,
                 source=source_name,
                 status=status,
+                detection_confidence=detection_metadata.get("confidence"),
+                detection_bbox=detection_metadata.get("bbox"),
+                grasp_center=grasp_center,
             )
             message = self.piper_controller.bridge.cv2_to_imgmsg(
                 composed,

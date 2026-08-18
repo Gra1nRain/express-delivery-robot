@@ -12,7 +12,7 @@ except ImportError:  # Pure tests may run without the ROS/OpenCV runtime.
     cv2 = None
 
 
-_BANNER_HEIGHT_PX = 124
+_BANNER_HEIGHT_PX = 180
 _INSTRUCTION_PHASES = {
     "RECOGNIZING_INSTRUCTION",
     "TARGET_TYPE_LOCKED",
@@ -71,6 +71,9 @@ def compose_arm_recognition_frame(
     attempt: int,
     source: str,
     status: str,
+    detection_confidence: float | None = None,
+    detection_bbox: Any = None,
+    grasp_center: Any = None,
 ) -> np.ndarray:
     """Add a flag/light-style status banner without mutating the source."""
     frame = np.asarray(source_frame)
@@ -83,6 +86,22 @@ def compose_arm_recognition_frame(
 
     banner = np.zeros((_BANNER_HEIGHT_PX, frame.shape[1], 3), dtype=np.uint8)
     stage = describe_arm_recognition_stage(phase, task_type)
+    confidence_text = "-"
+    if detection_confidence is not None:
+        try:
+            confidence_text = f"{float(detection_confidence):.3f}"
+        except (TypeError, ValueError):
+            confidence_text = "-"
+
+    def vector_text(value: Any, length: int, digits: int) -> str:
+        try:
+            values = [float(item) for item in value][:length]
+        except (TypeError, ValueError):
+            return "-"
+        if len(values) != length:
+            return "-"
+        return "[" + ",".join(f"{item:.{digits}f}" for item in values) + "]"
+
     lines = (
         f"ARM: {str(task_type).strip() or 'IDLE'}  STATUS: {str(status).strip() or 'IDLE'}",
         f"STAGE: {stage}",
@@ -91,6 +110,11 @@ def compose_arm_recognition_frame(
             f"TARGET: {str(target_type).strip() or '-'}  "
             f"ATTEMPT: {max(0, int(attempt))}  VIEW: {str(source).strip()}"
         ),
+        (
+            f"CONF: {confidence_text}  "
+            f"BBOX: {vector_text(detection_bbox, 4, 1)}"
+        ),
+        f"GRASP CENTER: {vector_text(grasp_center, 3, 3)}",
     )
     stage_color = (
         (0, 255, 255)
@@ -104,6 +128,8 @@ def compose_arm_recognition_frame(
         stage_color,
         (200, 200, 200),
         (0, 255, 0),
+        (255, 200, 0),
+        (255, 200, 0),
     )
     if cv2 is None:
         for index, color in enumerate(colors):
@@ -115,7 +141,7 @@ def compose_arm_recognition_frame(
                 line,
                 (10, 24 + index * 28),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.65 if index == 1 else 0.52,
+                0.65 if index == 1 else 0.48,
                 color,
                 2,
                 cv2.LINE_AA,

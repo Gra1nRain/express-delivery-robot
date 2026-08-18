@@ -8,12 +8,14 @@
 WAIT_START_FLAG
 → RUN_TO_TRAFFIC_STOP
 → WAIT_TRAFFIC_LIGHT
+→ [视觉未就绪时 WAIT_PICKUP_VISION_READY]
 → RUN_TO_PICKUP_FRONT
 → PICKUP_FRONT_TASK
 → [失败时 RUN_TO_PICKUP_REAR → PICKUP_REAR_TASK]
 → [有货时 RUN_TO_DROP_FRONT → DROP_FRONT_TASK]
 → [前点失败时 RUN_TO_DROP_REAR → DROP_REAR_TASK]
-→ [无货时 BYPASS_DROP_TASKS]
+→ [无显式恢复策略时 PICKUP_FAILED]
+→ [显式允许跳过且无货时 BYPASS_DROP_TASKS]
 → RUN_TO_FINISH / BYPASS_DROP_TASKS
 → FINISHED
 ```
@@ -25,13 +27,17 @@ stateDiagram-v2
     [*] --> WAIT_START_FLAG
     WAIT_START_FLAG --> RUN_TO_TRAFFIC_STOP: 挥旗确认
     RUN_TO_TRAFFIC_STOP --> WAIT_TRAFFIC_LIGHT: 红绿灯点停稳
-    WAIT_TRAFFIC_LIGHT --> RUN_TO_PICKUP_FRONT: 稳定绿灯或15秒无结果
+    WAIT_TRAFFIC_LIGHT --> WAIT_PICKUP_VISION_READY: 放行时 YOLO 未就绪
+    WAIT_TRAFFIC_LIGHT --> RUN_TO_PICKUP_FRONT: 放行时 YOLO 已就绪
+    WAIT_PICKUP_VISION_READY --> RUN_TO_PICKUP_FRONT: YOLO 就绪或等待超时
     RUN_TO_PICKUP_FRONT --> PICKUP_FRONT_TASK: 前抓取点停稳
     PICKUP_FRONT_TASK --> RUN_TO_DROP_FRONT: 抓取成功
-    PICKUP_FRONT_TASK --> RUN_TO_PICKUP_REAR: 非成功结果
+    PICKUP_FRONT_TASK --> RUN_TO_PICKUP_REAR: 非成功且显式允许后点恢复
+    PICKUP_FRONT_TASK --> PICKUP_FAILED: 非成功且未允许恢复
     RUN_TO_PICKUP_REAR --> PICKUP_REAR_TASK: 后抓取点停稳
     PICKUP_REAR_TASK --> RUN_TO_DROP_FRONT: 抓取成功
-    PICKUP_REAR_TASK --> BYPASS_DROP_TASKS: 非成功结果
+    PICKUP_REAR_TASK --> BYPASS_DROP_TASKS: 非成功且显式允许跳过
+    PICKUP_REAR_TASK --> PICKUP_FAILED: 非成功且未允许跳过
     RUN_TO_DROP_FRONT --> DROP_FRONT_TASK: 前卸货点停稳
     DROP_FRONT_TASK --> RUN_TO_FINISH: 放置成功
     DROP_FRONT_TASK --> RUN_TO_DROP_REAR: 非成功结果
@@ -74,7 +80,12 @@ stateDiagram-v2
   `RED/YELLOW` 重置连续无结果计时；`UNKNOWN/OFF` 连续 `15 s` 后降级放行。
 - `PICKUP` 先识别图片并锁定目标类型，再识别实物、抓取并确认持物。只有带目标类型
   的确认成功结果会设置 `has_cargo=true`。
-- 前点任何非成功结果都前往后点；后点最终失败会放弃本环节并继续。
+- 图纸 YOLO 优先于实物 YOLO 加载；挥旗确认时状态机会再发布一次幂等预加载请求。
+  离开红绿灯前若两阶段 YOLO 尚未就绪，则进入 `WAIT_PICKUP_VISION_READY`；比赛配置
+  保留 `30 s` 硬超时，避免模型故障造成永久卡死。
+- 默认策略下，PICKUP 非成功进入 `PICKUP_FAILED` 且不放行底盘。比赛配置只有显式设置
+  `allow_rear_fallback` 和 `allow_skip_after_failure` 后，才允许前点失败去后点、后点最终
+  失败后放弃该环节继续。
 - 第二装卸点不能被任意跳过：是否停车只取决于对应前点机械臂任务是否成功。
 - 装货最终失败会进入 `BYPASS_DROP_TASKS`，经过卸货区但不停车。
 - 控制器停稳后进入 `WAIT_RELEASE` 并持续输出零命令，不再按固定时间自动推进。
@@ -90,10 +101,12 @@ stateDiagram-v2
 | 输入 | `/control/status` | `std_msgs/String` JSON | `WAIT_RELEASE`、当前停车点等 |
 | 输入 | `/perception/traffic_light_detection` | `std_msgs/String` JSON | 当前原始灯色，用于无结果计时 |
 | 输入 | `/perception/traffic_light_state` | `std_msgs/String` | 已稳定确认的绿灯状态 |
+| 输入 | `/mission/arm_vision_ready` | `std_msgs/Bool` | 图纸与实物 YOLO 均已加载并预热 |
 | 输出 | `/mission/route_enable` | `std_msgs/Bool` | 挥旗后的路线总使能 |
 | 输出 | `/mission/checkpoint_release` | `std_msgs/String` | 显式选择并放行下一停车点 |
 | 输出 | `/perception/traffic_light_enable` | `std_msgs/Bool` | 按阶段启停红绿灯推理 |
 | 输出 | `/perception/traffic_stop_enable` | `std_msgs/Bool` | 仅在真实红绿灯停止点启用灯态停车约束 |
+| 输出 | `/mission/arm_vision_preload` | `std_msgs/Bool` | 幂等请求常驻机械臂节点提前加载 YOLO |
 | 输出 | `/mission/status` | `std_msgs/String` JSON | 当前状态、货物和机械臂任务 |
 | 双向 | `/mission/arm_task` | `competition_interfaces/action/ArmTask` | 常驻机械臂任务 |
 
@@ -114,8 +127,11 @@ stateDiagram-v2
   抓取。旧脚本中的“抓取后立即放置”调用只在内存中的模块绑定上被屏蔽，原迁移源码
   不变。
 - DROP 复用 PICKUP 锁定的目标类型，识别对应卸货图片后才调用独立放置函数。
-- PICKUP 仅在抓取流程无异常且最新夹爪开度不小于 `0.002 m` 时成功；DROP 仅在夹爪
-  开度不小于 `0.030 m` 时成功。反馈缺失也按失败处理并进入既定恢复分支。
+- PICKUP 仅在真实抓取 worker 已建立持物锁、抓取流程无异常且最新夹爪开度不小于
+  `0.002 m` 时成功；适配层不再为“只识别或停在闭合前”的流程补建持物状态。DROP
+  仅在夹爪开度不小于 `0.030 m` 时成功。反馈缺失也按失败处理并保留具体错误 detail。
+- `/perception/arm_recognition_annotated` 持续使用实时腕部画面，并叠加任务类型、阶段、
+  `target_type`、attempt、置信度、bbox、最终补偿后的 grasp center 和 Action 最终结果。
 - 抓取和放置之外统一使用行驶/待机关节位姿
   `[0.005760, 0.289742, -0.565347, -0.081856, 0.045605, 0.092502] rad`。真机械臂
   控制器和反馈就绪后由适配器自动移动到该位姿；每个装卸任务结束时再次自动回位。
@@ -159,9 +175,10 @@ stateDiagram-v2
 
 ## 未验证与风险
 
-- 真实 Piper 程序仍是用户未跟踪的迁移源码；适配器运行时依赖车端
-  `/home/agilex/competition_ws/Piper_Grasp_Humble_Migration_20260723` 完整存在。本次没有
-  修改或提交该目录。
+- 适配器运行时依赖车端
+  `/home/agilex/competition_ws/Piper_Grasp_Humble_Migration_20260723` 完整存在。本次只在
+  已验证迁移实现中增加模型加载顺序和抓取中心/失败 detail 遥测，没有改动瓶子、方块、
+  夹爪或放置策略。
 - `0.002/0.030 m` 夹爪确认阈值已通过一次比赛物体静态装卸，但样本量仍有限；它们是
   ROS 参数，只在后续日志显示误判时调整。
 - `1.0 m` 红绿灯预触发距离和 `120/90 s` 机械臂总超时是初始配置，需在无底盘运动的

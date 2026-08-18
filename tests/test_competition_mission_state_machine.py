@@ -13,6 +13,7 @@ from competition_mission.mission_state_machine import (
     ArmResult,
     ArmStation,
     ArmTaskType,
+    ArmVisionReady,
     CheckpointReady,
     CommandType,
     CompetitionMissionStateMachine,
@@ -37,8 +38,12 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
                 drop_timeout_s=20.0,
                 pickup_max_attempts=3,
                 drop_max_attempts=2,
+                pickup_vision_ready_timeout_s=10.0,
+                allow_rear_pickup_fallback=True,
+                allow_skip_failed_pickup=True,
             )
         )
+        self.machine.handle(ArmVisionReady(now_s=0.5))
 
     @staticmethod
     def command(decision, command_type: CommandType):
@@ -117,7 +122,88 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
         self.assertEqual(config.pickup_max_attempts, 1)
         self.assertEqual(config.drop_max_attempts, 1)
         self.assertEqual(config.pickup_timeout_s, 180.0)
+        self.assertEqual(config.pickup_vision_ready_timeout_s, 30.0)
+        self.assertTrue(config.allow_rear_pickup_fallback)
+        self.assertTrue(config.allow_skip_failed_pickup)
         self.assertEqual(config.pickup_front_ref, "pickup_front")
+
+    def test_pickup_vision_preloads_before_route_reaches_pickup(self) -> None:
+        machine = CompetitionMissionStateMachine(
+            MissionConfig(pickup_vision_ready_timeout_s=10.0)
+        )
+        start = machine.handle(FlagDetected(now_s=1.0))
+        preload = self.command(start, CommandType.PRELOAD_ARM_VISION)
+        self.assertTrue(preload.enabled)
+        machine.handle(
+            CheckpointReady(now_s=2.0, checkpoint_ref="traffic_light_stop_line")
+        )
+
+        waiting = machine.handle(
+            StableLight(now_s=3.0, light=LightObservation.GREEN)
+        )
+        self.assertEqual(waiting.state, MissionState.WAIT_PICKUP_VISION_READY)
+        self.assertFalse(
+            any(
+                command.command_type == CommandType.RELEASE_TO_CHECKPOINT
+                for command in waiting.commands
+            )
+        )
+
+        ready = machine.handle(ArmVisionReady(now_s=4.0))
+        self.assertEqual(ready.state, MissionState.RUN_TO_PICKUP_FRONT)
+        self.assertEqual(
+            self.command(ready, CommandType.RELEASE_TO_CHECKPOINT).checkpoint_ref,
+            "pickup_front",
+        )
+
+    def test_pickup_vision_preload_timeout_preserves_route_recovery(self) -> None:
+        machine = CompetitionMissionStateMachine(
+            MissionConfig(pickup_vision_ready_timeout_s=10.0)
+        )
+        machine.handle(FlagDetected(now_s=1.0))
+        machine.handle(
+            CheckpointReady(now_s=2.0, checkpoint_ref="traffic_light_stop_line")
+        )
+        machine.handle(StableLight(now_s=3.0, light=LightObservation.GREEN))
+
+        decision = machine.handle(Tick(now_s=13.0))
+
+        self.assertEqual(decision.state, MissionState.RUN_TO_PICKUP_FRONT)
+        release = self.command(decision, CommandType.RELEASE_TO_CHECKPOINT)
+        self.assertEqual(release.checkpoint_ref, "pickup_front")
+        self.assertEqual(release.reason, "pickup_vision_preload_timeout")
+
+    def test_pickup_failure_stays_stopped_without_explicit_fallback_policy(
+        self,
+    ) -> None:
+        machine = CompetitionMissionStateMachine()
+        machine.handle(ArmVisionReady(now_s=0.5))
+        machine.handle(FlagDetected(now_s=1.0))
+        machine.handle(
+            CheckpointReady(now_s=2.0, checkpoint_ref="traffic_light_stop_line")
+        )
+        machine.handle(StableLight(now_s=3.0, light=LightObservation.GREEN))
+        pickup_decision = machine.handle(
+            CheckpointReady(now_s=4.0, checkpoint_ref="pickup_front")
+        )
+        pickup = self.command(
+            pickup_decision,
+            CommandType.START_ARM_TASK,
+        ).arm_task
+        self.assertIsNotNone(pickup)
+
+        failed = machine.handle(
+            ArmResult(
+                now_s=5.0,
+                task_id=pickup.task_id,
+                outcome=ArmOutcome.OPERATION_FAILED,
+                target_type="red_block",
+            )
+        )
+
+        self.assertEqual(failed.state, MissionState.PICKUP_FAILED)
+        self.assertFalse(failed.commands)
+        self.assertFalse(failed.has_cargo)
 
     def test_marker_enables_light_without_changing_drive_state(self) -> None:
         self.machine.handle(FlagDetected(now_s=1.0))

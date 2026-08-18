@@ -40,6 +40,7 @@ class FakeController:
         self.target_class_id = None
         self.target_model_class_name = None
         self.competition_grasp_failed = False
+        self.last_grasp_failure_detail = None
         self.grasp_running = False
         self.last_gripper_position_m = 0.020
         self.last_gripper_effort_nm = 0.4
@@ -55,7 +56,7 @@ class FakeController:
         self.gripper_hold_active = False
         self.gripper_hold_m = None
         self.gripper_hold_target = ""
-        self.worker_hold_m = None
+        self.worker_hold_m = 0.0
 
     def wait_for_stable_can_control(self):
         self.can_control_wait_calls += 1
@@ -199,6 +200,29 @@ class PiperArmBackendTest(unittest.TestCase):
             phases,
         )
 
+    def test_pickup_target_hint_supports_all_competition_object_types(self):
+        target_types = (
+            "red_block",
+            "yellow_block",
+            "blue_block",
+            "red_bottle",
+            "green_bottle",
+            "blue_bottle",
+        )
+
+        for target_type in target_types:
+            with self.subTest(target_type=target_type):
+                self.controller.complete_gripper_release()
+                result = self.backend.pickup_once(
+                    target_type,
+                    lambda *_args: None,
+                )
+                self.assertEqual(result, target_type)
+                self.assertEqual(
+                    self.controller.target_model_class_name,
+                    target_type,
+                )
+
     def test_pickup_returns_to_transit_pose_without_opening_gripper(self):
         target = self.backend.pickup_once(
             "green_bottle",
@@ -252,6 +276,7 @@ class PiperArmBackendTest(unittest.TestCase):
         def execute_grasp(*, skip_instruction_confirmation):
             self.assertTrue(skip_instruction_confirmation)
             events.append("grasp")
+            self.controller.activate_gripper_hold(0.0, "green_bottle")
             self.controller.last_gripper_position_m = 0.020
             self.controller.last_gripper_feedback_at = time.monotonic()
 
@@ -272,13 +297,60 @@ class PiperArmBackendTest(unittest.TestCase):
     def test_pickup_preserves_detection_overlay_for_visualization(self):
         overlay = [["detected-object"]]
         self.controller.estimate_wrist_object_with_observation_scan = (
-            lambda: {"object": "detected", "overlay": overlay}
+            lambda: {
+                "object": "detected",
+                "overlay": overlay,
+                "confidence": 0.92,
+                "bbox": [10.0, 20.0, 110.0, 220.0],
+                "depth_grasp_center": [0.1, 0.2, 0.3],
+            }
         )
 
         self.backend.pickup_once("green_bottle", lambda *_args: None)
 
         self.assertEqual(self.controller.last_wrist_preview, overlay)
         self.assertIsNot(self.controller.last_wrist_preview, overlay)
+        self.assertEqual(
+            self.controller.last_arm_detection_metadata,
+            {
+                "confidence": 0.92,
+                "bbox": [10.0, 20.0, 110.0, 220.0],
+                "grasp_center": [0.1, 0.2, 0.3],
+            },
+        )
+
+    def test_detection_without_holding_state_never_reports_pickup_success(self):
+        self.controller.worker_hold_m = None
+        self.controller.last_gripper_position_m = 0.060
+
+        with self.assertRaises(ArmExecutionFailure) as context:
+            self.backend.pickup_once("green_bottle", lambda *_args: None)
+
+        self.assertEqual(
+            context.exception.outcome,
+            ArmTaskOutcome.OPERATION_FAILED,
+        )
+        self.assertIn(
+            "pickup_completed_without_holding_state",
+            context.exception.detail,
+        )
+
+    def test_grasp_worker_failure_preserves_specific_action_detail(self):
+        def failed_grasp(*, skip_instruction_confirmation):
+            self.assertTrue(skip_instruction_confirmation)
+            self.controller.competition_grasp_failed = True
+            self.controller.last_grasp_failure_detail = "IK solution unavailable"
+
+        self.controller._execute_wrist_grasp_worker = failed_grasp
+
+        with self.assertRaises(ArmExecutionFailure) as context:
+            self.backend.pickup_once("red_block", lambda *_args: None)
+
+        self.assertEqual(
+            context.exception.outcome,
+            ArmTaskOutcome.OPERATION_FAILED,
+        )
+        self.assertIn("IK solution unavailable", context.exception.detail)
 
     def test_startup_moves_to_transit_pose_with_current_gripper(self):
         self.backend.initialize_transit_pose()
@@ -403,6 +475,7 @@ class PiperArmBackendTest(unittest.TestCase):
     def test_pickup_requires_nonzero_gripper_opening_confirmation(self):
         def empty_grasp(*, skip_instruction_confirmation):
             self.assertTrue(skip_instruction_confirmation)
+            self.controller.activate_gripper_hold(0.0, "green_bottle")
             self.controller.last_gripper_position_m = 0.0
             self.controller.last_gripper_feedback_at = time.monotonic()
 

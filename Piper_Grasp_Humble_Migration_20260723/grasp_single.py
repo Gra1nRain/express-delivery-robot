@@ -3418,6 +3418,8 @@ class PiperController(Node):
         self.last_wrist_preview_path = None
         self.last_instruction_preview = None
         self.last_instruction_preview_path = None
+        self.last_grasp_center = None
+        self.last_grasp_failure_detail = None
 
         # 状态控制
         self.state = PiperState.INITIALIZE_CAN
@@ -8056,6 +8058,7 @@ class PiperController(Node):
         skip_instruction_confirmation=False,
     ):
         retry_after_failure = False
+        self.last_grasp_failure_detail = None
         try:
             if not self.arm_enabled:
                 self.get_logger().warn(
@@ -8128,6 +8131,10 @@ class PiperController(Node):
                 result,
                 bottle_grasp_rpy_override_deg=bottle_rpy_override_deg,
             )
+            self.last_grasp_center = np.asarray(
+                center_target,
+                dtype=np.float64,
+            ).tolist()
 
             open_gripper = float(approach["gripper"])
             closed_gripper = float(grasp_closed["gripper"])
@@ -8758,6 +8765,7 @@ class PiperController(Node):
             )
 
         except Exception as exc:
+            self.last_grasp_failure_detail = str(exc)
             snapshot = self.snapshot_rgbd()
             if snapshot[0] is not None:
                 failed_frame = snapshot[0].copy()
@@ -8867,9 +8875,6 @@ class PiperController(Node):
                 "后台加载图纸 YOLO 和实物瓶子 YOLO，"
                 "与机械臂使能并行进行..."
             )
-            bottle_success = bool(
-                self.vision_detector.load_models_simple()
-            )
             instruction_success = False
             instruction_error = None
             if self.instruction_detector is not None:
@@ -8882,6 +8887,10 @@ class PiperController(Node):
                     self.get_logger().error(
                         f"图纸 YOLO 模型加载失败: {exc}"
                     )
+
+            bottle_success = bool(
+                self.vision_detector.load_models_simple()
+            )
 
             with self.vision_model_lock:
                 self.vision_model_load_success = bottle_success

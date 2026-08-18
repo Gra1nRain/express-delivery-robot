@@ -20,6 +20,7 @@ from competition_mission.mission_state_machine import (
     ArmOutcome,
     ArmResult,
     ArmTaskRequest,
+    ArmVisionReady,
     CheckpointReady,
     CommandType,
     CompetitionMissionStateMachine,
@@ -104,6 +105,16 @@ class CompetitionMissionNode(Node):
             ),
             _state_qos(),
         )
+        self._arm_vision_preload_publisher = self.create_publisher(
+            Bool,
+            str(
+                self.declare_parameter(
+                    "arm_vision_preload_topic",
+                    "/mission/arm_vision_preload",
+                ).value
+            ),
+            _state_qos(),
+        )
         self._status_publisher = self.create_publisher(
             String,
             str(
@@ -122,6 +133,17 @@ class CompetitionMissionNode(Node):
                 ).value
             ),
             self._flag_callback,
+            _state_qos(),
+        )
+        self.create_subscription(
+            Bool,
+            str(
+                self.declare_parameter(
+                    "arm_vision_ready_topic",
+                    "/mission/arm_vision_ready",
+                ).value
+            ),
+            self._arm_vision_ready_callback,
             _state_qos(),
         )
         self.create_subscription(
@@ -196,6 +218,10 @@ class CompetitionMissionNode(Node):
         if message.data:
             self._handle_event(FlagDetected(now_s=self._now_s()))
 
+    def _arm_vision_ready_callback(self, message: Bool) -> None:
+        if message.data:
+            self._handle_event(ArmVisionReady(now_s=self._now_s()))
+
     def _marker_callback(self, message: String) -> None:
         marker_ref = str(message.data).strip()
         if marker_ref:
@@ -262,6 +288,10 @@ class CompetitionMissionNode(Node):
                 )
             elif command.command_type == CommandType.SET_TRAFFIC_STOP_ENABLED:
                 self._traffic_stop_enable_publisher.publish(
+                    Bool(data=bool(command.enabled))
+                )
+            elif command.command_type == CommandType.PRELOAD_ARM_VISION:
+                self._arm_vision_preload_publisher.publish(
                     Bool(data=bool(command.enabled))
                 )
             elif command.command_type == CommandType.RELEASE_TO_CHECKPOINT:
@@ -360,10 +390,20 @@ class CompetitionMissionNode(Node):
             result = future.result().result
             outcome = _arm_outcome(int(result.outcome))
             target_type = str(result.target_type)
+            detail = str(result.detail)
         except Exception as exc:
             self.get_logger().error(f"ArmTask result failed: {exc}")
             outcome = ArmOutcome.OPERATION_FAILED
             target_type = ""
+            detail = f"result_transport_failed: {exc}"
+        self._arm_feedback = {
+            "task_id": task_id,
+            "phase": self._arm_feedback.get("phase"),
+            "target_type": target_type,
+            "attempt": self._arm_feedback.get("attempt"),
+            "result": outcome.value,
+            "detail": detail,
+        }
         self._handle_event(
             ArmResult(
                 now_s=self._now_s(),
@@ -375,6 +415,11 @@ class CompetitionMissionNode(Node):
 
     def _arm_failed(self, task_id: str, reason: str) -> None:
         self.get_logger().error(f"ArmTask {task_id} failed: {reason}")
+        self._arm_feedback = {
+            "task_id": task_id,
+            "result": ArmOutcome.OPERATION_FAILED.value,
+            "detail": reason,
+        }
         self._handle_event(
             ArmResult(
                 now_s=self._now_s(),

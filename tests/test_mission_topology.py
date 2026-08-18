@@ -50,6 +50,8 @@ class MissionTopologyTest(unittest.TestCase):
         self.assertIn('"/perception/traffic_stop_enable"', node)
         self.assertIn("ActionClient", node)
         self.assertIn("ArmTask", node)
+        self.assertIn("goal.target_type_hint = request.target_type_hint", node)
+        self.assertIn('detail = str(result.detail)', node)
 
     def test_mission_shutdown_does_not_publish_after_ros_context_closes(self) -> None:
         node = (
@@ -257,6 +259,11 @@ class MissionTopologyTest(unittest.TestCase):
         self.assertIn("qos_profile_sensor_data", node)
         self.assertIn('"recognition_visualization_hz", 15.0', node)
         self.assertIn("1.0 / self._recognition_visualization_hz", node)
+        self.assertIn('"/mission/arm_vision_preload"', node)
+        self.assertIn('"/mission/arm_vision_ready"', node)
+        self.assertIn("detection_confidence=", node)
+        self.assertIn("detection_bbox=", node)
+        self.assertIn("grasp_center=", node)
 
         runbook = (
             REPO_ROOT / "docs" / "competition_mission_manual_field_test.md"
@@ -265,6 +272,21 @@ class MissionTopologyTest(unittest.TestCase):
             "ros2 run rqt_image_view rqt_image_view "
             "/perception/arm_recognition_annotated",
             runbook,
+        )
+
+    def test_paper_yolo_loads_before_object_yolo(self) -> None:
+        migration = (
+            REPO_ROOT
+            / "Piper_Grasp_Humble_Migration_20260723"
+            / "grasp_single.py"
+        ).read_text(encoding="utf-8")
+        worker = migration[
+            migration.index("    def vision_model_worker(self):") :
+            migration.index("    def vision_inference_worker(self):")
+        ]
+        self.assertLess(
+            worker.index("self.instruction_detector.load_model()"),
+            worker.index("self.vision_detector.load_models_simple()"),
         )
 
     def test_integrated_trajectory_matches_current_sources(self) -> None:

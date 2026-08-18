@@ -497,6 +497,7 @@ class PiperMigrationBackend:
                 target_type,
             )
         self._remember_preview("last_wrist_preview", detection)
+        self._remember_detection_metadata(detection)
 
         publish_phase(ArmTaskPhase.OPERATING, target_type)
         self._perform_pickup(detection, target_type)
@@ -505,15 +506,20 @@ class PiperMigrationBackend:
                 self.controller.target_class_id
             )["gripper_closed"]
         )
-        if self.controller.is_gripper_hold_active():
-            held_gripper = self.controller.get_gripper_hold_position()
-            if held_gripper is not None:
-                closed_gripper = float(held_gripper)
-        else:
-            self.controller.activate_gripper_hold(
-                closed_gripper,
+        if not self.controller.is_gripper_hold_active():
+            self._fail(
+                ArmTaskOutcome.OPERATION_FAILED,
+                "pickup_completed_without_holding_state",
                 target_type,
             )
+        held_gripper = self.controller.get_gripper_hold_position()
+        if held_gripper is None:
+            self._fail(
+                ArmTaskOutcome.OPERATION_FAILED,
+                "pickup_holding_state_missing_closed_target",
+                target_type,
+            )
+        closed_gripper = float(held_gripper)
         publish_phase(ArmTaskPhase.VERIFYING_OPERATION, target_type)
         self._verify_pickup(target_type)
         return target_type, closed_gripper
@@ -616,6 +622,32 @@ class PiperMigrationBackend:
             return
         setattr(self.controller, attribute, overlay)
 
+    def _remember_detection_metadata(self, result: Any) -> None:
+        if not isinstance(result, dict):
+            return
+
+        def numeric_list(value: Any, length: int) -> list[float] | None:
+            try:
+                values = [float(item) for item in value]
+            except (TypeError, ValueError):
+                return None
+            if len(values) < length or not all(math.isfinite(item) for item in values):
+                return None
+            return values[:length]
+
+        try:
+            confidence = float(result.get("confidence"))
+        except (TypeError, ValueError):
+            confidence = None
+        if confidence is not None and not math.isfinite(confidence):
+            confidence = None
+        grasp_center = result.get("depth_grasp_center", result.get("center"))
+        self.controller.last_arm_detection_metadata = {
+            "confidence": confidence,
+            "bbox": numeric_list(result.get("bbox"), 4),
+            "grasp_center": numeric_list(grasp_center, 3),
+        }
+
     def _wait_until_ready(
         self,
         *,
@@ -678,6 +710,7 @@ class PiperMigrationBackend:
             self.controller.estimate_wrist_object_with_observation_scan
         )
         self.controller.competition_grasp_failed = False
+        self.controller.last_grasp_failure_detail = None
         self.controller.grasp_running = True
         self.controller.estimate_wrist_object_with_observation_scan = (
             lambda: detection
@@ -692,9 +725,16 @@ class PiperMigrationBackend:
             )
             self.controller.grasp_running = False
         if bool(self.controller.competition_grasp_failed):
+            failure_detail = str(
+                getattr(self.controller, "last_grasp_failure_detail", "") or ""
+            ).strip()
             self._fail(
                 ArmTaskOutcome.OPERATION_FAILED,
-                "legacy_grasp_worker_reported_failure",
+                (
+                    f"grasp_operation_failed: {failure_detail}"
+                    if failure_detail
+                    else "legacy_grasp_worker_reported_failure"
+                ),
                 target_type,
             )
 
