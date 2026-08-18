@@ -165,7 +165,7 @@ class PiperArmBackendTest(unittest.TestCase):
             transit_move["joints"],
             COMPETITION_TRANSIT_JOINTS_RAD,
         )
-        self.assertEqual(transit_move["gripper_m"], 0.020)
+        self.assertEqual(transit_move["gripper_m"], 0.0)
 
     def test_startup_moves_to_transit_pose_with_current_gripper(self):
         self.backend.initialize_transit_pose()

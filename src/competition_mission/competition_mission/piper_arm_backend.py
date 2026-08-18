@@ -305,8 +305,13 @@ class PiperMigrationBackend:
         publish_phase(ArmTaskPhase.OPERATING, target_type)
         self._perform_pickup(detection, target_type)
         publish_phase(ArmTaskPhase.VERIFYING_OPERATION, target_type)
-        gripper_m = self._verify_pickup(target_type)
-        return target_type, gripper_m
+        self._verify_pickup(target_type)
+        closed_gripper = float(
+            self.controller.get_grasp_config(
+                self.controller.target_class_id
+            )["gripper_closed"]
+        )
+        return target_type, closed_gripper
 
     def drop_once(
         self,
