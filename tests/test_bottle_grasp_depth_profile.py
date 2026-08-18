@@ -45,8 +45,26 @@ class BottleGraspDepthProfileTests(unittest.TestCase):
         upper_z = top_z - min(max_below_top_m, height_m * 0.45)
         grasp_z = min(max(bottom_z + height_m * fraction, lower_z), upper_z)
 
-        self.assertLessEqual(grasp_z, bottom_z + height_m * 0.40)
-        self.assertGreaterEqual(grasp_z, bottom_z + 0.040)
+        self.assertAlmostEqual(fraction, 0.25)
+        self.assertAlmostEqual(min_above_bottom_m, 0.020)
+        self.assertLessEqual(grasp_z, bottom_z + height_m * 0.30)
+        self.assertGreaterEqual(grasp_z, bottom_z + 0.020)
+
+    def test_final_bottle_target_is_clamped_after_pose_compensation(self):
+        source = GRASP_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("minimum_bottle_target_z", source)
+        self.assertIn(
+            'float(object_result["bottom_center"][2])\n'
+            "                + BOTTLE_GRASP_MIN_ABOVE_BOTTOM_M",
+            source,
+        )
+        self.assertIn(
+            'target_center[2] = max(\n'
+            '                float(target_center[2]),\n'
+            '                minimum_bottle_target_z,',
+            source,
+        )
 
     def test_bottle_grasp_is_15mm_deeper_without_changing_blocks(self):
         self.assertAlmostEqual(source_default("BOTTLE_FORWARD_EXTRA_M"), 0.055)
@@ -62,7 +80,11 @@ class BottleGraspDepthProfileTests(unittest.TestCase):
     def test_standalone_runner_targets_the_lower_bottle_body(self):
         script = RUN_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
-            'WRIST_BOTTLE_GRASP_HEIGHT_FRACTION="${WRIST_BOTTLE_GRASP_HEIGHT_FRACTION:-0.38}"',
+            'WRIST_BOTTLE_GRASP_HEIGHT_FRACTION="${WRIST_BOTTLE_GRASP_HEIGHT_FRACTION:-0.25}"',
+            script,
+        )
+        self.assertIn(
+            'WRIST_BOTTLE_GRASP_MIN_ABOVE_BOTTOM_M="${WRIST_BOTTLE_GRASP_MIN_ABOVE_BOTTOM_M:-0.020}"',
             script,
         )
 

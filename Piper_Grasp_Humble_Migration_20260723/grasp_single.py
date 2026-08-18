@@ -400,10 +400,10 @@ BOTTLE_TOP_DOWN_PATH = os.getenv(
     "1" if BOTTLE_MOTION_MODE == "top_down" else "0",
 ).lower() in {"1", "true", "yes", "on"}
 BOTTLE_GRASP_HEIGHT_FRACTION = float(
-    os.getenv("WRIST_BOTTLE_GRASP_HEIGHT_FRACTION", "0.38")
+    os.getenv("WRIST_BOTTLE_GRASP_HEIGHT_FRACTION", "0.25")
 )
 BOTTLE_GRASP_MIN_ABOVE_BOTTOM_M = float(
-    os.getenv("WRIST_BOTTLE_GRASP_MIN_ABOVE_BOTTOM_M", "0.040")
+    os.getenv("WRIST_BOTTLE_GRASP_MIN_ABOVE_BOTTOM_M", "0.020")
 )
 BOTTLE_GRASP_MAX_BELOW_TOP_M = float(
     os.getenv("WRIST_BOTTLE_GRASP_MAX_BELOW_TOP_M", "0.040")
@@ -6658,6 +6658,15 @@ class PiperController(Node):
         target_center += left_compensation_base
         target_center += GRASP_FINE_TUNE_BASE_M
         target_center += forward_extra_base
+        if upright_bottle_grasp:
+            minimum_bottle_target_z = (
+                float(object_result["bottom_center"][2])
+                + BOTTLE_GRASP_MIN_ABOVE_BOTTOM_M
+            )
+            target_center[2] = max(
+                float(target_center[2]),
+                minimum_bottle_target_z,
+            )
 
         # 高位中心的 X/Y 必须与最终抓取中心完全一致。
         # 只把 Z 设置到物体最高点上方。
