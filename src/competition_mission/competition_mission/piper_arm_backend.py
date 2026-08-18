@@ -49,6 +49,7 @@ def apply_migration_shell_defaults(script_path: Path) -> int:
 
 
 def prepare_competition_environment(migration_root: Path) -> int:
+    migration_root = migration_root.expanduser().resolve()
     applied = apply_migration_shell_defaults(
         migration_root / "run_grasp_single.sh"
     )
@@ -62,6 +63,7 @@ def prepare_competition_environment(migration_root: Path) -> int:
         "WRIST_PLACE_PRE_DETECT_ENTER_ENABLED": "0",
         "WRIST_RETRY_GRASP_ON_TARGET_FAILURE": "0",
         "WRIST_PLACE_AFTER_GRASP_ENABLED": "1",
+        "WRIST_YOLO_MODEL_PATH": str(migration_root / "best.pt"),
     }
     os.environ.update(overrides)
     return applied
@@ -73,6 +75,7 @@ def load_piper_modules(migration_root: Path) -> tuple[ModuleType, ModuleType]:
         migration_root / "grasp_single.py",
         migration_root / "place_after_grasp.py",
         migration_root / "run_grasp_single.sh",
+        migration_root / "best.pt",
     ]
     missing = [str(path) for path in required if not path.is_file()]
     if missing:

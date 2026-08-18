@@ -19,6 +19,7 @@ from competition_mission.piper_arm_backend import (
     COMPETITION_TRANSIT_JOINTS_RAD,
     PiperMigrationBackend,
     apply_migration_shell_defaults,
+    prepare_competition_environment,
 )
 
 
@@ -292,6 +293,43 @@ class PiperArmBackendTest(unittest.TestCase):
                 os.environ.pop(variable, None)
             else:
                 os.environ[variable] = previous
+
+    def test_competition_environment_selects_new_object_weight_only(self):
+        object_variable = "WRIST_YOLO_MODEL_PATH"
+        instruction_variable = "WRIST_INSTRUCTION_YOLO_MODEL_PATH"
+        previous_object = os.environ.get(object_variable)
+        previous_instruction = os.environ.get(instruction_variable)
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                migration_root = pathlib.Path(directory)
+                (migration_root / "run_grasp_single.sh").write_text(
+                    "#!/usr/bin/env bash\n",
+                    encoding="utf-8",
+                )
+                expected_model = migration_root / "best.pt"
+                expected_model.write_bytes(b"new-object-weight")
+                os.environ[object_variable] = "old-object-weight.pt"
+                os.environ[instruction_variable] = "instruction-weight.pt"
+
+                prepare_competition_environment(migration_root)
+
+                self.assertEqual(
+                    pathlib.Path(os.environ[object_variable]),
+                    expected_model.resolve(),
+                )
+                self.assertEqual(
+                    os.environ[instruction_variable],
+                    "instruction-weight.pt",
+                )
+        finally:
+            if previous_object is None:
+                os.environ.pop(object_variable, None)
+            else:
+                os.environ[object_variable] = previous_object
+            if previous_instruction is None:
+                os.environ.pop(instruction_variable, None)
+            else:
+                os.environ[instruction_variable] = previous_instruction
 
 
 if __name__ == "__main__":
