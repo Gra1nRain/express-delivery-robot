@@ -77,7 +77,7 @@ from datetime import datetime
 from place_after_grasp import execute_place_after_grasp
 from block_grasp_planner import (
     build_block_rpy_candidates,
-    build_tool_axis_pregrasp_pose,
+    build_world_yz_pregrasp_pose,
     choose_reachable_block_candidate,
 )
 from target_detection_gate import (
@@ -558,8 +558,11 @@ if not BLOCK_TERMINAL_YAW_OFFSETS_DEG:
     raise RuntimeError(
         "WRIST_BLOCK_TERMINAL_YAW_OFFSETS_DEG 不能为空"
     )
-BLOCK_FINAL_APPROACH_M = float(
-    os.getenv("WRIST_BLOCK_FINAL_APPROACH_M", "0.060")
+BLOCK_FINAL_APPROACH_Y_M = float(
+    os.getenv("WRIST_BLOCK_FINAL_APPROACH_Y_M", "0.030")
+)
+BLOCK_FINAL_APPROACH_Z_M = float(
+    os.getenv("WRIST_BLOCK_FINAL_APPROACH_Z_M", "0.050")
 )
 BLOCK_MIN_JOINT_MARGIN_RAD = float(
     os.getenv("WRIST_BLOCK_MIN_JOINT_MARGIN_RAD", "0.150")
@@ -7219,9 +7222,10 @@ class PiperController(Node):
                         f"limit={MIN_FLANGE_Y_M:.3f}m"
                     )
 
-                pregrasp = build_tool_axis_pregrasp_pose(
+                pregrasp = build_world_yz_pregrasp_pose(
                     grasp_open,
-                    backoff_m=BLOCK_FINAL_APPROACH_M,
+                    backoff_y_m=BLOCK_FINAL_APPROACH_Y_M,
+                    lift_z_m=BLOCK_FINAL_APPROACH_Z_M,
                 )
                 if (
                     float(pregrasp["z"])
@@ -7394,7 +7398,7 @@ class PiperController(Node):
             gripper=open_gripper,
             label=(
                 "方块最终短距离进给：锁定终态姿态，"
-                "沿夹爪轴靠近方块中心"
+                "锁定世界 X，沿世界 -Y/-Z 前下方靠近方块中心"
             ),
         ) is False:
             raise RuntimeError("方块最终锁姿态进给失败。")

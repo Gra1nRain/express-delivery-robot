@@ -13,6 +13,7 @@ sys.path.insert(0, str(MIGRATION_ROOT))
 from block_grasp_planner import (  # noqa: E402
     build_block_rpy_candidates,
     build_tool_axis_pregrasp_pose,
+    build_world_yz_pregrasp_pose,
     choose_reachable_block_candidate,
 )
 
@@ -74,6 +75,29 @@ class BlockGraspPlannerTest(unittest.TestCase):
         self.assertAlmostEqual(float(np.linalg.norm(displacement)), 0.060)
         self.assertGreater(pregrasp["y"], grasp_pose["y"])
         self.assertGreater(pregrasp["z"], grasp_pose["z"])
+        for key in ("roll", "pitch", "yaw", "gripper"):
+            self.assertEqual(pregrasp[key], grasp_pose[key])
+
+    def test_block_pregrasp_moves_only_in_world_y_and_z(self):
+        grasp_pose = {
+            "x": 0.0822,
+            "y": -0.4171,
+            "z": 0.1409,
+            "roll": math.radians(-179.234),
+            "pitch": math.radians(35.0),
+            "yaw": math.radians(-26.665),
+            "gripper": 0.08,
+        }
+
+        pregrasp = build_world_yz_pregrasp_pose(
+            grasp_pose,
+            backoff_y_m=0.030,
+            lift_z_m=0.050,
+        )
+
+        self.assertEqual(pregrasp["x"], grasp_pose["x"])
+        self.assertAlmostEqual(pregrasp["y"], grasp_pose["y"] + 0.030)
+        self.assertAlmostEqual(pregrasp["z"], grasp_pose["z"] + 0.050)
         for key in ("roll", "pitch", "yaw", "gripper"):
             self.assertEqual(pregrasp[key], grasp_pose[key])
 

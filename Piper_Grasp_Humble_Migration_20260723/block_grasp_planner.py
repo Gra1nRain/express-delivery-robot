@@ -89,6 +89,18 @@ def build_tool_axis_pregrasp_pose(grasp_pose, backoff_m):
     return result
 
 
+def build_world_yz_pregrasp_pose(
+    grasp_pose,
+    backoff_y_m,
+    lift_z_m,
+):
+    """Build a fixed-RPY pregrasp that enters along world -Y and -Z."""
+    result = dict(grasp_pose)
+    result["y"] = float(grasp_pose["y"]) + float(backoff_y_m)
+    result["z"] = float(grasp_pose["z"]) + float(lift_z_m)
+    return result
+
+
 def choose_reachable_block_candidate(
     evaluations,
     minimum_joint_margin_rad,
