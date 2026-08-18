@@ -258,6 +258,7 @@ fi
 
 if [[ -z "${WRIST_YOLO_MODEL_PATH:-}" ]]; then
     for model_candidate in \
+        "$PROJECT_DIR/best.pt" \
         "$PROJECT_DIR/yolo bottle with qr/armdetect all/runs/detect/runs/train/waterbottle_6cls-2/weights/best.pt" \
         "$PROJECT_DIR/yolo bottle with qr/runs/detect/runs/train/waterbottle-9/weights/best.pt" \
         "$PROJECT_DIR/yolo bottle with qr/runs/train/waterbottle3/weights/best.pt" \
@@ -279,6 +280,7 @@ fi
 
 if [[ -z "${WRIST_INSTRUCTION_YOLO_MODEL_PATH:-}" ]]; then
     for instruction_model_candidate in \
+        "$PROJECT_DIR/best.pt" \
         "$PROJECT_DIR/yolo bottle with qr/armdetect all/runs/detect/runs/train/waterbottle_6cls-2/weights/best.pt" \
         "$PROJECT_DIR/yolo bottle with qr/armdetect all/weights_first.pt" \
         "$PROJECT_DIR/yolo bottle with qr/weights_first.pt"

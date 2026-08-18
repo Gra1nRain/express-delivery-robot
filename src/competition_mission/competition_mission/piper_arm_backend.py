@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from functools import wraps
 import math
 import os
 from pathlib import Path
@@ -33,6 +34,176 @@ COMPETITION_TRANSIT_JOINTS_RAD = (
     0.092502,
 )
 
+_COMPETITION_YOLO_NMS_IOU = 0.6
+_COMPETITION_YOLO_MERGE_IOU = 0.5
+_COMPETITION_PAPER_CLASS_ALIASES = {
+    "paper_green_bottle": "green_bottle",
+    "paper_orange_bottle": "orange_bottle",
+    "paper_purple_bottle": "purple_bottle",
+    "paper_red_cube": "red_block",
+    "paper_yellow_cube": "yellow_block",
+    "paper_blue_cube": "blue_block",
+    "纸_绿瓶子": "green_bottle",
+    "纸_橙瓶子": "orange_bottle",
+    "纸_紫瓶子": "purple_bottle",
+    "纸_红方块": "red_block",
+    "纸_黄方块": "yellow_block",
+    "纸_蓝方块": "blue_block",
+}
+
+
+def _bbox_iou(first: Any, second: Any) -> float:
+    first_x1, first_y1, first_x2, first_y2 = map(float, first)
+    second_x1, second_y1, second_x2, second_y2 = map(float, second)
+    intersection_width = max(
+        0.0,
+        min(first_x2, second_x2) - max(first_x1, second_x1),
+    )
+    intersection_height = max(
+        0.0,
+        min(first_y2, second_y2) - max(first_y1, second_y1),
+    )
+    intersection_area = intersection_width * intersection_height
+    first_area = max(0.0, first_x2 - first_x1) * max(
+        0.0, first_y2 - first_y1
+    )
+    second_area = max(0.0, second_x2 - second_x1) * max(
+        0.0, second_y2 - second_y1
+    )
+    union_area = first_area + second_area - intersection_area
+    if union_area <= 0.0:
+        return 0.0
+    return intersection_area / union_area
+
+
+def _kept_detection_indices(
+    boxes: Any,
+    confidences: Any,
+    *,
+    iou_threshold: float,
+) -> list[int]:
+    ordered_indices = sorted(
+        range(len(boxes)),
+        key=lambda index: float(confidences[index]),
+        reverse=True,
+    )
+    kept_indices: list[int] = []
+    for index in ordered_indices:
+        if any(
+            _bbox_iou(boxes[index], boxes[kept_index]) > iou_threshold
+            for kept_index in kept_indices
+        ):
+            continue
+        kept_indices.append(index)
+    return kept_indices
+
+
+def deduplicate_yolo_candidates(
+    candidates: Any,
+    *,
+    iou_threshold: float = _COMPETITION_YOLO_MERGE_IOU,
+) -> list[Any]:
+    """Keep the highest-confidence candidate for each overlapping region."""
+    candidate_list = list(candidates or [])
+    if len(candidate_list) < 2:
+        return candidate_list
+    boxes = [candidate["bbox"] for candidate in candidate_list]
+    confidences = [candidate["confidence"] for candidate in candidate_list]
+    kept_indices = _kept_detection_indices(
+        boxes,
+        confidences,
+        iou_threshold=float(iou_threshold),
+    )
+    return [candidate_list[index] for index in kept_indices]
+
+
+def _select_aligned_items(items: Any, indices: list[int]) -> Any:
+    if hasattr(items, "shape"):
+        return items[indices]
+    return [items[index] for index in indices]
+
+
+def deduplicate_yolo_detection(
+    detection: Any,
+    *,
+    iou_threshold: float = _COMPETITION_YOLO_MERGE_IOU,
+) -> Any:
+    """Deduplicate an object-detection result while preserving field alignment."""
+    if not isinstance(detection, dict):
+        return detection
+    boxes = detection.get("boxes", [])
+    confidences = detection.get("confidences", [])
+    if len(boxes) < 2 or len(boxes) != len(confidences):
+        return detection
+    kept_indices = _kept_detection_indices(
+        boxes,
+        confidences,
+        iou_threshold=float(iou_threshold),
+    )
+    result = dict(detection)
+    for field in (
+        "boxes",
+        "labels",
+        "confidences",
+        "class_ids",
+        "class_names",
+    ):
+        items = detection.get(field)
+        if items is not None and len(items) == len(boxes):
+            result[field] = _select_aligned_items(items, kept_indices)
+    return result
+
+
+def _configure_competition_yolo_model(model: Any) -> None:
+    overrides = getattr(model, "overrides", None)
+    if isinstance(overrides, dict):
+        overrides.update(
+            {
+                "iou": _COMPETITION_YOLO_NMS_IOU,
+                "agnostic_nms": True,
+            }
+        )
+
+
+def install_competition_yolo_postprocessing(grasp_module: ModuleType) -> None:
+    """Adapt the legacy detectors to the new combined 12-class model."""
+    marker = "_competition_yolo_postprocessing_installed"
+    if getattr(grasp_module, marker, False):
+        return
+
+    aliases = getattr(grasp_module, "CUSTOM_YOLO_MODEL_CLASS_ALIASES", None)
+    if isinstance(aliases, dict):
+        aliases.update(_COMPETITION_PAPER_CLASS_ALIASES)
+
+    instruction_class = grasp_module.InstructionSheetDetector
+    original_instruction_detect = instruction_class.detect
+
+    @wraps(original_instruction_detect)
+    def detect_instruction(detector, *args, **kwargs):
+        _configure_competition_yolo_model(getattr(detector, "model", None))
+        result = original_instruction_detect(detector, *args, **kwargs)
+        if not isinstance(result, dict):
+            return result
+        result = dict(result)
+        result["candidates"] = deduplicate_yolo_candidates(
+            result.get("candidates", []),
+        )
+        return result
+
+    object_class = grasp_module.SimpleVisionDetector
+    original_object_detect = object_class.detect_frame_simple
+
+    @wraps(original_object_detect)
+    def detect_object(detector, *args, **kwargs):
+        _configure_competition_yolo_model(getattr(detector, "model", None))
+        return deduplicate_yolo_detection(
+            original_object_detect(detector, *args, **kwargs),
+        )
+
+    instruction_class.detect = detect_instruction
+    object_class.detect_frame_simple = detect_object
+    setattr(grasp_module, marker, True)
+
 
 def apply_migration_shell_defaults(script_path: Path) -> int:
     """Apply the simple ``${NAME:-default}`` calibration exports."""
@@ -53,6 +224,7 @@ def prepare_competition_environment(migration_root: Path) -> int:
     applied = apply_migration_shell_defaults(
         migration_root / "run_grasp_single.sh"
     )
+    competition_model_path = str(migration_root / "best.pt")
     overrides = {
         "WRIST_AUTO_GRASP": "0",
         "WRIST_AUTO_PREVIEW": "0",
@@ -68,7 +240,8 @@ def prepare_competition_environment(migration_root: Path) -> int:
         "WRIST_PLACE_SCAN_ENABLED": "1",
         "WRIST_PLACE_SCAN_OFFSETS_DEG": "10,-10",
         "WRIST_PLACE_DETECT_REQUIRED_FRAMES": "1",
-        "WRIST_YOLO_MODEL_PATH": str(migration_root / "best.pt"),
+        "WRIST_YOLO_MODEL_PATH": competition_model_path,
+        "WRIST_INSTRUCTION_YOLO_MODEL_PATH": competition_model_path,
     }
     os.environ.update(overrides)
     return applied
@@ -101,6 +274,8 @@ def load_piper_modules(migration_root: Path) -> tuple[ModuleType, ModuleType]:
             raise ImportError(
                 f"loaded {module.__name__} from unexpected path: {module_file}"
             )
+
+    install_competition_yolo_postprocessing(grasp_module)
 
     # The legacy worker calls this symbol immediately after every grasp.  The
     # competition supervisor owns DROP as a separate task, so only this local

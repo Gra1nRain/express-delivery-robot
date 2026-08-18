@@ -19,6 +19,9 @@ from competition_mission.piper_arm_backend import (
     COMPETITION_TRANSIT_JOINTS_RAD,
     PiperMigrationBackend,
     apply_migration_shell_defaults,
+    deduplicate_yolo_candidates,
+    deduplicate_yolo_detection,
+    install_competition_yolo_postprocessing,
     prepare_competition_environment,
 )
 
@@ -362,7 +365,7 @@ class PiperArmBackendTest(unittest.TestCase):
             os.environ.clear()
             os.environ.update(previous_environment)
 
-    def test_competition_environment_selects_new_object_weight_only(self):
+    def test_competition_environment_selects_new_weight_for_both_stages(self):
         object_variable = "WRIST_YOLO_MODEL_PATH"
         instruction_variable = "WRIST_INSTRUCTION_YOLO_MODEL_PATH"
         previous_object = os.environ.get(object_variable)
@@ -386,8 +389,8 @@ class PiperArmBackendTest(unittest.TestCase):
                     expected_model.resolve(),
                 )
                 self.assertEqual(
-                    os.environ[instruction_variable],
-                    "instruction-weight.pt",
+                    pathlib.Path(os.environ[instruction_variable]),
+                    expected_model.resolve(),
                 )
         finally:
             if previous_object is None:
@@ -398,6 +401,90 @@ class PiperArmBackendTest(unittest.TestCase):
                 os.environ.pop(instruction_variable, None)
             else:
                 os.environ[instruction_variable] = previous_instruction
+
+    def test_duplicate_yolo_candidates_keep_highest_confidence(self):
+        candidates = [
+            {
+                "class_name": "green_bottle",
+                "confidence": 0.62,
+                "bbox": [10.0, 10.0, 110.0, 110.0],
+            },
+            {
+                "class_name": "paper_green_bottle",
+                "confidence": 0.91,
+                "bbox": [12.0, 12.0, 108.0, 108.0],
+            },
+            {
+                "class_name": "red_block",
+                "confidence": 0.70,
+                "bbox": [200.0, 20.0, 260.0, 80.0],
+            },
+        ]
+
+        kept = deduplicate_yolo_candidates(candidates, iou_threshold=0.5)
+
+        self.assertEqual(len(kept), 2)
+        self.assertEqual(kept[0]["confidence"], 0.91)
+        self.assertEqual(kept[1]["class_name"], "red_block")
+
+    def test_duplicate_object_detection_keeps_fields_aligned(self):
+        detection = {
+            "boxes": [
+                [10.0, 10.0, 110.0, 110.0],
+                [12.0, 12.0, 108.0, 108.0],
+                [200.0, 20.0, 260.0, 80.0],
+            ],
+            "labels": ["green_bottle", "paper_green_bottle", "red_block"],
+            "confidences": [0.62, 0.91, 0.70],
+            "class_ids": [0, 6, 3],
+            "class_names": ["green_bottle", "paper_green_bottle", "red_block"],
+            "text_prompt": "*",
+        }
+
+        kept = deduplicate_yolo_detection(detection, iou_threshold=0.5)
+
+        self.assertEqual(kept["confidences"], [0.91, 0.70])
+        self.assertEqual(kept["class_ids"], [6, 3])
+        self.assertEqual(
+            kept["labels"],
+            ["paper_green_bottle", "red_block"],
+        )
+
+    def test_yolo_adapter_maps_paper_classes_and_configures_nms(self):
+        class InstructionDetector:
+            def __init__(self):
+                self.model = SimpleNamespace(overrides={})
+
+            def detect(self):
+                return {"candidates": []}
+
+        class ObjectDetector:
+            def __init__(self):
+                self.model = SimpleNamespace(overrides={})
+
+            def detect_frame_simple(self):
+                return {"boxes": [], "confidences": []}
+
+        module = SimpleNamespace(
+            CUSTOM_YOLO_MODEL_CLASS_ALIASES={},
+            InstructionSheetDetector=InstructionDetector,
+            SimpleVisionDetector=ObjectDetector,
+        )
+
+        install_competition_yolo_postprocessing(module)
+
+        self.assertEqual(
+            module.CUSTOM_YOLO_MODEL_CLASS_ALIASES["纸_绿瓶子"],
+            "green_bottle",
+        )
+        self.assertEqual(
+            module.CUSTOM_YOLO_MODEL_CLASS_ALIASES["paper_red_cube"],
+            "red_block",
+        )
+        instruction_detector = InstructionDetector()
+        instruction_detector.detect()
+        self.assertTrue(instruction_detector.model.overrides["agnostic_nms"])
+        self.assertEqual(instruction_detector.model.overrides["iou"], 0.6)
 
     def test_competition_environment_uses_single_detection_per_scan_view(self):
         expected = {
