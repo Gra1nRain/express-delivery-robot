@@ -139,7 +139,34 @@ class Day5OnlineReplanningTopologyTest(unittest.TestCase):
         )
         self.assertEqual(control["motion"]["docking_speed_min_mps"], 0.08)
         self.assertEqual(control["motion"]["docking_speed_max_mps"], 0.12)
-        self.assertEqual(control["motion"]["docking_slowdown_distance_m"], 0.50)
+        self.assertEqual(control["motion"]["docking_slowdown_distance_m"], 1.00)
+        self.assertEqual(control["motion"]["max_speed_mps"], 1.00)
+        self.assertEqual(control["motion"]["max_acceleration_mps2"], 0.50)
+        self.assertEqual(control["motion"]["max_deceleration_mps2"], 0.80)
+        self.assertGreaterEqual(
+            control["motion"]["protocol_max_speed_mps"],
+            control["motion"]["max_speed_mps"],
+        )
+        self.assertEqual(
+            safety["safety"]["max_speed_mps"],
+            control["motion"]["max_speed_mps"],
+        )
+        self.assertEqual(
+            safety["safety"]["max_acceleration_mps2"],
+            control["motion"]["max_acceleration_mps2"],
+        )
+        self.assertEqual(
+            safety["safety"]["max_deceleration_mps2"],
+            control["motion"]["max_deceleration_mps2"],
+        )
+        braking_distance_m = (
+            control["motion"]["max_speed_mps"] ** 2
+            - control["motion"]["docking_speed_max_mps"] ** 2
+        ) / (2.0 * control["motion"]["max_deceleration_mps2"])
+        self.assertLess(
+            braking_distance_m,
+            control["motion"]["docking_slowdown_distance_m"],
+        )
         alternate_control = yaml.safe_load(
             (
                 REPO_ROOT

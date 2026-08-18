@@ -341,7 +341,7 @@ class MissionTopologyTest(unittest.TestCase):
         validate_source_manifest(artifact, source_paths)
         self.assertTrue(artifact["ok"])
 
-    def test_integrated_trajectory_uses_slightly_faster_reference_speed(self) -> None:
+    def test_integrated_trajectory_uses_one_mps_spatial_speed_profile(self) -> None:
         artifact = yaml.safe_load(
             (
                 REPO_ROOT
@@ -356,9 +356,16 @@ class MissionTopologyTest(unittest.TestCase):
             for point in artifact["points"]
             if float(point["v"]) > 0.0
         ]
+        curve_speeds = [
+            float(point["v"])
+            for point in artifact["points"]
+            if abs(float(point["curvature"])) >= 0.8
+        ]
 
-        self.assertGreaterEqual(max(moving_speeds), 0.115)
-        self.assertLessEqual(max(moving_speeds), 0.125)
+        self.assertGreaterEqual(max(moving_speeds), 0.99)
+        self.assertLessEqual(max(moving_speeds), 1.0 + 1e-9)
+        self.assertTrue(curve_speeds)
+        self.assertLess(max(curve_speeds), max(moving_speeds))
 
     def test_mission_checkpoint_labels_are_near_semantic_points(self) -> None:
         route = yaml.safe_load(
