@@ -14,8 +14,7 @@ class LightSpotConfig:
     brightness_threshold: int = 100
     min_area_px: float = 30.0
     max_area_px: float = 8000.0
-    min_circularity: float = 0.55
-    dominance_ratio: float = 1.5
+    min_circularity: float = 0.70
     morphology_kernel_size: int = 9
 
     def __post_init__(self) -> None:
@@ -25,8 +24,6 @@ class LightSpotConfig:
             raise ValueError("spot area limits are invalid")
         if not 0.0 <= self.min_circularity <= 1.0:
             raise ValueError("min_circularity must be in [0, 1]")
-        if self.dominance_ratio <= 0.0:
-            raise ValueError("dominance_ratio must be positive")
         if (
             self.morphology_kernel_size <= 0
             or self.morphology_kernel_size % 2 == 0
@@ -49,11 +46,11 @@ class LightSpotDetection:
 
 _COLOR_RANGES = {
     "red": (
-        ((0, 100, 100), (10, 255, 255)),
-        ((160, 100, 100), (180, 255, 255)),
+        ((0, 150, 100), (10, 255, 255)),
+        ((160, 150, 100), (180, 255, 255)),
     ),
-    "yellow": (((18, 120, 120), (35, 255, 255)),),
-    "green": (((40, 100, 100), (85, 255, 255)),),
+    "yellow": (((18, 160, 120), (35, 255, 255)),),
+    "green": (((40, 150, 100), (85, 255, 255)),),
 }
 
 
@@ -167,13 +164,7 @@ class LightSpotDetector:
             key=lambda item: item.center_brightness,
             reverse=True,
         )
-        if (
-            ordered[1].center_brightness > 0.0
-            and ordered[0].center_brightness / ordered[1].center_brightness
-            >= self.config.dominance_ratio
-        ):
-            return ordered[:1]
-        return candidates
+        return ordered[:1]
 
 
 def _center_brightness(v_channel, cx: int, cy: int, radius: int) -> float:

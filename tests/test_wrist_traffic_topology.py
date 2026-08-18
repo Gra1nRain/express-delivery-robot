@@ -64,8 +64,8 @@ def test_light_spot_detector_uses_reference_thresholds_and_starts_disabled() -> 
     assert params["brightness_threshold"] == 100
     assert params["min_spot_area_px"] == 30.0
     assert params["max_spot_area_px"] == 8000.0
-    assert params["min_circularity"] == 0.55
-    assert params["dominance_ratio"] == 1.5
+    assert params["min_circularity"] == 0.70
+    assert "dominance_ratio" not in params
     assert (
         params["inference_period_s"] <= 0.1
     )

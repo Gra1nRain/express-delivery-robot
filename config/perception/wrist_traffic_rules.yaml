@@ -26,8 +26,7 @@ traffic_light_recognition:
     brightness_threshold: 100
     min_spot_area_px: 30.0
     max_spot_area_px: 8000.0
-    min_circularity: 0.55
-    dominance_ratio: 1.5
+    min_circularity: 0.70
     morphology_kernel_size: 9
     # Traditional HSV/contour processing is lightweight enough for 10 Hz.
     inference_period_s: 0.10

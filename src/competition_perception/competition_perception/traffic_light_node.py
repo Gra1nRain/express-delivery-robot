@@ -53,10 +53,7 @@ class TrafficLightRecognitionNode(Node):
                     self.declare_parameter("max_spot_area_px", 8000.0).value
                 ),
                 min_circularity=float(
-                    self.declare_parameter("min_circularity", 0.55).value
-                ),
-                dominance_ratio=float(
-                    self.declare_parameter("dominance_ratio", 1.5).value
+                    self.declare_parameter("min_circularity", 0.70).value
                 ),
                 morphology_kernel_size=int(
                     self.declare_parameter("morphology_kernel_size", 9).value

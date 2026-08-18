@@ -50,6 +50,6 @@ ros2 launch competition_bringup day5_motion_control.launch.py \
 `config/perception/wrist_traffic_rules.yaml`。
 
 运行环境需要 ROS 2 的 `cv_bridge`，以及与 ROS Python 兼容的 `opencv`、`numpy`。
-默认阈值来自现场提供的 `light_spot_detect.py`：亮度 `100`、面积
-`30..8000 px²`、圆形度 `0.55`、主导亮度比 `1.5`，可在
+默认阈值来自现场提供的新版 `light_spot_detect.py`：亮度 `100`、面积
+`30..8000 px²`、圆形度 `0.70`，并始终只保留中心最亮光斑；可在
 `config/perception/wrist_traffic_rules.yaml` 调整。算法不再加载 YOLO 权重。
