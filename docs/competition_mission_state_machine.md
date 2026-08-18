@@ -27,8 +27,8 @@ stateDiagram-v2
     [*] --> WAIT_START_FLAG
     WAIT_START_FLAG --> RUN_TO_TRAFFIC_STOP: 挥旗确认
     RUN_TO_TRAFFIC_STOP --> WAIT_TRAFFIC_LIGHT: 红绿灯点停稳
-    WAIT_TRAFFIC_LIGHT --> WAIT_PICKUP_VISION_READY: 放行时 YOLO 未就绪
-    WAIT_TRAFFIC_LIGHT --> RUN_TO_PICKUP_FRONT: 放行时 YOLO 已就绪
+    WAIT_TRAFFIC_LIGHT --> WAIT_PICKUP_VISION_READY: 识别结束后启动 YOLO
+    WAIT_TRAFFIC_LIGHT --> RUN_TO_PICKUP_FRONT: YOLO 已就绪
     WAIT_PICKUP_VISION_READY --> RUN_TO_PICKUP_FRONT: YOLO 就绪或等待超时
     RUN_TO_PICKUP_FRONT --> PICKUP_FRONT_TASK: 前抓取点停稳
     PICKUP_FRONT_TASK --> RUN_TO_DROP_FRONT: 抓取成功
@@ -80,9 +80,11 @@ stateDiagram-v2
   `RED/YELLOW` 重置连续无结果计时；`UNKNOWN/OFF` 连续 `15 s` 后降级放行。
 - `PICKUP` 先识别图片并锁定目标类型，再识别实物、抓取并确认持物。只有带目标类型
   的确认成功结果会设置 `has_cargo=true`。
-- 图纸 YOLO 优先于实物 YOLO 加载；挥旗确认时状态机会再发布一次幂等预加载请求。
-  离开红绿灯前若两阶段 YOLO 尚未就绪，则进入 `WAIT_PICKUP_VISION_READY`；比赛配置
-  保留 `30 s` 硬超时，避免模型故障造成永久卡死。
+- 图纸 YOLO 优先于实物 YOLO 加载；挥旗确认和红绿灯行驶期间不加载模型。稳定绿灯
+  或连续 `15 s` 无结果触发放行后，状态机才发布幂等预加载请求，并在
+  `WAIT_PICKUP_VISION_READY` 等待两阶段模型完成加载和预热。比赛配置保留 `30 s`
+  硬超时，避免模型故障造成永久卡死。两阶段 YOLO 固定使用 GPU `device=0`；
+  GroundingDINO/SAM 等非 YOLO 推理保持 CPU。
 - 默认策略下，PICKUP 非成功进入 `PICKUP_FAILED` 且不放行底盘。比赛配置只有显式设置
   `allow_rear_fallback` 和 `allow_skip_after_failure` 后，才允许前点失败去后点、后点最终
   失败后放弃该环节继续。
@@ -106,7 +108,7 @@ stateDiagram-v2
 | 输出 | `/mission/checkpoint_release` | `std_msgs/String` | 显式选择并放行下一停车点 |
 | 输出 | `/perception/traffic_light_enable` | `std_msgs/Bool` | 按阶段启停红绿灯推理 |
 | 输出 | `/perception/traffic_stop_enable` | `std_msgs/Bool` | 仅在真实红绿灯停止点启用灯态停车约束 |
-| 输出 | `/mission/arm_vision_preload` | `std_msgs/Bool` | 幂等请求常驻机械臂节点提前加载 YOLO |
+| 输出 | `/mission/arm_vision_preload` | `std_msgs/Bool` | 红绿灯识别结束后幂等请求常驻机械臂节点加载 YOLO |
 | 输出 | `/mission/status` | `std_msgs/String` JSON | 当前状态、货物和机械臂任务 |
 | 双向 | `/mission/arm_task` | `competition_interfaces/action/ArmTask` | 常驻机械臂任务 |
 

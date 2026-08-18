@@ -245,11 +245,6 @@ class CompetitionMissionStateMachine:
             self._transition(MissionState.RUN_TO_TRAFFIC_STOP, event.now_s)
             return self._decision(
                 MissionCommand(
-                    command_type=CommandType.PRELOAD_ARM_VISION,
-                    enabled=True,
-                    reason="start_flag_detected",
-                ),
-                MissionCommand(
                     command_type=CommandType.SET_ROUTE_ENABLED,
                     enabled=True,
                     reason="start_flag_detected",
@@ -584,6 +579,11 @@ class CompetitionMissionStateMachine:
                 command_type=CommandType.SET_TRAFFIC_LIGHT_ENABLED,
                 enabled=False,
                 reason=reason,
+            ),
+            MissionCommand(
+                command_type=CommandType.PRELOAD_ARM_VISION,
+                enabled=True,
+                reason=f"{reason}_preload_pickup_vision",
             ),
         )
         if self._pickup_vision_ready:

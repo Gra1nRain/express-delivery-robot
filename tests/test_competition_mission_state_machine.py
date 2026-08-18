@@ -127,13 +127,17 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
         self.assertTrue(config.allow_skip_failed_pickup)
         self.assertEqual(config.pickup_front_ref, "pickup_front")
 
-    def test_pickup_vision_preloads_before_route_reaches_pickup(self) -> None:
+    def test_pickup_vision_preloads_only_after_traffic_release(self) -> None:
         machine = CompetitionMissionStateMachine(
             MissionConfig(pickup_vision_ready_timeout_s=10.0)
         )
         start = machine.handle(FlagDetected(now_s=1.0))
-        preload = self.command(start, CommandType.PRELOAD_ARM_VISION)
-        self.assertTrue(preload.enabled)
+        self.assertFalse(
+            any(
+                command.command_type == CommandType.PRELOAD_ARM_VISION
+                for command in start.commands
+            )
+        )
         machine.handle(
             CheckpointReady(now_s=2.0, checkpoint_ref="traffic_light_stop_line")
         )
@@ -142,6 +146,12 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
             StableLight(now_s=3.0, light=LightObservation.GREEN)
         )
         self.assertEqual(waiting.state, MissionState.WAIT_PICKUP_VISION_READY)
+        preload = self.command(waiting, CommandType.PRELOAD_ARM_VISION)
+        self.assertTrue(preload.enabled)
+        self.assertEqual(
+            preload.reason,
+            "stable_green_preload_pickup_vision",
+        )
         self.assertFalse(
             any(
                 command.command_type == CommandType.RELEASE_TO_CHECKPOINT

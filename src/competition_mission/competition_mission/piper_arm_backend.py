@@ -244,6 +244,7 @@ def prepare_competition_environment(migration_root: Path) -> int:
         "WRIST_BLOCK_COMPLETE_DETECTION_CONFIDENCE": "0.50",
         "WRIST_YOLO_MODEL_PATH": competition_model_path,
         "WRIST_INSTRUCTION_YOLO_MODEL_PATH": competition_model_path,
+        "WRIST_YOLO_DEVICE": "0",
     }
     os.environ.update(overrides)
     return applied
@@ -306,6 +307,7 @@ def create_competition_piper_controller(
                     "auto_instruction_target": True,
                     "auto_move_observe": False,
                     "auto_zero_observe": False,
+                    "defer_vision_model_loading": True,
                 }
             )
 
@@ -399,7 +401,10 @@ class PiperMigrationBackend:
         self._sleep = sleep
 
     def initialize_transit_pose(self) -> None:
-        self._wait_until_ready(require_object_model=False)
+        self._wait_until_ready(
+            require_vision=False,
+            require_object_model=False,
+        )
         if self.controller.wait_for_stable_can_control() is False:
             self._fail(
                 ArmTaskOutcome.OPERATION_FAILED,
@@ -651,6 +656,7 @@ class PiperMigrationBackend:
     def _wait_until_ready(
         self,
         *,
+        require_vision: bool = True,
         require_object_model: bool,
         heartbeat=None,
     ) -> None:
@@ -661,11 +667,13 @@ class PiperMigrationBackend:
             )
             instruction = getattr(self.controller, "instruction_detector", None)
             object_detector = getattr(self.controller, "vision_detector", None)
-            ready = (
+            arm_ready = (
                 state_name == "IDLE"
                 and bool(getattr(self.controller, "arm_enabled", False))
                 and not bool(getattr(self.controller, "arm_faulted", False))
-                and getattr(self.controller, "color_image", None) is not None
+            )
+            vision_ready = (
+                getattr(self.controller, "color_image", None) is not None
                 and getattr(self.controller, "depth_image", None) is not None
                 and getattr(self.controller, "camera_matrix", None) is not None
                 and instruction is not None
@@ -678,14 +686,18 @@ class PiperMigrationBackend:
                     )
                 )
             )
-            if ready:
+            if arm_ready and (not require_vision or vision_ready):
                 return
             if heartbeat is not None:
                 heartbeat()
             self._sleep(0.10)
         self._fail(
             ArmTaskOutcome.OPERATION_FAILED,
-            "piper_camera_or_models_not_ready",
+            (
+                "piper_camera_or_models_not_ready"
+                if require_vision
+                else "piper_arm_not_ready"
+            ),
             self._current_target_type(),
         )
 

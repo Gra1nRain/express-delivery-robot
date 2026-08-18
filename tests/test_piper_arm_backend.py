@@ -20,6 +20,7 @@ from competition_mission.piper_arm_backend import (
     COMPETITION_TRANSIT_JOINTS_RAD,
     PiperMigrationBackend,
     apply_migration_shell_defaults,
+    create_competition_piper_controller,
     deduplicate_yolo_candidates,
     deduplicate_yolo_detection,
     install_competition_yolo_postprocessing,
@@ -368,6 +369,24 @@ class PiperArmBackendTest(unittest.TestCase):
         )
         self.assertEqual(transit_move["gripper_m"], 0.020)
 
+    def test_startup_transit_pose_does_not_wait_for_deferred_vision(self):
+        self.controller.color_image = None
+        self.controller.depth_image = None
+        self.controller.camera_matrix = None
+        self.controller.instruction_detector.is_loaded = False
+        self.controller.vision_detector.is_loaded = False
+
+        self.backend.initialize_transit_pose()
+
+        self.assertEqual(self.controller.can_control_wait_calls, 1)
+        self.assertEqual(len(self.controller.joint_pose_calls), 1)
+        transit_move = self.controller.joint_pose_calls[0]
+        self.assertEqual(
+            transit_move["joints"],
+            COMPETITION_TRANSIT_JOINTS_RAD,
+        )
+        self.assertEqual(transit_move["gripper_m"], 0.020)
+
     def test_startup_does_not_send_transit_target_without_stable_can_control(self):
         self.controller.can_control_ready = False
 
@@ -529,6 +548,40 @@ class PiperArmBackendTest(unittest.TestCase):
                 / "Piper_Grasp_Humble_Migration_20260723"
                 / "run_grasp_single.sh"
             )
+            self.assertEqual(os.environ["WRIST_YOLO_DEVICE"], "0")
+        finally:
+            os.environ.clear()
+            os.environ.update(previous_environment)
+
+    def test_competition_controller_defers_vision_model_loading(self):
+        captured_options = {}
+
+        class BaseController:
+            def __init__(self, runtime_options):
+                captured_options.update(runtime_options)
+
+        module = SimpleNamespace(PiperController=BaseController)
+        controller = create_competition_piper_controller(
+            module,
+            manage_camera=False,
+        )
+
+        self.assertIsInstance(controller, BaseController)
+        self.assertTrue(captured_options["defer_vision_model_loading"])
+
+    def test_competition_environment_forces_yolo_gpu(self):
+        previous_environment = os.environ.copy()
+        try:
+            os.environ["WRIST_YOLO_DEVICE"] = "cpu"
+            with tempfile.TemporaryDirectory() as directory:
+                migration_root = pathlib.Path(directory)
+                (migration_root / "run_grasp_single.sh").write_text(
+                    "#!/usr/bin/env bash\n",
+                    encoding="utf-8",
+                )
+
+                prepare_competition_environment(migration_root)
+
             self.assertEqual(os.environ["WRIST_YOLO_DEVICE"], "0")
         finally:
             os.environ.clear()

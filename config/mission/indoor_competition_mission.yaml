@@ -11,8 +11,8 @@ mission:
     # Starts only after ARRIVED_AND_STOPPED. Red/yellow samples reset it.
     no_result_timeout_s: 15.0
   arm:
-    # Vision starts at launch and is requested again when the flag is detected.
-    # Hold at the traffic stop until both pickup YOLO stages report ready; this
+    # Start both pickup YOLO stages only after traffic recognition releases.
+    # Hold at the traffic stop until both GPU YOLO stages report ready; this
     # timeout preserves the mission's no-deadlock recovery policy.
     vision_preload_timeout_s: 30.0
     # The integrated arm can spend more than 120 s across instruction recognition,

@@ -948,7 +948,9 @@ if gsa_dir is not None:
     print("✓ 发现视觉检测模块路径（已准备好延迟加载）")
 
 if VISION_AVAILABLE:
-    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    # Competition YOLO has its own explicit CUDA device. Keep the optional
+    # GroundingDINO/SAM backend and all non-YOLO inference on the CPU.
+    DEVICE = "cpu"
     BOX_THRESHOLD = 0.3
     TEXT_THRESHOLD = 0.25
 
@@ -3477,6 +3479,9 @@ class PiperController(Node):
         self.vision_model_load_success = False
         self.vision_model_load_error = None
         self.vision_model_lock = Lock()
+        self.defer_vision_model_loading = bool(
+            self.runtime_options.get("defer_vision_model_loading", False)
+        )
 
         self.grasp_running = False
         self.auto_grasp_requested = bool(
@@ -3595,7 +3600,12 @@ class PiperController(Node):
                 daemon=True,
             )
             self.inference_thread.start()
-            self.start_vision_model_loading()
+            if not self.defer_vision_model_loading:
+                self.start_vision_model_loading()
+            else:
+                self.get_logger().info(
+                    "视觉模型延迟加载：等待比赛状态机在红绿灯识别后请求。"
+                )
 
         self.terminal_input_thread = Thread(
             target=self.terminal_input_worker,
@@ -8872,8 +8882,7 @@ class PiperController(Node):
     def vision_model_worker(self):
         try:
             self.get_logger().info(
-                "后台加载图纸 YOLO 和实物瓶子 YOLO，"
-                "与机械臂使能并行进行..."
+                "收到视觉预加载请求，后台加载图纸 YOLO 和实物目标 YOLO..."
             )
             instruction_success = False
             instruction_error = None
@@ -8900,7 +8909,7 @@ class PiperController(Node):
 
             if bottle_success:
                 self.get_logger().info(
-                    "实物瓶子 YOLO 模型后台加载完成。"
+                    "实物目标 YOLO 模型后台加载完成。"
                 )
             else:
                 self.get_logger().error(
@@ -9997,7 +10006,8 @@ class PiperController(Node):
             )
 
         elif current_state == PiperState.SKIP_ARM:
-            self.start_vision_model_loading()
+            if not self.defer_vision_model_loading:
+                self.start_vision_model_loading()
 
             self.transition_to_state(
                 PiperState.IDLE

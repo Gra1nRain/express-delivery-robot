@@ -289,6 +289,25 @@ class MissionTopologyTest(unittest.TestCase):
             worker.index("self.vision_detector.load_models_simple()"),
         )
 
+    def test_competition_defers_yolo_and_keeps_non_yolo_on_cpu(self) -> None:
+        migration = (
+            REPO_ROOT
+            / "Piper_Grasp_Humble_Migration_20260723"
+            / "grasp_single.py"
+        ).read_text(encoding="utf-8")
+        backend = (
+            REPO_ROOT
+            / "src"
+            / "competition_mission"
+            / "competition_mission"
+            / "piper_arm_backend.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('DEVICE = "cpu"', migration)
+        self.assertIn("if not self.defer_vision_model_loading:", migration)
+        self.assertIn('"defer_vision_model_loading": True', backend)
+        self.assertIn('"WRIST_YOLO_DEVICE": "0"', backend)
+
     def test_integrated_trajectory_matches_current_sources(self) -> None:
         trajectory_path = (
             REPO_ROOT
