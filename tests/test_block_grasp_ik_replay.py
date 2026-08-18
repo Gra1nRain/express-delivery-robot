@@ -76,14 +76,82 @@ class BlockGraspIkReplayTest(unittest.TestCase):
             self.assertIn(abs(plan["yaw_offset_deg"]), (0.0, 20.0))
             self.assertAlmostEqual(
                 plan["grasp_open"]["gripper"],
-                grasp.OPEN_GRIPPER_M,
+                grasp.GRASP_CONFIG[1]["gripper_open"],
+            )
+            self.assertAlmostEqual(
+                grasp.BLOCK_GRASP_LEFT_SHIFT_M,
+                grasp.BOTTLE_GRASP_LEFT_SHIFT_M,
+            )
+            self.assertAlmostEqual(
+                grasp.BLOCK_FORWARD_EXTRA_M,
+                grasp.BOTTLE_FORWARD_EXTRA_M,
+            )
+            selected_rotation = grasp.rotation_from_rpy_xyz(
+                plan["grasp_open"]["roll"],
+                plan["grasp_open"]["pitch"],
+                plan["grasp_open"]["yaw"],
+            )
+            expected_left_shift = selected_rotation @ np.array(
+                [0.0, grasp.BLOCK_GRASP_LEFT_SHIFT_M, 0.0]
+            )
+            expected_left_shift[2] = 0.0
+            forward_xy = selected_rotation[:, 2].copy()
+            forward_xy[2] = 0.0
+            expected_forward_shift = (
+                forward_xy
+                / np.linalg.norm(forward_xy)
+                * grasp.BLOCK_FORWARD_EXTRA_M
+            )
+            expected_target_center = (
+                object_result["depth_grasp_center"]
+                + expected_left_shift
+                + expected_forward_shift
             )
             np.testing.assert_allclose(
                 plan["waypoints"][4],
-                object_result["depth_grasp_center"],
+                expected_target_center,
             )
             self.assertGreaterEqual(
                 plan["minimum_joint_margin_rad"],
+                grasp.BLOCK_MIN_JOINT_MARGIN_RAD,
+            )
+
+            red_start_joints = np.array(
+                [-1.1961, 0.5944, -0.7180, -0.0717, 0.7852, 0.0]
+            )
+            red_start_transform = grasp.piper_forward_kinematics(
+                red_start_joints
+            )
+            red_object_result = {
+                "depth_grasp_center": np.array(
+                    [0.1821311043, -0.3824944375, 0.0482452629]
+                ),
+                "top_center": np.array(
+                    [0.1821311043, -0.3824944375, 0.0706522656]
+                ),
+                "robot_rpy_deg": grasp.ScipyRotation.from_matrix(
+                    red_start_transform[:3, :3]
+                ).as_euler("xyz", degrees=True),
+                "target_class_id": 1,
+                "target_model_class_name": "red_block",
+                "target_prompt": "red_block",
+                "grasp_yaw_deg": None,
+                "object_axes": None,
+            }
+            red_plan = _PlannerHarness().plan_adaptive_block_grasp_path(
+                copy.deepcopy(red_object_result),
+                red_start_joints,
+            )
+
+            self.assertGreater(
+                np.linalg.norm(
+                    red_plan["waypoints"][4][:2]
+                    - red_object_result["depth_grasp_center"][:2]
+                ),
+                0.05,
+            )
+            self.assertGreaterEqual(
+                red_plan["minimum_joint_margin_rad"],
                 grasp.BLOCK_MIN_JOINT_MARGIN_RAD,
             )
         finally:

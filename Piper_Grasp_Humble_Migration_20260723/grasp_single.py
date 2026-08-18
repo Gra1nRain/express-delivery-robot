@@ -438,8 +438,11 @@ BOTTLE_GRASP_LEFT_SHIFT_M = float(
 BOTTLE_FORWARD_EXTRA_M = float(
     os.getenv("WRIST_BOTTLE_FORWARD_EXTRA_M", "0.040")
 )
+BLOCK_GRASP_LEFT_SHIFT_M = float(
+    os.getenv("WRIST_BLOCK_GRASP_LEFT_SHIFT_M", "0.035")
+)
 BLOCK_FORWARD_EXTRA_M = float(
-    os.getenv("WRIST_BLOCK_FORWARD_EXTRA_M", "0.000")
+    os.getenv("WRIST_BLOCK_FORWARD_EXTRA_M", "0.040")
 )
 
 # 直立瓶侧抓时，先保持 J2~J6 不变，只转 J1 让工具 +Z
@@ -3720,6 +3723,8 @@ class PiperController(Node):
             f"fine_tune_base={GRASP_FINE_TUNE_BASE_M.tolist()}, "
             f"right_bias={GRASP_RIGHT_BIAS_M:.3f}m, "
             f"left_compensation={GRASP_LEFT_COMPENSATION_M:.3f}m, "
+            f"block_left_shift={BLOCK_GRASP_LEFT_SHIFT_M:.3f}m, "
+            f"block_forward_extra={BLOCK_FORWARD_EXTRA_M:.3f}m, "
             f"height_fraction={GRASP_HEIGHT_FRACTION:.2f}, "
             f"z_extra={GRASP_CENTER_EXTRA_Z_M:.3f}m, "
             f"min_flange_z={MIN_FLANGE_Z_M:.3f}m, "
@@ -6599,11 +6604,12 @@ class PiperController(Node):
         )
         right_bias_base[2] = 0.0
 
-        left_compensation_m = (
-            BOTTLE_GRASP_LEFT_SHIFT_M
-            if upright_bottle_grasp
-            else GRASP_LEFT_COMPENSATION_M
-        )
+        if upright_bottle_grasp:
+            left_compensation_m = BOTTLE_GRASP_LEFT_SHIFT_M
+        elif is_block_target:
+            left_compensation_m = BLOCK_GRASP_LEFT_SHIFT_M
+        else:
+            left_compensation_m = GRASP_LEFT_COMPENSATION_M
         left_compensation_base = (
             rotation_target
             @ np.array(
@@ -6648,6 +6654,13 @@ class PiperController(Node):
                     "extra_base": forward_extra_base.tolist(),
                     "skipped_reason": "tool_forward_horizontal_norm_zero",
                 }
+        if is_block_target:
+            object_result["block_grasp_compensation"] = {
+                "left_shift_m": float(BLOCK_GRASP_LEFT_SHIFT_M),
+                "left_shift_base": left_compensation_base.tolist(),
+                "forward_extra_m": float(BLOCK_FORWARD_EXTRA_M),
+                "forward_extra_base": forward_extra_base.tolist(),
+            }
 
         fine_tune_xy = GRASP_FINE_TUNE_BASE_M.copy()
         fine_tune_xy[2] = 0.0
@@ -8171,7 +8184,7 @@ class PiperController(Node):
                 f"above_top_clearance={ABOVE_TOP_CLEARANCE_M:.3f}, "
                 f"fine_tune_base={GRASP_FINE_TUNE_BASE_M.tolist()}, "
                 f"right_bias={GRASP_RIGHT_BIAS_M:.3f}, "
-                f"left_compensation={GRASP_LEFT_COMPENSATION_M:.3f}, "
+                f"left_compensation={left_compensation_m:.3f}, "
                 f"right_bias_base={right_bias_base.tolist()}, "
                 f"left_compensation_base={left_compensation_base.tolist()}, "
                 f"height_fraction={GRASP_HEIGHT_FRACTION:.2f}, "
@@ -8198,6 +8211,8 @@ class PiperController(Node):
                 f"block_top_down_grasp={result.get('block_top_down_grasp')}, "
                 "block_forward_extra="
                 f"{result.get('block_forward_extra')}, "
+                "block_grasp_compensation="
+                f"{result.get('block_grasp_compensation')}, "
                 "block_observation_rpy_override="
                 f"{result.get('block_observation_rpy_override')}, "
                 "block_outer_roll_pitch_override="
