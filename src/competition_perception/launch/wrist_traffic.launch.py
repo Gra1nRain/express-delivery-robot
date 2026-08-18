@@ -12,7 +12,6 @@ from launch_ros.actions import Node
 
 def generate_launch_description() -> LaunchDescription:
     competition_ws = os.environ.get("COMPETITION_WS", "/home/agilex/competition_ws")
-    perception_share = get_package_share_directory("competition_perception")
     realsense_share = get_package_share_directory("realsense2_camera")
 
     return LaunchDescription(
@@ -72,14 +71,7 @@ def generate_launch_description() -> LaunchDescription:
                         "config",
                         "perception",
                         "wrist_traffic_rules.yaml",
-                    ),
-                    {
-                        "model_path": os.path.join(
-                            perception_share,
-                            "models",
-                            "best_traffic_nano_yolo.pt",
-                        )
-                    },
+                    )
                 ],
             ),
         ]

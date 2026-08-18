@@ -259,6 +259,45 @@ class MissionTopologyTest(unittest.TestCase):
         validate_source_manifest(artifact, source_paths)
         self.assertTrue(artifact["ok"])
 
+    def test_mission_checkpoint_labels_are_near_semantic_points(self) -> None:
+        route = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "config"
+                / "routes"
+                / "indoor_competition_mission_route.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        semantic_map = yaml.safe_load(
+            (REPO_ROOT / "maps" / "debug" / "semantic_map.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        trajectory = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "docs"
+                / "evidence"
+                / "day5"
+                / "indoor_competition_mission_trajectory.yaml"
+            ).read_text(encoding="utf-8")
+        )
+
+        points_by_ref = {
+            point["ref_id"]: point
+            for point in trajectory["points"]
+            if point.get("ref_id") in route["mission_checkpoints"]
+        }
+        for checkpoint_ref in route["mission_checkpoints"]:
+            with self.subTest(checkpoint_ref=checkpoint_ref):
+                trajectory_point = points_by_ref[checkpoint_ref]
+                semantic_point = semantic_map["points"][checkpoint_ref]
+                distance_m = math.hypot(
+                    trajectory_point["x"] - semantic_point["x"],
+                    trajectory_point["y"] - semantic_point["y"],
+                )
+                self.assertLessEqual(distance_m, 0.20)
+
 
 if __name__ == "__main__":
     unittest.main()

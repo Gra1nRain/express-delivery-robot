@@ -23,9 +23,11 @@ traffic_light_recognition:
     enable_topic: /perception/traffic_light_enable
     detection_topic: /perception/traffic_light_detection
     active_topic: /perception/traffic_light_active
-    confidence: 0.30
-    device: cpu
-    inference_image_size: 320
-    # One inference per second gives three confirmations within the 5 s
-    # preheat distance without monopolizing a CPU core beside MPPI.
-    inference_period_s: 1.00
+    brightness_threshold: 100
+    min_spot_area_px: 30.0
+    max_spot_area_px: 8000.0
+    min_circularity: 0.55
+    dominance_ratio: 1.5
+    morphology_kernel_size: 9
+    # Traditional HSV/contour processing is lightweight enough for 10 Hz.
+    inference_period_s: 0.10

@@ -418,7 +418,6 @@ def _launch_setup(context, *args, **kwargs):
             ),
             parameters=[
                 LaunchConfiguration("traffic_rules_params_file"),
-                {"model_path": LaunchConfiguration("traffic_model_path")},
             ],
         ),
         Node(
@@ -615,7 +614,6 @@ def _launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     competition_ws = os.environ.get("COMPETITION_WS", "/home/agilex/competition_ws")
     bringup_share = get_package_share_directory("competition_bringup")
-    perception_share = get_package_share_directory("competition_perception")
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -779,14 +777,6 @@ def generate_launch_description():
                     "config",
                     "perception",
                     "wrist_traffic_rules.yaml",
-                ),
-            ),
-            DeclareLaunchArgument(
-                "traffic_model_path",
-                default_value=os.path.join(
-                    perception_share,
-                    "models",
-                    "best_traffic_nano_yolo.pt",
                 ),
             ),
             DeclareLaunchArgument("rviz", default_value="false"),

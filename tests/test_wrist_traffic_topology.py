@@ -10,7 +10,7 @@ def _read(relative_path: str) -> str:
     return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
 
 
-def test_yolo_isolated_from_flag_and_view_node() -> None:
+def test_light_spot_detector_reuses_flag_and_view_camera() -> None:
     wrist_node = _read(
         "src/competition_perception/competition_perception/wrist_traffic_node.py"
     )
@@ -19,7 +19,8 @@ def test_yolo_isolated_from_flag_and_view_node() -> None:
     )
 
     assert "from ultralytics import YOLO" not in wrist_node
-    assert "from ultralytics import YOLO" in light_node
+    assert "from ultralytics import YOLO" not in light_node
+    assert "LightSpotDetector" in light_node
     assert '"/perception/traffic_light_enable"' in light_node
     assert '"/perception/traffic_stop_enable"' in wrist_node
     assert "set_traffic_stop_enabled" in wrist_node
@@ -43,7 +44,7 @@ def test_launch_starts_one_camera_and_two_perception_nodes() -> None:
     assert 'executable="traffic_light_node"' in day5_launch
 
 
-def test_manual_test_script_can_toggle_yolo() -> None:
+def test_manual_test_script_can_toggle_light_detection() -> None:
     script = _read("scripts/start_wrist_vision_test.sh")
 
     assert '"--enable-light"' in script
@@ -52,20 +53,23 @@ def test_manual_test_script_can_toggle_yolo() -> None:
     assert 'TRAFFIC_LIGHT_ENABLE_TOPIC="/perception/traffic_light_enable"' in script
 
 
-def test_cpu_yolo_uses_benchmarked_input_size_and_starts_disabled() -> None:
+def test_light_spot_detector_uses_reference_thresholds_and_starts_disabled() -> None:
     config = _read("config/perception/wrist_traffic_rules.yaml")
     parsed_config = yaml.safe_load(config)
     light_node = _read(
         "src/competition_perception/competition_perception/traffic_light_node.py"
     )
 
-    assert "inference_image_size: 320" in config
+    params = parsed_config["traffic_light_recognition"]["ros__parameters"]
+    assert params["brightness_threshold"] == 100
+    assert params["min_spot_area_px"] == 30.0
+    assert params["max_spot_area_px"] == 8000.0
+    assert params["min_circularity"] == 0.55
+    assert params["dominance_ratio"] == 1.5
     assert (
-        parsed_config["traffic_light_recognition"]["ros__parameters"][
-            "inference_period_s"
-        ]
-        >= 1.0
+        params["inference_period_s"] <= 0.1
     )
+    assert "ultralytics" not in light_node
     assert "self._enabled = False" in light_node
     assert "if not self._enabled:" in light_node
     assert "self.destroy_subscription(self._image_subscription)" in light_node

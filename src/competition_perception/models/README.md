@@ -1,9 +1,8 @@
-# Traffic-light model
+# Archived traffic-light model
 
-`best_traffic_nano_yolo.pt` is the YOLOv8 nano traffic-light detector already
-provided on the vehicle. Its embedded classes are `red`, `green`, `off`, and
-`yellow`. The upstream model is MIT-licensed and documented in the vehicle's
-original `yolo_traffic light/README.md`.
+`best_traffic_nano_yolo.pt` is retained only as historical test data. Runtime
+traffic-light recognition now uses `light_spot_detector.py` and this model is
+neither installed nor loaded.
 
 Expected SHA-256:
 

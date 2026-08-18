@@ -158,7 +158,6 @@ points:
   jerk: 0.0
   yaw_rate: 0.0
   t: 15.1998
-  ref_id: traffic_light_stop_line
 - x: 1.1237
   y: 0.142
   yaw: 0.02
@@ -279,6 +278,7 @@ points:
   jerk: 0.0
   yaw_rate: 0.0
   t: 27.8101
+  ref_id: traffic_light_stop_line
 - x: 2.3235
   y: 0.166
   yaw: 0.02
