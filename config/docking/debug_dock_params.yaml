@@ -21,6 +21,10 @@ precision_profiles:
     trim_entry_distance_m: 0.10
     final_position_tolerance_m: 0.03
     heading_realign_tolerance_deg: 4.0
+    # Historical field logs show 4-6 deg shelf-fit jitter while translating
+    # laterally. Keep the final 4 deg gate, but do not stop each trim pulse
+    # unless the observed heading exceeds this hysteresis threshold.
+    position_trim_heading_tolerance_deg: 6.5
     heading_trim_target_deg: 2.0
     settle_time_s: 0.30
     stable_time_s: 0.50

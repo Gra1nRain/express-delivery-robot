@@ -39,6 +39,7 @@ class PrecisionDockingConfig:
     trim_entry_distance_m: float
     final_position_tolerance_m: float
     heading_realign_tolerance_rad: float
+    position_trim_heading_tolerance_rad: float
     heading_trim_target_rad: float
     settle_time_s: float = 0.30
     stable_time_s: float = 0.50
@@ -77,10 +78,12 @@ class PrecisionDockingConfig:
             0.0
             < self.heading_trim_target_rad
             < self.heading_realign_tolerance_rad
+            <= self.position_trim_heading_tolerance_rad
             <= self.max_spin_correction_rad
         ):
             raise ValueError(
-                "heading thresholds must satisfy target < realign <= max correction"
+                "heading thresholds must satisfy target < realign "
+                "<= position trim <= max correction"
             )
         if self.settle_time_s < 0.0 or self.stable_time_s < 0.0:
             raise ValueError("precision settle times must be non-negative")
@@ -198,6 +201,14 @@ def precision_docking_configs_from_dict(
                 final_position_tolerance_m=float(raw["final_position_tolerance_m"]),
                 heading_realign_tolerance_rad=math.radians(
                     float(raw["heading_realign_tolerance_deg"])
+                ),
+                position_trim_heading_tolerance_rad=math.radians(
+                    float(
+                        raw.get(
+                            "position_trim_heading_tolerance_deg",
+                            raw["heading_realign_tolerance_deg"],
+                        )
+                    )
                 ),
                 heading_trim_target_rad=math.radians(
                     float(raw["heading_trim_target_deg"])
@@ -624,7 +635,10 @@ class PrecisionDockingController:
                 shelf_clearance_m=shelf_clearance_m,
             )
         if self._phase == PrecisionDockingPhase.POSITION_TRIM:
-            if abs(heading_error) > self._config.heading_realign_tolerance_rad:
+            if (
+                abs(heading_error)
+                > self._config.position_trim_heading_tolerance_rad
+            ):
                 return self._settle(
                     now_s,
                     stopped,

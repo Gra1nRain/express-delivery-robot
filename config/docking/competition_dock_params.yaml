@@ -19,6 +19,9 @@ precision_profiles:
     trim_entry_distance_m: 0.10
     final_position_tolerance_m: 0.03
     heading_realign_tolerance_deg: 4.0
+    # Keep the verified final heading gate while tolerating scan-fit jitter
+    # during an in-progress lateral correction.
+    position_trim_heading_tolerance_deg: 6.5
     heading_trim_target_deg: 2.0
     settle_time_s: 0.30
     stable_time_s: 0.50

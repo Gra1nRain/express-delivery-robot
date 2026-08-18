@@ -308,6 +308,7 @@ class PrecisionDockingControllerTest(unittest.TestCase):
                         "trim_entry_distance_m": 0.10,
                         "final_position_tolerance_m": 0.03,
                         "heading_realign_tolerance_deg": 4.0,
+                        "position_trim_heading_tolerance_deg": 6.5,
                         "heading_trim_target_deg": 2.0,
                         "settle_time_s": 0.30,
                         "stable_time_s": 0.50,
@@ -429,6 +430,7 @@ class ShelfRelativePrecisionDockingTest(unittest.TestCase):
                         "trim_entry_distance_m": 0.10,
                         "final_position_tolerance_m": 0.03,
                         "heading_realign_tolerance_deg": 4.0,
+                        "position_trim_heading_tolerance_deg": 6.5,
                         "heading_trim_target_deg": 2.0,
                         "max_parallel_correction_m": 0.35,
                         "shelf_relative": {
@@ -499,6 +501,47 @@ class ShelfRelativePrecisionDockingTest(unittest.TestCase):
         self.assertGreater(first_retreat.linear_y_mps, 0.0)
         self.assertGreater(continuing_retreat.linear_y_mps, 0.0)
         self.assertEqual(continuing_retreat.phase, PrecisionDockingPhase.POSITION_TRIM)
+
+    def test_small_shelf_heading_jitter_does_not_interrupt_position_trim(self) -> None:
+        needs_lateral_trim = self.observation(0.44, heading_deg=3.0)
+        self.update(0.0, x=0.0, y=0.0, observation=needs_lateral_trim)
+        trimming = self.update(
+            0.31,
+            x=0.0,
+            y=0.0,
+            observation=needs_lateral_trim,
+        )
+        jittered = self.update(
+            0.36,
+            x=0.0,
+            y=0.0,
+            observation=self.observation(0.44, heading_deg=5.0),
+        )
+
+        self.assertEqual(trimming.phase, PrecisionDockingPhase.POSITION_TRIM)
+        self.assertEqual(jittered.phase, PrecisionDockingPhase.POSITION_TRIM)
+        self.assertNotEqual(jittered.linear_y_mps, 0.0)
+
+    def test_final_ready_gate_keeps_original_four_degree_heading_limit(self) -> None:
+        needs_lateral_trim = self.observation(0.44, heading_deg=3.0)
+        self.update(0.0, x=0.0, y=0.0, observation=needs_lateral_trim)
+        self.update(0.31, x=0.0, y=0.0, observation=needs_lateral_trim)
+        settling = self.update(
+            0.36,
+            x=0.0,
+            y=0.0,
+            observation=self.observation(0.53, heading_deg=5.0),
+        )
+        heading_trim = self.update(
+            0.67,
+            x=0.0,
+            y=0.0,
+            observation=self.observation(0.53, heading_deg=5.0),
+        )
+
+        self.assertEqual(settling.phase, PrecisionDockingPhase.STOP_SETTLE)
+        self.assertEqual(heading_trim.phase, PrecisionDockingPhase.HEADING_TRIM)
+        self.assertFalse(heading_trim.pose_ready)
 
     def test_missing_observation_holds_after_shelf_capture(self) -> None:
         decision = self.update(0.0, x=-0.05, y=0.0, observation=None)
