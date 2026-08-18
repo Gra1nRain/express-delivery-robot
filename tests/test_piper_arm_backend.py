@@ -496,6 +496,25 @@ class PiperArmBackendTest(unittest.TestCase):
             else:
                 os.environ[variable] = previous
 
+    def test_competition_environment_restores_block_confidence_to_half(self):
+        variable = "WRIST_BLOCK_COMPLETE_DETECTION_CONFIDENCE"
+        previous = os.environ.get(variable)
+        try:
+            os.environ[variable] = "0.30"
+            with patch(
+                "competition_mission.piper_arm_backend."
+                "apply_migration_shell_defaults",
+                return_value=0,
+            ):
+                prepare_competition_environment(REPO_ROOT)
+
+            self.assertEqual(os.environ[variable], "0.50")
+        finally:
+            if previous is None:
+                os.environ.pop(variable, None)
+            else:
+                os.environ[variable] = previous
+
     def test_duplicate_yolo_candidates_keep_highest_confidence(self):
         candidates = [
             {

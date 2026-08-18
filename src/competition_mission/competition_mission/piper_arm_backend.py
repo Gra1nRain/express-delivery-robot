@@ -241,6 +241,7 @@ def prepare_competition_environment(migration_root: Path) -> int:
         "WRIST_PLACE_SCAN_OFFSETS_DEG": "10,-10",
         "WRIST_PLACE_DETECT_REQUIRED_FRAMES": "1",
         "WRIST_BLOCK_TOP_DOWN_MIN_FLANGE_Y_M": "-0.545",
+        "WRIST_BLOCK_COMPLETE_DETECTION_CONFIDENCE": "0.50",
         "WRIST_YOLO_MODEL_PATH": competition_model_path,
         "WRIST_INSTRUCTION_YOLO_MODEL_PATH": competition_model_path,
     }
