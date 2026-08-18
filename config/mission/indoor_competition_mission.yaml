@@ -15,8 +15,8 @@ mission:
     # observation scans, grasping, and the return-to-transit move. Keep a hard deadline,
     # but do not cancel a physically successful pickup while it is returning.
     pickup:
-      max_attempts: 1
+      max_attempts: 2
       total_timeout_s: 180.0
     drop:
-      max_attempts: 3
+      max_attempts: 2
       total_timeout_s: 90.0
