@@ -52,11 +52,31 @@ class FakeController:
         self.can_control_ready = True
         self.can_control_wait_calls = 0
         self.startup_events = []
+        self.gripper_hold_active = False
+        self.gripper_hold_m = None
+        self.gripper_hold_target = ""
 
     def wait_for_stable_can_control(self):
         self.can_control_wait_calls += 1
         self.startup_events.append("can_control_stable")
         return self.can_control_ready
+
+    def activate_gripper_hold(self, gripper_m, target_type):
+        self.gripper_hold_active = True
+        self.gripper_hold_m = float(gripper_m)
+        self.gripper_hold_target = str(target_type)
+
+    def is_gripper_hold_active(self):
+        return self.gripper_hold_active
+
+    def authorize_gripper_release(self, _reason):
+        if not self.gripper_hold_active:
+            raise RuntimeError("no active hold")
+
+    def complete_gripper_release(self):
+        self.gripper_hold_active = False
+        self.gripper_hold_m = None
+        self.gripper_hold_target = ""
 
     def move_to_observation_joint_pose(self):
         self.observation_moves += 1
@@ -114,6 +134,7 @@ class FakePlaceModule:
         self.PLACE_MOVE_OBSERVE_BEFORE_DETECT = True
         self.execute_calls = 0
         self.selection_calls = 0
+        self.hold_seen_before_release = False
 
     def _select_target_sheet_candidate_with_scan(self, *_args, **_kwargs):
         self.selection_calls += 1
@@ -123,6 +144,9 @@ class FakePlaceModule:
         self.execute_calls += 1
         self._select_target_sheet_candidate_with_scan()
         controller = _args[0]
+        self.hold_seen_before_release = controller.is_gripper_hold_active()
+        controller.authorize_gripper_release("test placement release")
+        controller.complete_gripper_release()
         controller.last_gripper_position_m = 0.070
         controller.last_gripper_feedback_at = time.monotonic()
         return True
@@ -180,6 +204,22 @@ class PiperArmBackendTest(unittest.TestCase):
             COMPETITION_TRANSIT_JOINTS_RAD,
         )
         self.assertEqual(transit_move["gripper_m"], 0.0)
+        self.assertTrue(self.controller.gripper_hold_active)
+        self.assertEqual(self.controller.gripper_hold_m, 0.0)
+        self.assertEqual(self.controller.gripper_hold_target, "green_bottle")
+
+    def test_second_pickup_is_rejected_until_held_object_is_dropped(self):
+        self.backend.pickup_once("green_bottle", lambda *_args: None)
+        prior_observation_moves = self.controller.observation_moves
+
+        with self.assertRaises(ArmExecutionFailure) as context:
+            self.backend.pickup_once("yellow_block", lambda *_args: None)
+
+        self.assertIn("gripper_already_holding_object", context.exception.detail)
+        self.assertEqual(
+            self.controller.observation_moves,
+            prior_observation_moves,
+        )
 
     def test_pickup_does_not_return_to_transit_between_detection_and_grasp(self):
         events = []
@@ -267,6 +307,7 @@ class PiperArmBackendTest(unittest.TestCase):
         backend.pickup_once("", lambda *_args: None)
         self.assertEqual(delays, [10.0])
 
+        self.controller.complete_gripper_release()
         delays.clear()
         backend.pickup_once("green_bottle", lambda *_args: None)
         self.assertEqual(delays, [])
@@ -306,6 +347,8 @@ class PiperArmBackendTest(unittest.TestCase):
         )
 
         self.assertEqual(self.place.execute_calls, 1)
+        self.assertTrue(self.place.hold_seen_before_release)
+        self.assertFalse(self.controller.gripper_hold_active)
         self.assertEqual(self.controller.drop_pose_moves, 2)
         transit_move = self.controller.joint_pose_calls[-1]
         self.assertEqual(

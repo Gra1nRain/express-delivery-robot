@@ -85,6 +85,7 @@ from target_detection_gate import (
     evaluate_bbox_visibility,
     localization_detection_policy,
 )
+from gripper_hold_guard import GripperHoldGuard
 
 # 设置环境变量
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -3389,6 +3390,8 @@ class PiperController(Node):
         self.last_end_pose_rpy_deg = None
         self.last_end_pose_received_at = None
         self.end_pose_feedback_lock = Lock()
+        self.gripper_hold_guard = GripperHoldGuard()
+        self.last_gripper_hold_clamp_log_at = 0.0
 
         self.state_entry_time = time.time()
         self.skip_arm_control = False
@@ -4751,6 +4754,46 @@ class PiperController(Node):
             )
             return False
 
+    def activate_gripper_hold(self, gripper_m, target_type):
+        self.gripper_hold_guard.activate(gripper_m, target_type)
+        self.get_logger().info(
+            "夹爪持物锁已启用: "
+            f"target={target_type}, closed={float(gripper_m):.4f}m；"
+            "放置释放步骤前禁止张开。"
+        )
+
+    def is_gripper_hold_active(self):
+        return self.gripper_hold_guard.is_active()
+
+    def authorize_gripper_release(self, reason):
+        self.gripper_hold_guard.authorize_release(reason)
+        self.get_logger().info(f"夹爪持物锁已授权释放: {reason}")
+
+    def cancel_gripper_release(self):
+        self.gripper_hold_guard.cancel_release()
+        self.get_logger().warn(
+            "夹爪释放未完成，已恢复持物锁闭合保护。"
+        )
+
+    def complete_gripper_release(self):
+        self.gripper_hold_guard.complete_release()
+        self.get_logger().info("物体已在放置步骤释放，夹爪持物锁已解除。")
+
+    def apply_gripper_hold(self, requested_m, context):
+        effective_m, clamped = self.gripper_hold_guard.apply(requested_m)
+        if clamped:
+            now = time.monotonic()
+            if now - self.last_gripper_hold_clamp_log_at >= 1.0:
+                state = self.gripper_hold_guard.snapshot()
+                self.get_logger().warn(
+                    "夹爪持物锁拦截提前张开命令: "
+                    f"context={context}, requested={float(requested_m):.4f}m, "
+                    f"held={float(effective_m):.4f}m, "
+                    f"target={state['target_type']}"
+                )
+                self.last_gripper_hold_clamp_log_at = now
+        return effective_m
+
     def send_pos_command(self, position_dict):
         if not self.arm_enabled or self.arm_faulted:
             return False
@@ -4762,7 +4805,10 @@ class PiperController(Node):
         msg.roll = float(position_dict["roll"])
         msg.pitch = float(position_dict["pitch"])
         msg.yaw = float(position_dict["yaw"])
-        msg.gripper = float(position_dict["gripper"])
+        msg.gripper = self.apply_gripper_hold(
+            position_dict["gripper"],
+            "Cartesian pose command",
+        )
         msg.mode1 = 0x01
         msg.mode2 = 0x00
         self.pos_pub.publish(msg)
@@ -4817,7 +4863,11 @@ class PiperController(Node):
             "joint6",
             "gripper",
         ]
-        command.position = target.tolist() + [float(gripper_m)]
+        effective_gripper_m = self.apply_gripper_hold(
+            gripper_m,
+            f"MOVE_J {label}",
+        )
+        command.position = target.tolist() + [effective_gripper_m]
         # piper_ros 通过第 7 个 velocity 值设置全轴速度百分比。
         command.velocity = [0.0] * 6 + [speed]
         command.effort = [0.0] * 6 + [1.0]

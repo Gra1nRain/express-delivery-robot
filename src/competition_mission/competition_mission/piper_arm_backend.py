@@ -417,6 +417,12 @@ class PiperMigrationBackend:
         target_hint: str,
         publish_phase: PhasePublisher,
     ) -> str:
+        if self.controller.is_gripper_hold_active():
+            self._fail(
+                ArmTaskOutcome.OPERATION_FAILED,
+                "gripper_already_holding_object",
+                str(target_hint).strip(),
+            )
         try:
             target_type, gripper_m = self._pickup_operation(
                 target_hint,
@@ -493,13 +499,17 @@ class PiperMigrationBackend:
 
         publish_phase(ArmTaskPhase.OPERATING, target_type)
         self._perform_pickup(detection, target_type)
-        publish_phase(ArmTaskPhase.VERIFYING_OPERATION, target_type)
-        self._verify_pickup(target_type)
         closed_gripper = float(
             self.controller.get_grasp_config(
                 self.controller.target_class_id
             )["gripper_closed"]
         )
+        self.controller.activate_gripper_hold(
+            closed_gripper,
+            target_type,
+        )
+        publish_phase(ArmTaskPhase.VERIFYING_OPERATION, target_type)
+        self._verify_pickup(target_type)
         return target_type, closed_gripper
 
     def drop_once(
@@ -542,6 +552,10 @@ class PiperMigrationBackend:
             self.controller.get_grasp_config(
                 self.controller.target_class_id
             )["gripper_closed"]
+        )
+        self.controller.activate_gripper_hold(
+            closed_gripper,
+            target_type,
         )
         observation_joints = self.grasp_module.PLACE_OBSERVATION_JOINTS_RAD
         if self.controller.move_to_joint_pose(
