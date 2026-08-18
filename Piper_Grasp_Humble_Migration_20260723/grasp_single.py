@@ -88,6 +88,7 @@ from target_detection_gate import (
     localization_detection_policy,
 )
 from gripper_hold_guard import GripperHoldGuard, choose_bottle_hold_position
+from yolo_runtime import warm_up_yolo_model
 
 # 设置环境变量
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -2043,10 +2044,17 @@ class InstructionSheetDetector:
                 "换成六类权重后会自动识别新增类别。"
             )
 
+        warmup_elapsed_s = warm_up_yolo_model(
+            self.model,
+            image_size=INSTRUCTION_YOLO_IMAGE_SIZE,
+            confidence=INSTRUCTION_YOLO_RAW_CONFIDENCE,
+            device=self.device,
+        )
         self.is_loaded = True
         print(
             "✓ 图纸 YOLO 模型加载成功，classes="
-            f"{self.model_class_names}"
+            f"{self.model_class_names}, "
+            f"warmup={warmup_elapsed_s:.2f}s"
         )
         return True
 
@@ -2243,10 +2251,17 @@ class SimpleVisionDetector:
                         f"{self.detection_target}；"
                         f"模型类别={self.model_class_names}"
                     )
+                warmup_elapsed_s = warm_up_yolo_model(
+                    self.model,
+                    image_size=YOLO_IMAGE_SIZE,
+                    confidence=YOLO_CONFIDENCE,
+                    device=self.device,
+                )
                 self.is_loaded = True
                 print(
                     "✓ YOLOv8 模型加载成功，classes="
-                    f"{self.model_class_names}"
+                    f"{self.model_class_names}, "
+                    f"warmup={warmup_elapsed_s:.2f}s"
                 )
                 return True
 
@@ -4390,13 +4405,15 @@ class PiperController(Node):
         )
 
         accepted = best_confidence >= float(min_confidence)
+        inference_elapsed_s = float(detection.get("elapsed_s", 0.0))
         self.get_logger().info(
             "YOLO 本次检测: "
             f"class={best_model_class_name or best_label}, "
             f"confidence={best_confidence:.4f} "
             f"({best_confidence * 100.0:.2f}%), "
             f"threshold={float(min_confidence):.3f}, "
-            f"accepted={accepted}"
+            f"accepted={accepted}, "
+            f"inference={inference_elapsed_s:.3f}s"
         )
 
         if not accepted:
@@ -8184,7 +8201,8 @@ class PiperController(Node):
                 f"above_top_clearance={ABOVE_TOP_CLEARANCE_M:.3f}, "
                 f"fine_tune_base={GRASP_FINE_TUNE_BASE_M.tolist()}, "
                 f"right_bias={GRASP_RIGHT_BIAS_M:.3f}, "
-                f"left_compensation={left_compensation_m:.3f}, "
+                "left_compensation="
+                f"{float(np.linalg.norm(left_compensation_base)):.3f}, "
                 f"right_bias_base={right_bias_base.tolist()}, "
                 f"left_compensation_base={left_compensation_base.tolist()}, "
                 f"height_fraction={GRASP_HEIGHT_FRACTION:.2f}, "
