@@ -5,6 +5,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -401,6 +402,25 @@ class PiperArmBackendTest(unittest.TestCase):
                 os.environ.pop(instruction_variable, None)
             else:
                 os.environ[instruction_variable] = previous_instruction
+
+    def test_competition_environment_extends_block_top_down_reach(self):
+        variable = "WRIST_BLOCK_TOP_DOWN_MIN_FLANGE_Y_M"
+        previous = os.environ.get(variable)
+        try:
+            os.environ[variable] = "-0.380"
+            with patch(
+                "competition_mission.piper_arm_backend."
+                "apply_migration_shell_defaults",
+                return_value=0,
+            ):
+                prepare_competition_environment(REPO_ROOT)
+
+            self.assertEqual(os.environ[variable], "-0.410")
+        finally:
+            if previous is None:
+                os.environ.pop(variable, None)
+            else:
+                os.environ[variable] = previous
 
     def test_duplicate_yolo_candidates_keep_highest_confidence(self):
         candidates = [
