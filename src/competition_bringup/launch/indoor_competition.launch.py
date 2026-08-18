@@ -70,7 +70,6 @@ def generate_launch_description() -> LaunchDescription:
             Node(
                 package="competition_mission",
                 executable="piper_arm_task_node",
-                name="piper_arm_task",
                 output="screen",
                 condition=IfCondition(LaunchConfiguration("start_real_arm")),
                 parameters=[

@@ -192,6 +192,7 @@ class MissionTopologyTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn('executable="piper_arm_task_node"', launch)
+        self.assertNotIn('name="piper_arm_task"', launch)
         self.assertIn('"manage_camera": False', launch)
         self.assertIn("piper_arm_task_node =", setup)
         self.assertIn(
