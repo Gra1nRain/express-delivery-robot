@@ -1,3 +1,4 @@
+import math
 import pathlib
 import sys
 import unittest
@@ -137,6 +138,33 @@ class MissionTopologyTest(unittest.TestCase):
         self.assertIn('"start_arm_simulator", default_value="false"', launch)
         self.assertIn('"start_competition_mission": "true"', launch)
         self.assertIn('"start_wrist_traffic_perception": "true"', launch)
+
+    def test_manual_field_runbook_matches_motion_gates_and_trajectory_start(self) -> None:
+        runbook = (
+            REPO_ROOT / "docs" / "competition_mission_manual_field_test.md"
+        ).read_text(encoding="utf-8")
+        trajectory = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "docs"
+                / "evidence"
+                / "day5"
+                / "indoor_competition_mission_trajectory.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        start = trajectory["points"][0]
+
+        for gate in (
+            "start_base:=true",
+            "start_chassis_adapter:=true",
+            "start_real_arm:=true",
+            "start_arm_simulator:=false",
+        ):
+            self.assertIn(gate, runbook)
+        self.assertIn(f"x: {start['x']:.3f}", runbook)
+        self.assertIn(f"y: {start['y']:.3f}", runbook)
+        self.assertIn(f"z: {math.sin(start['yaw'] / 2.0):.7f}", runbook)
+        self.assertIn(f"w: {math.cos(start['yaw'] / 2.0):.5f}", runbook)
 
     def test_real_arm_adapter_is_persistent_and_reuses_shared_camera(self) -> None:
         launch = (

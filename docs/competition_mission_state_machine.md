@@ -64,7 +64,7 @@ WAIT_START_FLAG
 - PICKUP 仅在抓取流程无异常且最新夹爪开度不小于 `0.002 m` 时成功；DROP 仅在夹爪
   开度不小于 `0.030 m` 时成功。反馈缺失也按失败处理并进入既定恢复分支。
 
-## 配置与离线证据
+## 配置与验证证据
 
 - 状态机参数：`config/mission/indoor_competition_mission.yaml`
 - 语义路线：`config/routes/indoor_competition_mission_route.yaml`
@@ -75,6 +75,18 @@ WAIT_START_FLAG
 - 入口：`ros2 launch competition_bringup indoor_competition.launch.py`
 - 真实机械臂入口参数：`start_real_arm:=true`（不得与
   `start_arm_simulator:=true` 同时使用）
+- 手动静态机械臂和整车实车测试步骤：
+  `docs/competition_mission_manual_field_test.md`
+
+2026-08-18 车端无运动验证事实：
+
+- 比赛接口、任务、控制、感知和 bringup 包构建成功；项目针对性测试通过。
+- 整套 launch 在 `start_base=false`、`start_chassis_adapter=false`、
+  `start_real_arm=false` 下全部启动，`/cmd_vel` 不存在，`/cmd_vel_safe` 无订阅者。
+- 模拟 Action 成功路径到达 `FINISHED`，前点抓取成功后直接跳过后抓取点，前点放置
+  成功后直接跳过后放置点。
+- 红绿灯连续 `15 s` 无结果后按约定继续；前后抓取均失败时进入
+  `BYPASS_DROP_TASKS` 并最终到达 `FINISHED`。
 
 ## 未验证与风险
 
@@ -86,5 +98,5 @@ WAIT_START_FLAG
 - `1.0 m` 红绿灯预触发距离和 `120/90 s` 机械臂总超时是初始配置，需在无底盘运动的
   单模块计时后复核。
 - 按已确认范围，第一版没有实现挥旗永久失败和导航不可达恢复。
-- 当前适配器验证使用假后端，证明任务拆分、重试和返回契约，不代表 ROS 2 车端构建、
-  真实视觉、机械臂或底盘运动已通过。
+- ROS 2 车端构建、共享相机关闭条件下的感知节点启动、模拟 Action 和任务主/恢复路径
+  已通过；真实 Piper 动作、共享相机实拍识别和底盘完整路线仍未进行实车验证。
