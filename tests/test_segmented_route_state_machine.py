@@ -14,7 +14,7 @@ from competition_control.segmented_route_state_machine import (
     SegmentedRouteObservation,
     SegmentedRoutePhase,
     SegmentedRouteStateMachine,
-    state_failure_requires_rearm,
+    state_failure_requires_fault_hold,
 )
 
 
@@ -27,6 +27,10 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
         self.assertAlmostEqual(
             SegmentedRouteConfig().goal_overshoot_tolerance_m,
             0.02,
+        )
+        self.assertAlmostEqual(
+            SegmentedRouteConfig().fault_recovery_hold_s,
+            0.5,
         )
 
     def setUp(self) -> None:
@@ -121,18 +125,18 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
         self.assertEqual(decision.phase, SegmentedRoutePhase.TRACKING)
         self.assertTrue(decision.allow_tracking)
 
-    def test_only_transient_freshness_failures_can_auto_resume(self) -> None:
-        self.assertFalse(state_failure_requires_rearm(("stale_velocity",)))
+    def test_only_transient_freshness_failures_use_safety_hold(self) -> None:
+        self.assertFalse(state_failure_requires_fault_hold(("stale_velocity",)))
         self.assertFalse(
-            state_failure_requires_rearm(("stale_pose", "stale_velocity"))
+            state_failure_requires_fault_hold(("stale_pose", "stale_velocity"))
         )
-        self.assertTrue(state_failure_requires_rearm(("position_jump",)))
+        self.assertTrue(state_failure_requires_fault_hold(("position_jump",)))
         self.assertTrue(
-            state_failure_requires_rearm(("stale_velocity", "position_jump"))
+            state_failure_requires_fault_hold(("stale_velocity", "position_jump"))
         )
-        self.assertTrue(state_failure_requires_rearm(("future_velocity_stamp",)))
-        self.assertTrue(state_failure_requires_rearm(("unknown_failure",)))
-        self.assertTrue(state_failure_requires_rearm(()))
+        self.assertTrue(state_failure_requires_fault_hold(("future_velocity_stamp",)))
+        self.assertTrue(state_failure_requires_fault_hold(("unknown_failure",)))
+        self.assertTrue(state_failure_requires_fault_hold(()))
 
     def test_waits_for_explicit_release_after_stable_stop(self) -> None:
         self.machine.update(self.observation(0.0))
@@ -271,7 +275,7 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
         self.assertTrue(decision.allow_tracking)
         self.assertEqual(decision.active_segment_index, 0)
 
-    def test_safety_stop_auto_resumes_but_invalid_state_requires_rearm(self) -> None:
+    def test_safety_stop_and_fault_hold_auto_resume(self) -> None:
         self.machine.update(self.observation(0.0))
 
         decision = self.machine.update(self.observation(0.1, stop_requested=True))
@@ -289,11 +293,22 @@ class SegmentedRouteStateMachineTest(unittest.TestCase):
         self.assertEqual(decision.phase, SegmentedRoutePhase.FAULT_HOLD)
         self.assertFalse(decision.allow_tracking)
 
-        decision = self.machine.update(self.observation(0.5, enabled=False))
-        self.assertEqual(decision.phase, SegmentedRoutePhase.DISARMED)
+        decision = self.machine.update(self.observation(0.8, state_valid=False))
+        self.assertEqual(decision.phase, SegmentedRoutePhase.FAULT_HOLD)
+        self.assertFalse(decision.allow_tracking)
 
-        decision = self.machine.update(self.observation(0.6, enabled=True))
+        decision = self.machine.update(self.observation(0.9, state_valid=True))
+        self.assertEqual(decision.phase, SegmentedRoutePhase.FAULT_HOLD)
+        self.assertFalse(decision.allow_tracking)
+
+        decision = self.machine.update(self.observation(1.3, state_valid=True))
+        self.assertEqual(decision.phase, SegmentedRoutePhase.FAULT_HOLD)
+        self.assertFalse(decision.allow_tracking)
+
+        decision = self.machine.update(self.observation(1.41, state_valid=True))
         self.assertEqual(decision.phase, SegmentedRoutePhase.TRACKING)
+        self.assertTrue(decision.allow_tracking)
+        self.assertEqual(decision.active_segment_index, 0)
 
     def test_final_segment_finishes_and_reset_returns_to_disarmed_start(self) -> None:
         self.machine.update(self.observation(0.0))

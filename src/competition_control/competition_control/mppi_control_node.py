@@ -78,7 +78,7 @@ from competition_control.segmented_route_state_machine import (
     SegmentedRouteConfig,
     SegmentedRouteObservation,
     SegmentedRouteStateMachine,
-    state_failure_requires_rearm,
+    state_failure_requires_fault_hold,
 )
 from competition_localization.planar_transform import yaw_from_quaternion
 from competition_localization.state_estimator import (
@@ -376,6 +376,12 @@ class MPPIControlNode(Node):
                     ),
                     dock_hold_s=float(
                         self.declare_parameter("segment_dock_hold_s", 2.0).value
+                    ),
+                    fault_recovery_hold_s=float(
+                        self.declare_parameter(
+                            "segment_fault_recovery_hold_s",
+                            0.5,
+                        ).value
                     ),
                 ),
             )
@@ -1112,13 +1118,15 @@ class MPPIControlNode(Node):
         state_reasons: tuple[str, ...],
     ) -> BodyCommand:
         assert self._segmented_state_machine is not None
-        requires_rearm = state_failure_requires_rearm(state_reasons)
+        requires_fault_hold = state_failure_requires_fault_hold(state_reasons)
         decision = self._segmented_state_machine.update(
             SegmentedRouteObservation(
                 now_s=now_s,
                 enabled=self._route_enabled,
-                state_valid=not requires_rearm,
-                stop_requested=(self._avoidance_stop_requested or not requires_rearm),
+                state_valid=not requires_fault_hold,
+                stop_requested=(
+                    self._avoidance_stop_requested or not requires_fault_hold
+                ),
                 position_error_m=math.inf,
                 heading_error_rad=math.inf,
                 speed_mps=math.inf,

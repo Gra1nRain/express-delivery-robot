@@ -10,8 +10,8 @@ import math
 _RECOVERABLE_FRESHNESS_FAILURES = frozenset({"stale_pose", "stale_velocity"})
 
 
-def state_failure_requires_rearm(reasons: tuple[str, ...]) -> bool:
-    """Return whether an invalid estimate must latch the route in FAULT_HOLD."""
+def state_failure_requires_fault_hold(reasons: tuple[str, ...]) -> bool:
+    """Return whether an invalid estimate requires stable FAULT_HOLD recovery."""
     return not reasons or not set(reasons).issubset(
         _RECOVERABLE_FRESHNESS_FAILURES
     )
@@ -35,6 +35,7 @@ class SegmentedRouteConfig:
     goal_overshoot_tolerance_m: float = 0.02
     stop_speed_tolerance_mps: float = 0.03
     dock_hold_s: float = 2.0
+    fault_recovery_hold_s: float = 0.5
 
     def __post_init__(self) -> None:
         if self.goal_position_tolerance_m <= 0.0:
@@ -47,6 +48,8 @@ class SegmentedRouteConfig:
             raise ValueError("stop_speed_tolerance_mps must be non-negative")
         if self.dock_hold_s < 0.0:
             raise ValueError("dock_hold_s must be non-negative")
+        if self.fault_recovery_hold_s < 0.0:
+            raise ValueError("fault_recovery_hold_s must be non-negative")
 
 
 @dataclass(frozen=True)
@@ -88,6 +91,7 @@ class SegmentedRouteStateMachine:
         self._phase = SegmentedRoutePhase.DISARMED
         self._active_segment_index = 0
         self._dock_hold_started_s: float | None = None
+        self._fault_recovery_started_s: float | None = None
 
     def update(
         self,
@@ -100,19 +104,31 @@ class SegmentedRouteStateMachine:
             if self._phase != SegmentedRoutePhase.COMPLETED:
                 self._phase = SegmentedRoutePhase.DISARMED
                 self._dock_hold_started_s = None
+                self._fault_recovery_started_s = None
             return self._decision(allow_tracking=False)
 
         if self._phase == SegmentedRoutePhase.COMPLETED:
             return self._decision(allow_tracking=False)
-        if self._phase in (
-            SegmentedRoutePhase.OVERSHOOT_HOLD,
-            SegmentedRoutePhase.FAULT_HOLD,
-        ):
+        if self._phase == SegmentedRoutePhase.OVERSHOOT_HOLD:
             return self._decision(allow_tracking=False)
+        if self._phase == SegmentedRoutePhase.FAULT_HOLD:
+            if not observation.state_valid or observation.stop_requested:
+                self._fault_recovery_started_s = None
+                return self._decision(allow_tracking=False)
+            if self._fault_recovery_started_s is None:
+                self._fault_recovery_started_s = observation.now_s
+            if (
+                observation.now_s - self._fault_recovery_started_s
+                < self._config.fault_recovery_hold_s
+            ):
+                return self._decision(allow_tracking=False)
+            self._fault_recovery_started_s = None
+            self._phase = SegmentedRoutePhase.TRACKING
 
         if not observation.state_valid:
             self._phase = SegmentedRoutePhase.FAULT_HOLD
             self._dock_hold_started_s = None
+            self._fault_recovery_started_s = None
             return self._decision(allow_tracking=False)
 
         if self._phase == SegmentedRoutePhase.WAIT_RELEASE:
