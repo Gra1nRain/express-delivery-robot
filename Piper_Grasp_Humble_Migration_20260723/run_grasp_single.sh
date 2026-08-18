@@ -93,9 +93,9 @@ if [[ -n "${PIPER_SDK_ROOT:-}" ]]; then
     export PYTHONPATH="$PIPER_SDK_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 fi
 
-# CPU is the conservative default for the mixed ROS/Conda process.  Set this
-# to 0 explicitly after the complete CUDA inference path has been validated.
-export WRIST_YOLO_DEVICE="${WRIST_YOLO_DEVICE:-cpu}"
+# The competition computer uses the Jetson CUDA build of PyTorch.  Keep this
+# overridable so standalone diagnostics can still request CPU explicitly.
+export WRIST_YOLO_DEVICE="${WRIST_YOLO_DEVICE:-0}"
 export WRIST_YOLO_CONFIDENCE="${WRIST_YOLO_CONFIDENCE:-0.10}"
 export WRIST_MOVING_DETECTION_CONFIDENCE="${WRIST_MOVING_DETECTION_CONFIDENCE:-0.50}"
 export WRIST_STILL_DETECTION_CONFIDENCE="${WRIST_STILL_DETECTION_CONFIDENCE:-0.50}"

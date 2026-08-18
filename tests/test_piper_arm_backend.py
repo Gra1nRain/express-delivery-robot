@@ -348,6 +348,20 @@ class PiperArmBackendTest(unittest.TestCase):
             else:
                 os.environ[variable] = previous
 
+    def test_migration_defaults_yolo_to_gpu(self):
+        previous_environment = os.environ.copy()
+        try:
+            os.environ.pop("WRIST_YOLO_DEVICE", None)
+            apply_migration_shell_defaults(
+                REPO_ROOT
+                / "Piper_Grasp_Humble_Migration_20260723"
+                / "run_grasp_single.sh"
+            )
+            self.assertEqual(os.environ["WRIST_YOLO_DEVICE"], "0")
+        finally:
+            os.environ.clear()
+            os.environ.update(previous_environment)
+
     def test_competition_environment_selects_new_object_weight_only(self):
         object_variable = "WRIST_YOLO_MODEL_PATH"
         instruction_variable = "WRIST_INSTRUCTION_YOLO_MODEL_PATH"
