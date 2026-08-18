@@ -66,6 +66,19 @@ class MissionTopologyTest(unittest.TestCase):
             node,
         )
 
+    def test_arm_simulator_uses_humble_compatible_sync_callback(self) -> None:
+        simulator = (
+            REPO_ROOT
+            / "src"
+            / "competition_mission"
+            / "competition_mission"
+            / "arm_task_simulator_node.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("def _execute(self, goal_handle):", simulator)
+        self.assertIn("time.sleep(self._phase_delay_s)", simulator)
+        self.assertNotIn("asyncio.sleep", simulator)
+
     def test_control_waits_for_release_and_reports_non_stop_marker(self) -> None:
         state_machine = (
             REPO_ROOT

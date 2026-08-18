@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import asyncio
+import time
 
 from competition_interfaces.action import ArmTask
 import rclpy
@@ -52,7 +52,7 @@ class ArmTaskSimulatorNode(Node):
     def _cancel(self, _goal_handle) -> CancelResponse:
         return CancelResponse.ACCEPT
 
-    async def _execute(self, goal_handle):
+    def _execute(self, goal_handle):
         try:
             phases = [
                 ArmTask.Feedback.MOVING_TO_INSTRUCTION_POSE,
@@ -74,7 +74,7 @@ class ArmTaskSimulatorNode(Node):
                 feedback.target_type = target_type
                 feedback.attempt = 1
                 goal_handle.publish_feedback(feedback)
-                await asyncio.sleep(self._phase_delay_s)
+                time.sleep(self._phase_delay_s)
 
             outcome = {
                 "SUCCESS": ArmTask.Result.SUCCESS,
