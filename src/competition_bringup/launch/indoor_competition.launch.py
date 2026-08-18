@@ -12,6 +12,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -30,6 +31,10 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("start_wrist_camera", default_value="true"),
             DeclareLaunchArgument("start_real_arm", default_value="false"),
             DeclareLaunchArgument("start_arm_simulator", default_value="false"),
+            DeclareLaunchArgument(
+                "arm_post_instruction_clear_delay_s",
+                default_value="0.0",
+            ),
             DeclareLaunchArgument("rviz", default_value="false"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
@@ -75,6 +80,12 @@ def generate_launch_description() -> LaunchDescription:
                             "Piper_Grasp_Humble_Migration_20260723",
                         ),
                         "manage_camera": False,
+                        "post_instruction_clear_delay_s": ParameterValue(
+                            LaunchConfiguration(
+                                "arm_post_instruction_clear_delay_s"
+                            ),
+                            value_type=float,
+                        ),
                     }
                 ],
                 additional_env={

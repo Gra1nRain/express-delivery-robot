@@ -43,8 +43,11 @@ ros2 launch competition_bringup indoor_competition.launch.py \
   start_wrist_camera:=true \
   start_real_arm:=true \
   start_arm_simulator:=false \
+  arm_post_instruction_clear_delay_s:=10.0 \
   rviz:=false
 ```
+
+`arm_post_instruction_clear_delay_s=10.0` 只用于当前室内人工展示图片的测试：识别并锁定物体类型后，机械臂保持当前姿态 10 秒，让操作员把指令图片移出相机视野。正式比赛默认值为 `0.0`，不会增加等待。
 
 终端 B 检查：
 
@@ -77,6 +80,8 @@ ros2 action send_goal --feedback \
 5 OPERATING
 6 VERIFYING_OPERATION
 ```
+
+看到反馈 `phase: 3` 后立即移开指令图片。启用上述 10 秒等待时，下一条 `phase: 4` 会在等待结束后出现，随后机械臂才开始识别实物并抓取。
 
 记录结果中的 `target_type`。只有 `outcome: 1` 才表示抓取和夹爪反馈验证都成功。
 

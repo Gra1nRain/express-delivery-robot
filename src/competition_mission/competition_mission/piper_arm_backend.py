@@ -183,6 +183,7 @@ class PiperMigrationBackend:
         feedback_timeout_s: float = 2.0,
         min_pickup_opening_m: float = 0.002,
         min_drop_opening_m: float = 0.030,
+        post_instruction_clear_delay_s: float = 0.0,
         monotonic=time.monotonic,
         sleep=time.sleep,
     ) -> None:
@@ -193,6 +194,13 @@ class PiperMigrationBackend:
         self.feedback_timeout_s = float(feedback_timeout_s)
         self.min_pickup_opening_m = float(min_pickup_opening_m)
         self.min_drop_opening_m = float(min_drop_opening_m)
+        self.post_instruction_clear_delay_s = float(
+            post_instruction_clear_delay_s
+        )
+        if self.post_instruction_clear_delay_s < 0.0:
+            raise ValueError(
+                "post_instruction_clear_delay_s must be non-negative"
+            )
         self._monotonic = monotonic
         self._sleep = sleep
 
@@ -217,6 +225,7 @@ class PiperMigrationBackend:
             )
 
         target_type = str(target_hint).strip()
+        recognized_instruction = not target_type
         if target_type:
             self._set_target_type(target_type)
         else:
@@ -236,6 +245,11 @@ class PiperMigrationBackend:
                 )
 
         publish_phase(ArmTaskPhase.TARGET_TYPE_LOCKED, target_type)
+        if (
+            recognized_instruction
+            and self.post_instruction_clear_delay_s > 0.0
+        ):
+            self._sleep(self.post_instruction_clear_delay_s)
         publish_phase(ArmTaskPhase.SEARCHING_TARGET_OBJECT, target_type)
         try:
             detection = self.controller.estimate_wrist_object_with_observation_scan()

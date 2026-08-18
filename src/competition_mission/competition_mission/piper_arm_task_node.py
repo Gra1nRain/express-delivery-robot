@@ -192,6 +192,12 @@ class PiperArmTaskNode(Node):
                     0.030,
                 ).value
             ),
+            post_instruction_clear_delay_s=float(
+                self.declare_parameter(
+                    "post_instruction_clear_delay_s",
+                    0.0,
+                ).value
+            ),
         )
         self._runner = ArmTaskRunner(backend)
         self._active = False

@@ -136,6 +136,11 @@ class MissionTopologyTest(unittest.TestCase):
         self.assertIn('"start_wrist_camera", default_value="true"', launch)
         self.assertIn('"start_real_arm", default_value="false"', launch)
         self.assertIn('"start_arm_simulator", default_value="false"', launch)
+        self.assertIn(
+            '"arm_post_instruction_clear_delay_s",\n'
+            '                default_value="0.0"',
+            launch,
+        )
         self.assertIn('"start_competition_mission": "true"', launch)
         self.assertIn('"start_wrist_traffic_perception": "true"', launch)
 
@@ -159,6 +164,7 @@ class MissionTopologyTest(unittest.TestCase):
             "start_chassis_adapter:=true",
             "start_real_arm:=true",
             "start_arm_simulator:=false",
+            "arm_post_instruction_clear_delay_s:=10.0",
         ):
             self.assertIn(gate, runbook)
         self.assertIn(f"x: {start['x']:.3f}", runbook)

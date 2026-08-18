@@ -134,6 +134,25 @@ class PiperArmBackendTest(unittest.TestCase):
             phases,
         )
 
+    def test_pickup_can_pause_after_instruction_for_manual_image_removal(self):
+        delays = []
+        backend = PiperMigrationBackend(
+            self.controller,
+            self.grasp,
+            self.place,
+            readiness_timeout_s=0.1,
+            feedback_timeout_s=0.1,
+            post_instruction_clear_delay_s=10.0,
+            sleep=delays.append,
+        )
+
+        backend.pickup_once("", lambda *_args: None)
+        self.assertEqual(delays, [10.0])
+
+        delays.clear()
+        backend.pickup_once("green_bottle", lambda *_args: None)
+        self.assertEqual(delays, [])
+
     def test_drop_uses_locked_target_and_independent_place_function(self):
         phases = []
         self.backend.drop_once(

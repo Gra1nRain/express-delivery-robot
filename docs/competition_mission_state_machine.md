@@ -63,6 +63,8 @@ WAIT_START_FLAG
 - DROP 复用 PICKUP 锁定的目标类型，识别对应卸货图片后才调用独立放置函数。
 - PICKUP 仅在抓取流程无异常且最新夹爪开度不小于 `0.002 m` 时成功；DROP 仅在夹爪
   开度不小于 `0.030 m` 时成功。反馈缺失也按失败处理并进入既定恢复分支。
+- 室内人工展示指令图片时可设置 `arm_post_instruction_clear_delay_s`，在
+  `TARGET_TYPE_LOCKED` 后留出移开图片的时间；比赛默认值为 `0.0 s`，自动流程不暂停。
 
 ## 配置与验证证据
 
