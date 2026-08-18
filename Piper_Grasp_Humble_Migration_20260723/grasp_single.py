@@ -80,6 +80,11 @@ from block_grasp_planner import (
     build_tool_axis_pregrasp_pose,
     choose_reachable_block_candidate,
 )
+from target_detection_gate import (
+    bbox_iou,
+    evaluate_bbox_visibility,
+    localization_detection_policy,
+)
 
 # 设置环境变量
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -758,6 +763,22 @@ def is_bottle_grasp_target(class_id=None, model_class_name=None, prompt=None):
 
     return False
 
+
+def is_block_grasp_target(class_id=None, model_class_name=None, prompt=None):
+    if class_id is not None:
+        try:
+            if int(class_id) == 1:
+                return True
+        except (TypeError, ValueError):
+            pass
+
+    for text in (model_class_name, prompt):
+        lowered = str(text or "").lower()
+        if "block" in lowered or "方块" in lowered or "物块" in lowered:
+            return True
+
+    return False
+
 QR_CONFIRM_FRAMES = int(os.getenv("WRIST_QR_CONFIRM_FRAMES", "3"))
 MOVING_DETECTION_WINDOW = int(os.getenv("WRIST_MOVING_DETECTION_WINDOW", "5"))
 MOVING_DETECTION_MIN_HITS = int(os.getenv("WRIST_MOVING_DETECTION_MIN_HITS", "3"))
@@ -766,6 +787,18 @@ STILL_DETECTION_CONFIRM_FRAMES = int(os.getenv("WRIST_STILL_DETECTION_CONFIRM_FR
 STILL_DETECTION_CONFIDENCE = float(os.getenv("WRIST_STILL_DETECTION_CONFIDENCE", "0.50"))
 LOCALIZATION_DETECTION_CONFIDENCE = float(
     os.getenv("WRIST_LOCALIZATION_DETECTION_CONFIDENCE", "0.50")
+)
+BLOCK_COMPLETE_DETECTION_CONFIDENCE = float(
+    os.getenv("WRIST_BLOCK_COMPLETE_DETECTION_CONFIDENCE", "0.30")
+)
+BLOCK_DETECTION_CONFIRM_FRAMES = int(
+    os.getenv("WRIST_BLOCK_DETECTION_CONFIRM_FRAMES", "2")
+)
+BLOCK_DETECTION_CONFIRM_MIN_IOU = float(
+    os.getenv("WRIST_BLOCK_DETECTION_CONFIRM_MIN_IOU", "0.50")
+)
+TARGET_BBOX_EDGE_MARGIN_PX = int(
+    os.getenv("WRIST_TARGET_BBOX_EDGE_MARGIN_PX", "12")
 )
 SECOND_LOCALIZATION_SAMPLES = int(os.getenv("WRIST_SECOND_LOCALIZATION_SAMPLES", "2"))
 SECOND_LOCALIZATION_MAX_XY_M = float(os.getenv("WRIST_SECOND_LOCALIZATION_MAX_XY_M", "0.030"))
@@ -4130,7 +4163,11 @@ class PiperController(Node):
         )
         return None
 
-    def detect_target_once(self, min_confidence):
+    def detect_target_once(
+        self,
+        min_confidence,
+        require_complete_bbox=False,
+    ):
         if self.color_image is None:
             return None
 
@@ -4145,8 +4182,9 @@ class PiperController(Node):
             if self.vision_detector.backend == "yolov8"
             else self.detection_target
         )
+        frame = self.color_image.copy()
         detection = self.vision_detector.detect_frame_simple(
-            self.color_image.copy(),
+            frame,
             detector_prompt,
         )
 
@@ -4166,6 +4204,8 @@ class PiperController(Node):
 
         candidates = []
         raw_candidates = []
+        incomplete_candidates = []
+        image_height, image_width = frame.shape[:2]
         for index, confidence in enumerate(detection["confidences"]):
             label = ""
             if index < len(detection.get("labels", [])):
@@ -4218,6 +4258,26 @@ class PiperController(Node):
                 ):
                     continue
 
+            bbox = detection["boxes"][index]
+            if require_complete_bbox:
+                visibility = evaluate_bbox_visibility(
+                    bbox,
+                    image_width=image_width,
+                    image_height=image_height,
+                    edge_margin_px=TARGET_BBOX_EDGE_MARGIN_PX,
+                )
+                if not visibility["complete"]:
+                    incomplete_candidates.append(
+                        {
+                            "class_name": model_class_name or label,
+                            "confidence": float(confidence),
+                            "bbox": [float(value) for value in bbox],
+                            "reason": visibility["reason"],
+                            "clipped_edges": visibility["clipped_edges"],
+                        }
+                    )
+                    continue
+
             candidates.append(
                 (
                     index,
@@ -4229,6 +4289,19 @@ class PiperController(Node):
             )
 
         if not candidates:
+            if incomplete_candidates:
+                rejected_text = "; ".join(
+                    f"{item['class_name']}:{item['confidence']:.3f}, "
+                    f"bbox={[round(value, 1) for value in item['bbox']]}, "
+                    f"edges={item['clipped_edges']}"
+                    for item in incomplete_candidates
+                )
+                self.get_logger().warn(
+                    "YOLO 目标框不完整，已拒绝三维定位和抓取: "
+                    f"edge_margin={TARGET_BBOX_EDGE_MARGIN_PX}px, "
+                    f"rejected=[{rejected_text}]"
+                )
+                return None
             raw_text = ", ".join(
                 f"{name}:{confidence:.3f}"
                 for name, confidence, _ in sorted(
@@ -4273,12 +4346,61 @@ class PiperController(Node):
             "color": self.target_color,
             "confidence": best_confidence,
             "bbox": detection["boxes"][best_index],
+            "bbox_complete": bool(require_complete_bbox),
+            "image_size": [int(image_width), int(image_height)],
             "label": best_label,
             "model_class_name": best_model_class_name,
             "dataset_class_id": best_dataset_class_id,
             "prompt": self.detection_target,
             "timestamp": time.time(),
         }
+
+    def detect_target_for_localization(self, policy):
+        required_frames = max(1, int(policy["confirm_frames"]))
+        require_complete_bbox = bool(policy["require_complete_bbox"])
+        min_confidence = float(policy["confidence"])
+        previous_bbox = None
+        confirmed = None
+
+        for frame_index in range(1, required_frames + 1):
+            hit = self.detect_target_once(
+                min_confidence,
+                require_complete_bbox=require_complete_bbox,
+            )
+            if hit is None:
+                if required_frames > 1:
+                    self.get_logger().warn(
+                        "方块完整检测连续帧确认失败: "
+                        f"frame={frame_index}/{required_frames}"
+                    )
+                return None
+
+            current_bbox = np.asarray(hit["bbox"], dtype=np.float64)
+            if previous_bbox is not None:
+                overlap = bbox_iou(previous_bbox, current_bbox)
+                if overlap < BLOCK_DETECTION_CONFIRM_MIN_IOU:
+                    self.get_logger().warn(
+                        "方块完整检测框不稳定，已拒绝定位和抓取: "
+                        f"iou={overlap:.3f} < "
+                        f"{BLOCK_DETECTION_CONFIRM_MIN_IOU:.3f}"
+                    )
+                    return None
+
+            previous_bbox = current_bbox
+            confirmed = hit
+            if frame_index < required_frames:
+                time.sleep(0.08)
+
+        if confirmed is not None and required_frames > 1:
+            confirmed["confirmation_frames"] = required_frames
+            confirmed["bbox_complete"] = True
+            self.get_logger().info(
+                "方块完整检测确认通过: "
+                f"frames={required_frames}, "
+                f"confidence={float(confirmed['confidence']):.4f}, "
+                "bbox 未接触画面边缘。"
+            )
+        return confirmed
 
     def update_moving_detection_window(self):
         hit = self.detect_target_once(
@@ -5632,12 +5754,25 @@ class PiperController(Node):
         target_detection = None
         target_bbox = None
         if USE_TARGET_BBOX_FOR_DEPTH:
-            detection_confidence_threshold = max(
-                float(LOCALIZATION_DETECTION_CONFIDENCE),
-                float(YOLO_CONFIDENCE),
+            block_target = is_block_grasp_target(
+                self.target_class_id,
+                self.target_model_class_name,
+                self.detection_target,
             )
-            target_detection = self.detect_target_once(
-                detection_confidence_threshold
+            detection_policy = localization_detection_policy(
+                is_block_target=block_target,
+                yolo_confidence=YOLO_CONFIDENCE,
+                regular_confidence=LOCALIZATION_DETECTION_CONFIDENCE,
+                complete_block_confidence=(
+                    BLOCK_COMPLETE_DETECTION_CONFIDENCE
+                ),
+                block_confirm_frames=BLOCK_DETECTION_CONFIRM_FRAMES,
+            )
+            detection_confidence_threshold = float(
+                detection_policy["confidence"]
+            )
+            target_detection = self.detect_target_for_localization(
+                detection_policy
             )
             if target_detection is not None:
                 target_bbox = target_detection["bbox"]
@@ -5647,6 +5782,10 @@ class PiperController(Node):
                     f"confidence={float(target_detection['confidence']):.4f} "
                     f"({float(target_detection['confidence']) * 100.0:.2f}%), "
                     f"threshold={detection_confidence_threshold:.2f}, "
+                    f"complete_bbox="
+                    f"{bool(target_detection.get('bbox_complete', False))}, "
+                    f"confirm_frames="
+                    f"{int(target_detection.get('confirmation_frames', 1))}, "
                     "bbox="
                     f"{[round(float(value), 1) for value in target_bbox]}"
                 )
