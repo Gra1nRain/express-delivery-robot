@@ -10,10 +10,44 @@ sys.path.insert(0, str(MIGRATION_ROOT))
 from gripper_hold_guard import (  # noqa: E402
     GripperHoldGuard,
     choose_bottle_hold_position,
+    evaluate_contact_stability,
 )
 
 
 class GripperHoldGuardTest(unittest.TestCase):
+    def test_contact_stability_accepts_a_settled_object_contact(self):
+        result = evaluate_contact_stability(
+            [0.0460, 0.0456, 0.0458, 0.0457],
+            min_samples=4,
+            max_span_m=0.0015,
+            min_contact_opening_m=0.008,
+        )
+
+        self.assertTrue(result["stable"])
+        self.assertAlmostEqual(result["median_opening_m"], 0.04575)
+        self.assertAlmostEqual(result["span_m"], 0.0004)
+
+    def test_contact_stability_rejects_rebound_during_close(self):
+        result = evaluate_contact_stability(
+            [0.046, 0.052, 0.045, 0.051],
+            min_samples=4,
+            max_span_m=0.0015,
+            min_contact_opening_m=0.008,
+        )
+
+        self.assertFalse(result["stable"])
+        self.assertGreater(result["span_m"], 0.0015)
+
+    def test_contact_stability_rejects_an_empty_fully_closed_gripper(self):
+        result = evaluate_contact_stability(
+            [0.0004, 0.0002, 0.0003, 0.0002],
+            min_samples=4,
+            max_span_m=0.0015,
+            min_contact_opening_m=0.008,
+        )
+
+        self.assertFalse(result["stable"])
+
     def test_bottle_hold_uses_contact_opening_with_small_preload(self):
         self.assertAlmostEqual(
             choose_bottle_hold_position(0.0, 0.032, 0.002),
