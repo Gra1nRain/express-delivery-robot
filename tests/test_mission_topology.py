@@ -229,6 +229,18 @@ class MissionTopologyTest(unittest.TestCase):
         self.assertIn("self._backend.initialize_transit_pose()", node)
         self.assertIn("if not self._startup_ready", node)
 
+    def test_real_arm_publishes_recognition_visualization(self) -> None:
+        node = (
+            REPO_ROOT
+            / "src"
+            / "competition_mission"
+            / "competition_mission"
+            / "piper_arm_task_node.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("/perception/arm_recognition_annotated", node)
+        self.assertIn("compose_arm_recognition_frame", node)
+
     def test_integrated_trajectory_matches_current_sources(self) -> None:
         trajectory_path = (
             REPO_ROOT

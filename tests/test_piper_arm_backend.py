@@ -167,6 +167,17 @@ class PiperArmBackendTest(unittest.TestCase):
         )
         self.assertEqual(transit_move["gripper_m"], 0.0)
 
+    def test_pickup_preserves_detection_overlay_for_visualization(self):
+        overlay = [["detected-object"]]
+        self.controller.estimate_wrist_object_with_observation_scan = (
+            lambda: {"object": "detected", "overlay": overlay}
+        )
+
+        self.backend.pickup_once("green_bottle", lambda *_args: None)
+
+        self.assertEqual(self.controller.last_wrist_preview, overlay)
+        self.assertIsNot(self.controller.last_wrist_preview, overlay)
+
     def test_startup_moves_to_transit_pose_with_current_gripper(self):
         self.backend.initialize_transit_pose()
 

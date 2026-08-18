@@ -16,6 +16,7 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from sensor_msgs.msg import Image
 
 from competition_mission.arm_task_runner import (
     ArmExecutionFailure,
@@ -24,6 +25,10 @@ from competition_mission.arm_task_runner import (
     ArmTaskRequest,
     ArmTaskRunner,
     ArmTaskType,
+)
+from competition_mission.arm_recognition_visualizer import (
+    compose_arm_recognition_frame,
+    select_arm_recognition_source,
 )
 from competition_mission.piper_arm_backend import (
     PiperMigrationBackend,
@@ -204,6 +209,28 @@ class PiperArmTaskNode(Node):
         self._active = False
         self._startup_ready = False
         self._active_lock = Lock()
+        self._visual_lock = Lock()
+        self._visual_task_type = "IDLE"
+        self._visual_phase = "STARTUP_TRANSIT"
+        self._visual_target_type = ""
+        self._visual_attempt = 0
+        self._visual_status = "STARTING"
+        self._visual_warning_logged = False
+        self._visual_publisher = self.create_publisher(
+            Image,
+            str(
+                self.declare_parameter(
+                    "recognition_annotated_topic",
+                    "/perception/arm_recognition_annotated",
+                ).value
+            ),
+            1,
+        )
+        self._visual_timer = self.create_timer(
+            0.20,
+            self._publish_recognition_visualization,
+            callback_group=ReentrantCallbackGroup(),
+        )
         self._action_server = ActionServer(
             self,
             ArmTask,
@@ -242,6 +269,9 @@ class PiperArmTaskNode(Node):
             return
         with self._active_lock:
             self._startup_ready = True
+        with self._visual_lock:
+            self._visual_phase = "IDLE"
+            self._visual_status = "READY"
         self.get_logger().info("Startup transit pose reached; ArmTask enabled")
 
     def _goal(self, request) -> GoalResponse:
@@ -270,6 +300,14 @@ class PiperArmTaskNode(Node):
             if request.task_type == ArmTask.Goal.PICKUP
             else ArmTaskType.DROP
         )
+        with self._visual_lock:
+            self._visual_task_type = task_type.value
+            self._visual_phase = ArmTaskPhase.MOVING_TO_INSTRUCTION_POSE.value
+            self._visual_target_type = str(request.target_type_hint).strip()
+            self._visual_attempt = 1
+            self._visual_status = "RUNNING"
+        self.piper_controller.last_instruction_preview = None
+        self.piper_controller.last_wrist_preview = None
         try:
             result = self._runner.run(
                 ArmTaskRequest(
@@ -305,23 +343,72 @@ class PiperArmTaskNode(Node):
             message.detail = (
                 f"attempts={result.attempts};{result.detail}"
             )
+            with self._visual_lock:
+                self._visual_target_type = result.target_type
+                self._visual_status = result.outcome.value
             return message
         finally:
             with self._active_lock:
                 self._active = False
 
-    @staticmethod
     def _publish_feedback(
+        self,
         goal_handle,
         phase: ArmTaskPhase,
         target_type: str,
         attempt: int,
     ) -> None:
+        with self._visual_lock:
+            self._visual_phase = phase.value
+            self._visual_target_type = str(target_type).strip()
+            self._visual_attempt = int(attempt)
+            self._visual_status = "RUNNING"
         feedback = ArmTask.Feedback()
         feedback.phase = _PHASE_TO_ACTION[phase]
         feedback.target_type = target_type
         feedback.attempt = int(attempt)
         goal_handle.publish_feedback(feedback)
+
+    def _publish_recognition_visualization(self) -> None:
+        live_frame = getattr(self.piper_controller, "color_image", None)
+        if live_frame is None:
+            return
+        with self._visual_lock:
+            task_type = self._visual_task_type
+            phase = self._visual_phase
+            target_type = self._visual_target_type
+            attempt = self._visual_attempt
+            status = self._visual_status
+        source_frame, source_name = select_arm_recognition_source(
+            live_frame,
+            getattr(self.piper_controller, "last_instruction_preview", None),
+            getattr(self.piper_controller, "last_wrist_preview", None),
+            phase=phase,
+        )
+        try:
+            composed = compose_arm_recognition_frame(
+                source_frame,
+                task_type=task_type,
+                phase=phase,
+                target_type=target_type,
+                attempt=attempt,
+                source=source_name,
+                status=status,
+            )
+            message = self.piper_controller.bridge.cv2_to_imgmsg(
+                composed,
+                encoding="bgr8",
+            )
+        except Exception as exc:
+            if not self._visual_warning_logged:
+                self.get_logger().warning(
+                    f"Arm recognition visualization skipped: {exc}"
+                )
+                self._visual_warning_logged = True
+            return
+        self._visual_warning_logged = False
+        message.header.stamp = self.get_clock().now().to_msg()
+        self._visual_publisher.publish(message)
 
     def destroy_node(self) -> bool:
         self._action_server.destroy()

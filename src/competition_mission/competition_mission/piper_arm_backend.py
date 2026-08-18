@@ -301,6 +301,7 @@ class PiperMigrationBackend:
                 f"target_search_failed: {exc}",
                 target_type,
             )
+        self._remember_preview("last_wrist_preview", detection)
 
         publish_phase(ArmTaskPhase.OPERATING, target_type)
         self._perform_pickup(detection, target_type)
@@ -383,12 +384,29 @@ class PiperMigrationBackend:
                 f"drop_instruction_not_found: {exc}",
                 target_type,
             )
+        if isinstance(cached_selection, tuple) and len(cached_selection) >= 5:
+            self._remember_preview(
+                "last_instruction_preview",
+                cached_selection[4],
+            )
 
         publish_phase(ArmTaskPhase.TARGET_TYPE_LOCKED, target_type)
         publish_phase(ArmTaskPhase.OPERATING, target_type)
         self._perform_drop(cached_selection, observation_joints, target_type)
         publish_phase(ArmTaskPhase.VERIFYING_OPERATION, target_type)
         return self._verify_drop(target_type)
+
+    def _remember_preview(self, attribute: str, result: Any) -> None:
+        if not isinstance(result, dict):
+            return
+        overlay = result.get("overlay")
+        if overlay is None:
+            return
+        try:
+            overlay = overlay.copy()
+        except Exception:
+            return
+        setattr(self.controller, attribute, overlay)
 
     def _wait_until_ready(
         self,
