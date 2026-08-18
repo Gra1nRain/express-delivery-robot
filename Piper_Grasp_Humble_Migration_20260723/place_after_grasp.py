@@ -631,9 +631,11 @@ def execute_place_after_grasp(
         raise RuntimeError("放置步骤3释放前保持失败。")
 
     release_pose["gripper"] = open_gripper
-    controller.authorize_gripper_release(
-        "放置步骤4：到达释放高度后打开夹爪"
-    )
+    hold_guard_active = controller.is_gripper_hold_active()
+    if hold_guard_active:
+        controller.authorize_gripper_release(
+            "放置步骤4：到达释放高度后打开夹爪"
+        )
     try:
         if controller.publish_pose_for(
             release_pose,
@@ -641,9 +643,11 @@ def execute_place_after_grasp(
         ) is False:
             raise RuntimeError("放置步骤4打开夹爪失败。")
     except Exception:
-        controller.cancel_gripper_release()
+        if hold_guard_active:
+            controller.cancel_gripper_release()
         raise
-    controller.complete_gripper_release()
+    if hold_guard_active:
+        controller.complete_gripper_release()
 
     if controller.publish_strict_vertical_path(
         release_pose,

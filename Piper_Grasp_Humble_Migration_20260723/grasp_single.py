@@ -4762,6 +4762,14 @@ class PiperController(Node):
             "放置释放步骤前禁止张开。"
         )
 
+    def activate_gripper_hold_for_current_target(self, gripper_m):
+        target_type = (
+            self.target_model_class_name
+            or self.detection_target
+            or f"class_{self.target_class_id}"
+        )
+        self.activate_gripper_hold(gripper_m, target_type)
+
     def is_gripper_hold_active(self):
         return self.gripper_hold_guard.is_active()
 
@@ -7396,6 +7404,7 @@ class PiperController(Node):
             duration=GRASP_CLOSE_DWELL_S,
         ) is False:
             raise RuntimeError("方块夹爪闭合失败。")
+        self.activate_gripper_hold_for_current_target(closed_gripper)
 
         retreat = dict(pregrasp)
         retreat["gripper"] = closed_gripper
@@ -7636,10 +7645,12 @@ class PiperController(Node):
                 )
                 return
 
-            self.publish_pose_for(
+            if self.publish_pose_for(
                 grasp_closed,
                 duration=GRASP_CLOSE_DWELL_S,
-            )
+            ) is False:
+                raise RuntimeError("瓶子夹爪闭合失败。")
+            self.activate_gripper_hold_for_current_target(closed_gripper)
 
             retreat = dict(approach)
             retreat["gripper"] = closed_gripper
@@ -7744,10 +7755,12 @@ class PiperController(Node):
             )
             return
 
-        self.publish_pose_for(
+        if self.publish_pose_for(
             grasp_closed,
             duration=GRASP_CLOSE_DWELL_S,
-        )
+        ) is False:
+            raise RuntimeError("瓶子夹爪闭合失败。")
+        self.activate_gripper_hold_for_current_target(closed_gripper)
 
         retreat = dict(approach)
         retreat["gripper"] = closed_gripper
@@ -8447,10 +8460,12 @@ class PiperController(Node):
                 )
                 return
 
-            self.publish_pose_for(
+            if self.publish_pose_for(
                 grasp_closed,
                 duration=GRASP_CLOSE_DWELL_S,
-            )
+            ) is False:
+                raise RuntimeError("夹爪闭合失败。")
+            self.activate_gripper_hold_for_current_target(closed_gripper)
 
             self.get_logger().info(
                 "抓取完成，夹爪保持闭合并严格垂直抬升，"
