@@ -47,6 +47,93 @@ def robust_point_cloud_box_center(
     return center, bounds_min, bounds_max
 
 
+def project_yolo_bbox_center_with_robust_depth(
+    object_points_cam,
+    object_pixels,
+    target_bbox,
+    camera_matrix,
+    center_fraction=0.35,
+    min_depth_points=12,
+):
+    """Back-project the YOLO box center using robust central object depth."""
+    points = np.asarray(object_points_cam, dtype=np.float64)
+    pixels = np.asarray(object_pixels, dtype=np.float64)
+    intrinsics = np.asarray(camera_matrix, dtype=np.float64)
+    bbox = np.asarray(target_bbox, dtype=np.float64).reshape(-1)
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError("object_points_cam must have shape (N, 3)")
+    if pixels.ndim != 2 or pixels.shape[1] != 2:
+        raise ValueError("object_pixels must have shape (N, 2)")
+    if len(points) == 0 or len(points) != len(pixels):
+        raise ValueError("object points and pixels must be non-empty and aligned")
+    if intrinsics.shape != (3, 3):
+        raise ValueError("camera_matrix must have shape (3, 3)")
+    if bbox.size != 4:
+        raise ValueError("target_bbox must contain x0, y0, x1, y1")
+
+    x0, y0, x1, y1 = bbox
+    if x1 <= x0 or y1 <= y0:
+        raise ValueError("target_bbox must have positive width and height")
+    fraction = float(center_fraction)
+    if not 0.0 < fraction <= 1.0:
+        raise ValueError("center_fraction must be in (0, 1]")
+
+    center_u = float((x0 + x1) * 0.5)
+    center_v = float((y0 + y1) * 0.5)
+    half_width = max(2.0, float(x1 - x0) * fraction * 0.5)
+    half_height = max(2.0, float(y1 - y0) * fraction * 0.5)
+    valid_depth = np.isfinite(points[:, 2]) & (points[:, 2] > 0.0)
+    central_mask = (
+        valid_depth
+        & (np.abs(pixels[:, 0] - center_u) <= half_width)
+        & (np.abs(pixels[:, 1] - center_v) <= half_height)
+    )
+    central_indices = np.flatnonzero(central_mask)
+
+    required = max(1, int(min_depth_points))
+    if len(central_indices) >= required:
+        selected_indices = central_indices
+        depth_source = "central_object_points"
+    else:
+        valid_indices = np.flatnonzero(valid_depth)
+        if len(valid_indices) == 0:
+            raise ValueError("object_points_cam has no valid positive depth")
+        normalized_distance = (
+            ((pixels[valid_indices, 0] - center_u) / half_width) ** 2
+            + ((pixels[valid_indices, 1] - center_v) / half_height) ** 2
+        )
+        nearest_count = min(required, len(valid_indices))
+        nearest_order = np.argsort(normalized_distance)[:nearest_count]
+        selected_indices = valid_indices[nearest_order]
+        depth_source = "nearest_object_points"
+
+    depth_m = float(np.median(points[selected_indices, 2]))
+    fx = float(intrinsics[0, 0])
+    fy = float(intrinsics[1, 1])
+    cx = float(intrinsics[0, 2])
+    cy = float(intrinsics[1, 2])
+    if fx <= 0.0 or fy <= 0.0:
+        raise ValueError("camera focal lengths must be positive")
+
+    point_cam = np.array(
+        [
+            (center_u - cx) * depth_m / fx,
+            (center_v - cy) * depth_m / fy,
+            depth_m,
+        ],
+        dtype=np.float64,
+    )
+    diagnostics = {
+        "pixel_center": [center_u, center_v],
+        "depth_m": depth_m,
+        "depth_points": int(len(selected_indices)),
+        "central_depth_points": int(len(central_indices)),
+        "depth_source": depth_source,
+        "center_fraction": fraction,
+    }
+    return point_cam, diagnostics
+
+
 def build_block_rpy_candidates(
     roll_deg,
     fallback_yaw_deg,

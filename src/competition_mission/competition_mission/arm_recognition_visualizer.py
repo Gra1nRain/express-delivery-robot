@@ -17,10 +17,8 @@ _INSTRUCTION_PHASES = {
     "RECOGNIZING_INSTRUCTION",
     "TARGET_TYPE_LOCKED",
 }
-_OBJECT_PHASES = {
+_OBJECT_OVERLAY_PHASES = {
     "SEARCHING_TARGET_OBJECT",
-    "OPERATING",
-    "VERIFYING_OPERATION",
 }
 
 
@@ -58,7 +56,7 @@ def select_arm_recognition_source(
     phase_name = str(phase).strip().upper()
     if phase_name in _INSTRUCTION_PHASES and instruction_overlay is not None:
         return instruction_overlay, "INSTRUCTION_OVERLAY"
-    if phase_name in _OBJECT_PHASES:
+    if phase_name in _OBJECT_OVERLAY_PHASES:
         if object_overlay is not None:
             return object_overlay, "OBJECT_OVERLAY"
     return live_frame, "LIVE_CAMERA"

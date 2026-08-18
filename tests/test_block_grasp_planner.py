@@ -15,6 +15,7 @@ from block_grasp_planner import (  # noqa: E402
     build_tool_axis_pregrasp_pose,
     build_world_yz_pregrasp_pose,
     choose_reachable_block_candidate,
+    project_yolo_bbox_center_with_robust_depth,
     robust_point_cloud_box_center,
 )
 
@@ -54,6 +55,73 @@ class BlockGraspPlannerTest(unittest.TestCase):
         np.testing.assert_allclose(center, [0.10, -0.40, 0.05])
         self.assertFalse(
             np.allclose(np.median(points, axis=0), center)
+        )
+
+    def test_yolo_bbox_center_uses_central_depth_not_cloud_edges(self):
+        camera_matrix = np.array(
+            [
+                [500.0, 0.0, 320.0],
+                [0.0, 500.0, 240.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float64,
+        )
+        target_bbox = [340.0, 200.0, 380.0, 280.0]
+        central_pixels = np.array(
+            [
+                [u, v]
+                for u in range(354, 367, 2)
+                for v in range(232, 249, 4)
+            ],
+            dtype=np.int32,
+        )
+        central_depths = np.linspace(
+            0.495,
+            0.505,
+            central_pixels.shape[0],
+        )
+        central_points = np.column_stack(
+            [
+                np.zeros(central_pixels.shape[0]),
+                np.zeros(central_pixels.shape[0]),
+                central_depths,
+            ]
+        )
+        edge_pixels = np.array(
+            [[342, v] for v in range(202, 279, 2)]
+            + [[378, v] for v in range(202, 279, 2)],
+            dtype=np.int32,
+        )
+        edge_points = np.column_stack(
+            [
+                np.zeros(edge_pixels.shape[0]),
+                np.zeros(edge_pixels.shape[0]),
+                np.full(edge_pixels.shape[0], 0.9),
+            ]
+        )
+
+        point_cam, diagnostics = (
+            project_yolo_bbox_center_with_robust_depth(
+                object_points_cam=np.vstack(
+                    [central_points, edge_points]
+                ),
+                object_pixels=np.vstack(
+                    [central_pixels, edge_pixels]
+                ),
+                target_bbox=target_bbox,
+                camera_matrix=camera_matrix,
+            )
+        )
+
+        np.testing.assert_allclose(point_cam, [0.04, 0.0, 0.5])
+        self.assertEqual(diagnostics["pixel_center"], [360.0, 240.0])
+        self.assertEqual(
+            diagnostics["depth_source"],
+            "central_object_points",
+        )
+        self.assertEqual(
+            diagnostics["depth_points"],
+            central_pixels.shape[0],
         )
 
     def test_builds_near_vertical_candidates_with_axis_aligned_yaw(self):

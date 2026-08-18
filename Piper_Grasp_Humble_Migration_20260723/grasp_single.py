@@ -79,6 +79,7 @@ from block_grasp_planner import (
     build_block_rpy_candidates,
     build_world_yz_pregrasp_pose,
     choose_reachable_block_candidate,
+    project_yolo_bbox_center_with_robust_depth,
     robust_point_cloud_box_center,
 )
 from target_detection_gate import (
@@ -6051,14 +6052,42 @@ class PiperController(Node):
             if is_block_target
             else median_center.copy()
         )
+        yolo_center_diagnostics = None
+        if is_block_target and target_bbox is not None:
+            (
+                yolo_center_cam,
+                yolo_center_diagnostics,
+            ) = project_yolo_bbox_center_with_robust_depth(
+                object_points_cam=object_points_cam,
+                object_pixels=object_pixels,
+                target_bbox=target_bbox,
+                camera_matrix=camera_matrix,
+            )
+            yolo_center_base = (
+                transform_cam_to_base
+                @ np.append(yolo_center_cam, 1.0)
+            )[:3]
+            center[:2] = yolo_center_base[:2]
+            yolo_center_diagnostics["camera_point"] = (
+                yolo_center_cam.tolist()
+            )
+            yolo_center_diagnostics["base_point"] = (
+                yolo_center_base.tolist()
+            )
         diagnostics["grasp_center"] = {
             "source": (
-                "robust_point_cloud_box_center"
-                if is_block_target
-                else "point_cloud_median"
+                "yolo_bbox_center_with_robust_depth"
+                if yolo_center_diagnostics is not None
+                else (
+                    "robust_point_cloud_box_center"
+                    if is_block_target
+                    else "point_cloud_median"
+                )
             ),
             "median_center": median_center.tolist(),
             "geometric_center": geometric_center.tolist(),
+            "selected_center": center.tolist(),
+            "yolo_center": yolo_center_diagnostics,
         }
 
         axis_info = None
@@ -6295,6 +6324,25 @@ class PiperController(Node):
                 (255, 255, 0),
                 2,
             )
+            if is_block_target and yolo_center_diagnostics is not None:
+                center_u, center_v = [
+                    int(round(value))
+                    for value in yolo_center_diagnostics["pixel_center"]
+                ]
+                cv2.line(
+                    overlay,
+                    (center_u - 10, center_v),
+                    (center_u + 10, center_v),
+                    (255, 0, 255),
+                    2,
+                )
+                cv2.line(
+                    overlay,
+                    (center_u, center_v - 10),
+                    (center_u, center_v + 10),
+                    (255, 0, 255),
+                    2,
+                )
         if axis_info is not None:
             cv2.putText(
                 overlay,

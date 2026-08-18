@@ -43,6 +43,28 @@ class ArmRecognitionVisualizerTest(unittest.TestCase):
         self.assertIs(selected, self.object)
         self.assertEqual(source, "OBJECT_OVERLAY")
 
+    def test_operating_phase_uses_live_camera(self) -> None:
+        selected, source = select_arm_recognition_source(
+            self.raw,
+            self.instruction,
+            self.object,
+            phase="OPERATING",
+        )
+
+        self.assertIs(selected, self.raw)
+        self.assertEqual(source, "LIVE_CAMERA")
+
+    def test_verifying_operation_phase_uses_live_camera(self) -> None:
+        selected, source = select_arm_recognition_source(
+            self.raw,
+            self.instruction,
+            self.object,
+            phase="VERIFYING_OPERATION",
+        )
+
+        self.assertIs(selected, self.raw)
+        self.assertEqual(source, "LIVE_CAMERA")
+
     def test_object_search_without_result_keeps_live_camera_refreshing(self) -> None:
         selected, source = select_arm_recognition_source(
             self.raw,
