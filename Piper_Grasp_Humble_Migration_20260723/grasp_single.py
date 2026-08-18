@@ -87,10 +87,7 @@ from target_detection_gate import (
     evaluate_bbox_visibility,
     localization_detection_policy,
 )
-from gripper_hold_guard import (
-    GripperHoldGuard,
-    choose_bottle_hold_position,
-)
+from gripper_hold_guard import GripperHoldGuard
 from yolo_runtime import warm_up_yolo_model
 
 # 设置环境变量
@@ -656,9 +653,6 @@ BLOCK_GRIPPER_OPEN_TOLERANCE_M = float(
 BLOCK_GRIPPER_OPEN_WAIT_TIMEOUT_S = float(
     os.getenv("WRIST_BLOCK_GRIPPER_OPEN_WAIT_TIMEOUT_S", "2.5")
 )
-BOTTLE_HOLD_PRELOAD_M = float(
-    os.getenv("WRIST_BOTTLE_HOLD_PRELOAD_M", "0.002")
-)
 BLOCK_POST_CLOSE_DWELL_S = float(
     os.getenv("WRIST_BLOCK_POST_CLOSE_DWELL_S", "0.45")
 )
@@ -906,7 +900,7 @@ GRASP_CONFIG = {
         "height_offset": float(os.getenv("WRIST_BOTTLE_HEIGHT_OFFSET_M", "0.000")),
         "approach_height": float(os.getenv("WRIST_BOTTLE_APPROACH_HEIGHT_M", "0.100")),
         "gripper_open": float(os.getenv("WRIST_BOTTLE_GRIPPER_OPEN_M", f"{OPEN_GRIPPER_M:.3f}")),
-        "gripper_closed": float(os.getenv("WRIST_BOTTLE_GRIPPER_CLOSED_M", f"{CLOSE_GRIPPER_M:.3f}")),
+        "gripper_closed": CLOSE_GRIPPER_M,
         "yaw_deg": os.getenv("WRIST_BOTTLE_YAW_DEG", ""),
         "lift_height": float(os.getenv("WRIST_BOTTLE_LIFT_HEIGHT_M", f"{LIFT_HEIGHT_M:.3f}")),
     },
@@ -914,7 +908,7 @@ GRASP_CONFIG = {
         "height_offset": float(os.getenv("WRIST_BLOCK_HEIGHT_OFFSET_M", "0.010")),
         "approach_height": float(os.getenv("WRIST_BLOCK_APPROACH_HEIGHT_M", "0.120")),
         "gripper_open": float(os.getenv("WRIST_BLOCK_GRIPPER_OPEN_M", f"{MAX_GRIPPER_M:.3f}")),
-        "gripper_closed": float(os.getenv("WRIST_BLOCK_GRIPPER_CLOSED_M", f"{CLOSE_GRIPPER_M:.3f}")),
+        "gripper_closed": CLOSE_GRIPPER_M,
         "yaw_deg": os.getenv("WRIST_BLOCK_YAW_DEG", ""),
         "lift_height": float(os.getenv("WRIST_BLOCK_LIFT_HEIGHT_M", f"{LIFT_HEIGHT_M:.3f}")),
     },
@@ -4881,39 +4875,21 @@ class PiperController(Node):
             f"actual={last_position}, required={required_open_m:.4f}m"
         )
 
-    def resolve_post_close_hold_gripper(self, commanded_closed_m, close_started_at):
-        target_type = (
-            self.target_model_class_name
-            or self.detection_target
-            or f"class_{self.target_class_id}"
-        )
-        if not is_bottle_grasp_target(
-            self.target_class_id,
-            self.target_model_class_name,
-            target_type,
+    def resolve_post_close_hold_gripper(self, commanded_closed_m):
+        if not math.isclose(
+            float(commanded_closed_m),
+            CLOSE_GRIPPER_M,
+            rel_tol=0.0,
+            abs_tol=1e-12,
         ):
-            return float(commanded_closed_m)
-        feedback = self.get_fresh_gripper_feedback(
-            received_after=close_started_at,
-        )
-        if feedback is None:
             self.get_logger().warn(
-                "瓶子闭合后没有新鲜夹爪反馈，继续使用原闭合值。"
+                "忽略非零夹爪闭合目标，强制使用 0.0000m。"
             )
-            return float(commanded_closed_m)
-        measured_opening_m = float(feedback[0])
-        hold_gripper_m = choose_bottle_hold_position(
-            commanded_closed_m,
-            measured_opening_m,
-            BOTTLE_HOLD_PRELOAD_M,
-        )
         self.get_logger().info(
-            "瓶子接触保持开度: "
-            f"measured={measured_opening_m:.4f}m, "
-            f"preload={BOTTLE_HOLD_PRELOAD_M:.4f}m, "
-            f"hold={hold_gripper_m:.4f}m"
+            "夹爪闭合后保持零宽度目标；"
+            "实际接触开度只用于状态显示，不再反写控制目标。"
         )
-        return hold_gripper_m
+        return float(CLOSE_GRIPPER_M)
 
     def authorize_gripper_release(self, reason):
         self.gripper_hold_guard.authorize_release(reason)
@@ -7900,7 +7876,6 @@ class PiperController(Node):
                 )
                 return
 
-            close_started_at = time.monotonic()
             if self.publish_pose_for(
                 grasp_closed,
                 duration=GRASP_CLOSE_DWELL_S,
@@ -7908,7 +7883,6 @@ class PiperController(Node):
                 raise RuntimeError("瓶子夹爪闭合失败。")
             closed_gripper = self.resolve_post_close_hold_gripper(
                 closed_gripper,
-                close_started_at,
             )
             grasp_closed["gripper"] = closed_gripper
             self.activate_gripper_hold_for_current_target(closed_gripper)
@@ -8016,7 +7990,6 @@ class PiperController(Node):
             )
             return
 
-        close_started_at = time.monotonic()
         if self.publish_pose_for(
             grasp_closed,
             duration=GRASP_CLOSE_DWELL_S,
@@ -8024,7 +7997,6 @@ class PiperController(Node):
             raise RuntimeError("瓶子夹爪闭合失败。")
         closed_gripper = self.resolve_post_close_hold_gripper(
             closed_gripper,
-            close_started_at,
         )
         grasp_closed["gripper"] = closed_gripper
         self.activate_gripper_hold_for_current_target(closed_gripper)
@@ -8730,7 +8702,6 @@ class PiperController(Node):
                 )
                 return
 
-            close_started_at = time.monotonic()
             if self.publish_pose_for(
                 grasp_closed,
                 duration=GRASP_CLOSE_DWELL_S,
@@ -8738,7 +8709,6 @@ class PiperController(Node):
                 raise RuntimeError("夹爪闭合失败。")
             closed_gripper = self.resolve_post_close_hold_gripper(
                 closed_gripper,
-                close_started_at,
             )
             grasp_closed["gripper"] = closed_gripper
             self.activate_gripper_hold_for_current_target(closed_gripper)
