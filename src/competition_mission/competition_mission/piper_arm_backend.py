@@ -24,6 +24,15 @@ _SHELL_DEFAULT_RE = re.compile(
     r'^export\s+([A-Z][A-Z0-9_]*)="\$\{\1:-(.*)\}"$'
 )
 
+COMPETITION_TRANSIT_JOINTS_RAD = (
+    0.005760,
+    0.289742,
+    -0.565347,
+    -0.081856,
+    0.045605,
+    0.092502,
+)
+
 
 def apply_migration_shell_defaults(script_path: Path) -> int:
     """Apply the simple ``${NAME:-default}`` calibration exports."""
@@ -209,6 +218,30 @@ class PiperMigrationBackend:
         target_hint: str,
         publish_phase: PhasePublisher,
     ) -> str:
+        try:
+            target_type, gripper_m = self._pickup_operation(
+                target_hint,
+                publish_phase,
+            )
+        except Exception:
+            self._return_to_transit_pose(
+                self._current_gripper_position(),
+                self._current_target_type() or str(target_hint).strip(),
+                required=False,
+            )
+            raise
+        self._return_to_transit_pose(
+            gripper_m,
+            target_type,
+            required=True,
+        )
+        return target_type
+
+    def _pickup_operation(
+        self,
+        target_hint: str,
+        publish_phase: PhasePublisher,
+    ) -> tuple[str, float]:
         publish_phase(ArmTaskPhase.MOVING_TO_INSTRUCTION_POSE, target_hint)
         self._wait_until_ready(
             require_object_model=True,
@@ -263,14 +296,34 @@ class PiperMigrationBackend:
         publish_phase(ArmTaskPhase.OPERATING, target_type)
         self._perform_pickup(detection, target_type)
         publish_phase(ArmTaskPhase.VERIFYING_OPERATION, target_type)
-        self._verify_pickup(target_type)
-        return target_type
+        gripper_m = self._verify_pickup(target_type)
+        return target_type, gripper_m
 
     def drop_once(
         self,
         target_type: str,
         publish_phase: PhasePublisher,
     ) -> None:
+        try:
+            gripper_m = self._drop_operation(target_type, publish_phase)
+        except Exception:
+            self._return_to_transit_pose(
+                self._current_gripper_position(),
+                str(target_type).strip(),
+                required=False,
+            )
+            raise
+        self._return_to_transit_pose(
+            gripper_m,
+            str(target_type).strip(),
+            required=True,
+        )
+
+    def _drop_operation(
+        self,
+        target_type: str,
+        publish_phase: PhasePublisher,
+    ) -> float:
         target_type = str(target_type).strip()
         self._set_target_type(target_type)
         publish_phase(ArmTaskPhase.MOVING_TO_INSTRUCTION_POSE, target_type)
@@ -321,7 +374,7 @@ class PiperMigrationBackend:
         publish_phase(ArmTaskPhase.OPERATING, target_type)
         self._perform_drop(cached_selection, observation_joints, target_type)
         publish_phase(ArmTaskPhase.VERIFYING_OPERATION, target_type)
-        self._verify_drop(target_type)
+        return self._verify_drop(target_type)
 
     def _wait_until_ready(
         self,
@@ -447,7 +500,7 @@ class PiperMigrationBackend:
                 target_type,
             )
 
-    def _verify_pickup(self, target_type: str) -> None:
+    def _verify_pickup(self, target_type: str) -> float:
         position, effort = self._fresh_gripper_feedback()
         if position < self.min_pickup_opening_m:
             self._fail(
@@ -458,8 +511,9 @@ class PiperMigrationBackend:
                 ),
                 target_type,
             )
+        return position
 
-    def _verify_drop(self, target_type: str) -> None:
+    def _verify_drop(self, target_type: str) -> float:
         position, effort = self._fresh_gripper_feedback()
         if position < self.min_drop_opening_m:
             self._fail(
@@ -470,6 +524,55 @@ class PiperMigrationBackend:
                 ),
                 target_type,
             )
+        return position
+
+    def _return_to_transit_pose(
+        self,
+        gripper_m: float | None,
+        target_type: str,
+        *,
+        required: bool,
+    ) -> None:
+        if gripper_m is None:
+            detail = "cannot_reach_transit_pose_without_gripper_feedback"
+            if required:
+                self._fail(
+                    ArmTaskOutcome.OPERATION_FAILED,
+                    detail,
+                    target_type,
+                )
+            return
+        try:
+            moved = self.controller.move_to_joint_pose(
+                COMPETITION_TRANSIT_JOINTS_RAD,
+                label="Competition transit pose",
+                gripper_m=gripper_m,
+                timeout_s=20.0,
+            )
+        except Exception as exc:
+            if required:
+                self._fail(
+                    ArmTaskOutcome.OPERATION_FAILED,
+                    f"failed_to_reach_transit_pose: {exc}",
+                    target_type,
+                )
+            return
+        if moved is False and required:
+            self._fail(
+                ArmTaskOutcome.OPERATION_FAILED,
+                "failed_to_reach_transit_pose",
+                target_type,
+            )
+
+    def _current_gripper_position(self) -> float | None:
+        value = getattr(self.controller, "last_gripper_position_m", None)
+        if value is None:
+            return None
+        try:
+            position = float(value)
+        except (TypeError, ValueError):
+            return None
+        return position if math.isfinite(position) else None
 
     def _fresh_gripper_feedback(self) -> tuple[float, float | None]:
         deadline = self._monotonic() + max(0.0, self.feedback_timeout_s)

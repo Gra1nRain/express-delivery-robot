@@ -16,6 +16,7 @@ from competition_mission.arm_task_runner import (
     ArmTaskOutcome,
 )
 from competition_mission.piper_arm_backend import (
+    COMPETITION_TRANSIT_JOINTS_RAD,
     PiperMigrationBackend,
     apply_migration_shell_defaults,
 )
@@ -40,6 +41,8 @@ class FakeController:
         self.last_gripper_feedback_at = time.monotonic()
         self.observation_moves = 0
         self.drop_pose_moves = 0
+        self.joint_pose_calls = []
+        self.failed_move_labels = set()
         self.worker_calls = 0
 
     def move_to_observation_joint_pose(self):
@@ -72,9 +75,24 @@ class FakeController:
     def get_grasp_config(self, _class_id):
         return {"gripper_closed": 0.0}
 
-    def move_to_joint_pose(self, *_args, **_kwargs):
+    def move_to_joint_pose(
+        self,
+        joints,
+        *,
+        label,
+        gripper_m,
+        timeout_s,
+    ):
         self.drop_pose_moves += 1
-        return True
+        self.joint_pose_calls.append(
+            {
+                "joints": tuple(joints),
+                "label": label,
+                "gripper_m": gripper_m,
+                "timeout_s": timeout_s,
+            }
+        )
+        return label not in self.failed_move_labels
 
 
 class FakePlaceModule:
@@ -134,6 +152,21 @@ class PiperArmBackendTest(unittest.TestCase):
             phases,
         )
 
+    def test_pickup_returns_to_transit_pose_without_opening_gripper(self):
+        target = self.backend.pickup_once(
+            "green_bottle",
+            lambda *_args: None,
+        )
+
+        self.assertEqual(target, "green_bottle")
+        self.assertEqual(len(self.controller.joint_pose_calls), 1)
+        transit_move = self.controller.joint_pose_calls[0]
+        self.assertEqual(
+            transit_move["joints"],
+            COMPETITION_TRANSIT_JOINTS_RAD,
+        )
+        self.assertEqual(transit_move["gripper_m"], 0.020)
+
     def test_pickup_can_pause_after_instruction_for_manual_image_removal(self):
         delays = []
         backend = PiperMigrationBackend(
@@ -161,10 +194,34 @@ class PiperArmBackendTest(unittest.TestCase):
         )
 
         self.assertEqual(self.place.execute_calls, 1)
-        self.assertEqual(self.controller.drop_pose_moves, 1)
+        self.assertEqual(self.controller.drop_pose_moves, 2)
+        transit_move = self.controller.joint_pose_calls[-1]
+        self.assertEqual(
+            transit_move["joints"],
+            COMPETITION_TRANSIT_JOINTS_RAD,
+        )
+        self.assertEqual(transit_move["gripper_m"], 0.070)
         self.assertIn(
             (ArmTaskPhase.OPERATING, "green_bottle"),
             phases,
+        )
+
+    def test_task_does_not_report_success_when_transit_move_fails(self):
+        self.controller.failed_move_labels.add("Competition transit pose")
+
+        with self.assertRaises(ArmExecutionFailure) as context:
+            self.backend.pickup_once(
+                "green_bottle",
+                lambda *_args: None,
+            )
+
+        self.assertEqual(
+            context.exception.outcome,
+            ArmTaskOutcome.OPERATION_FAILED,
+        )
+        self.assertIn(
+            "failed_to_reach_transit_pose",
+            context.exception.detail,
         )
 
     def test_pickup_requires_nonzero_gripper_opening_confirmation(self):
@@ -174,6 +231,7 @@ class PiperArmBackendTest(unittest.TestCase):
             self.controller.last_gripper_feedback_at = time.monotonic()
 
         self.controller._execute_wrist_grasp_worker = empty_grasp
+        self.controller.failed_move_labels.add("Competition transit pose")
         with self.assertRaises(ArmExecutionFailure) as context:
             self.backend.pickup_once("green_bottle", lambda *_args: None)
 
@@ -182,6 +240,11 @@ class PiperArmBackendTest(unittest.TestCase):
             ArmTaskOutcome.OPERATION_FAILED,
         )
         self.assertIn("pickup_not_verified", context.exception.detail)
+        self.assertEqual(len(self.controller.joint_pose_calls), 1)
+        self.assertEqual(
+            self.controller.joint_pose_calls[0]["joints"],
+            COMPETITION_TRANSIT_JOINTS_RAD,
+        )
 
     def test_shell_defaults_do_not_override_existing_environment(self):
         variable = "CODEX_TEST_PIPER_DEFAULT"
