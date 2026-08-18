@@ -400,7 +400,7 @@ BOTTLE_TOP_DOWN_PATH = os.getenv(
     "1" if BOTTLE_MOTION_MODE == "top_down" else "0",
 ).lower() in {"1", "true", "yes", "on"}
 BOTTLE_GRASP_HEIGHT_FRACTION = float(
-    os.getenv("WRIST_BOTTLE_GRASP_HEIGHT_FRACTION", "0.52")
+    os.getenv("WRIST_BOTTLE_GRASP_HEIGHT_FRACTION", "0.38")
 )
 BOTTLE_GRASP_MIN_ABOVE_BOTTOM_M = float(
     os.getenv("WRIST_BOTTLE_GRASP_MIN_ABOVE_BOTTOM_M", "0.040")
@@ -7854,10 +7854,10 @@ class PiperController(Node):
                 grasp_open,
                 duration=FINAL_DESCENT_DURATION_S,
                 gripper=open_gripper,
-                label="瓶子抓取步骤3：先到预抓取点后，夹爪平行前探到瓶身中部",
+                label="瓶子抓取步骤3：先到预抓取点后，夹爪平行前探到瓶身下半部",
             ) is False:
                 raise RuntimeError(
-                    "瓶子 locked_direct 靠近瓶身中部失败。"
+                    "瓶子 locked_direct 靠近瓶身下半部失败。"
                 )
 
             self.publish_pose_for(
@@ -7968,10 +7968,10 @@ class PiperController(Node):
             target_z=float(grasp_open["z"]),
             duration=FINAL_DESCENT_DURATION_S,
             gripper=open_gripper,
-            label="瓶子抓取步骤4：锁定观察姿态，夹爪张开垂直下降到瓶身中部",
+            label="瓶子抓取步骤4：锁定观察姿态，夹爪张开垂直下降到瓶身下半部",
         ) is False:
             raise RuntimeError(
-                "瓶子垂直下降到瓶身中部失败。"
+                "瓶子垂直下降到瓶身下半部失败。"
             )
 
         self.publish_pose_for(
@@ -8290,7 +8290,7 @@ class PiperController(Node):
                 and BOTTLE_UPRIGHT_SIDE_GRASP
             ):
                 self.get_logger().info(
-                    "已识别为直立瓶子，使用中部斜抓，"
+                    "已识别为直立瓶子，使用下半部斜抓，"
                     "不执行垂直下探路径。"
                 )
                 self.execute_upright_bottle_grasp_path(
