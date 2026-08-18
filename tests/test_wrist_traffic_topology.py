@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import yaml
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -52,11 +54,18 @@ def test_manual_test_script_can_toggle_yolo() -> None:
 
 def test_cpu_yolo_uses_benchmarked_input_size_and_starts_disabled() -> None:
     config = _read("config/perception/wrist_traffic_rules.yaml")
+    parsed_config = yaml.safe_load(config)
     light_node = _read(
         "src/competition_perception/competition_perception/traffic_light_node.py"
     )
 
     assert "inference_image_size: 320" in config
+    assert (
+        parsed_config["traffic_light_recognition"]["ros__parameters"][
+            "inference_period_s"
+        ]
+        >= 1.0
+    )
     assert "self._enabled = False" in light_node
     assert "if not self._enabled:" in light_node
     assert "self.destroy_subscription(self._image_subscription)" in light_node

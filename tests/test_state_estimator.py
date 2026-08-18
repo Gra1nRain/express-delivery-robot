@@ -3,6 +3,8 @@ import pathlib
 import sys
 import unittest
 
+import yaml
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "competition_localization"))
@@ -18,6 +20,34 @@ from competition_localization.state_estimator import (
 
 
 class StateEstimatorTest(unittest.TestCase):
+    def test_competition_profile_accepts_measured_velocity_callback_jitter(
+        self,
+    ) -> None:
+        with (
+            REPO_ROOT / "config" / "control" / "control_params.yaml"
+        ).open(encoding="utf-8") as stream:
+            control = yaml.safe_load(stream)
+        limits = StateEstimatorLimits(
+            pose_timeout_s=float(control["state_estimator"]["pose_timeout_s"]),
+            velocity_timeout_s=float(
+                control["state_estimator"]["velocity_timeout_s"]
+            ),
+        )
+        estimator = StateEstimator(limits)
+
+        estimate = estimator.update(
+            StateObservation(
+                pose=Pose2D(0.0, 0.0, 0.0),
+                velocity=Velocity2D(0.0, 0.0),
+                pose_stamp_s=10.35,
+                velocity_stamp_s=10.0,
+            ),
+            now_s=10.35,
+        )
+
+        self.assertTrue(estimate.valid)
+        self.assertNotIn("stale_velocity", estimate.reasons)
+
     def test_rejects_tf_jump_without_replacing_last_continuous_state(self) -> None:
         estimator = StateEstimator(
             StateEstimatorLimits(

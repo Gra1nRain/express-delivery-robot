@@ -54,7 +54,9 @@ state_estimator:
   map_frame: map
   base_frame: body
   pose_timeout_s: 0.20
-  velocity_timeout_s: 0.20
+  # YOLO preheating shares CPU with MPPI; tolerate measured callback jitter
+  # while still stopping within 0.50 s if Ranger odometry is truly lost.
+  velocity_timeout_s: 0.50
   max_pose_prediction_s: 3.00
   max_position_jump_m: 0.25
   max_heading_jump_deg: 20.0
