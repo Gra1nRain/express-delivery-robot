@@ -415,7 +415,7 @@ class PiperArmBackendTest(unittest.TestCase):
             ):
                 prepare_competition_environment(REPO_ROOT)
 
-            self.assertEqual(os.environ[variable], "-0.410")
+            self.assertEqual(os.environ[variable], "-0.545")
         finally:
             if previous is None:
                 os.environ.pop(variable, None)
