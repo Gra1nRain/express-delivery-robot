@@ -90,7 +90,6 @@ from target_detection_gate import (
 from gripper_hold_guard import (
     GripperHoldGuard,
     choose_bottle_hold_position,
-    evaluate_contact_stability,
 )
 from yolo_runtime import warm_up_yolo_model
 
@@ -659,21 +658,6 @@ BLOCK_GRIPPER_OPEN_WAIT_TIMEOUT_S = float(
 )
 BOTTLE_HOLD_PRELOAD_M = float(
     os.getenv("WRIST_BOTTLE_HOLD_PRELOAD_M", "0.002")
-)
-BLOCK_HOLD_PRELOAD_M = float(
-    os.getenv("WRIST_BLOCK_HOLD_PRELOAD_M", "0.003")
-)
-BLOCK_CONTACT_STABLE_SAMPLES = int(
-    os.getenv("WRIST_BLOCK_CONTACT_STABLE_SAMPLES", "4")
-)
-BLOCK_CONTACT_MAX_SPAN_M = float(
-    os.getenv("WRIST_BLOCK_CONTACT_MAX_SPAN_M", "0.0015")
-)
-BLOCK_CONTACT_MIN_OPENING_M = float(
-    os.getenv("WRIST_BLOCK_CONTACT_MIN_OPENING_M", "0.008")
-)
-BLOCK_CONTACT_WAIT_TIMEOUT_S = float(
-    os.getenv("WRIST_BLOCK_CONTACT_WAIT_TIMEOUT_S", "1.2")
 )
 BLOCK_POST_CLOSE_DWELL_S = float(
     os.getenv("WRIST_BLOCK_POST_CLOSE_DWELL_S", "0.45")
@@ -4957,76 +4941,6 @@ class PiperController(Node):
         )
         return hold_gripper_m
 
-    def resolve_block_post_close_hold_gripper(
-        self,
-        commanded_closed_m,
-        close_started_at,
-    ):
-        deadline = time.monotonic() + max(
-            0.1,
-            BLOCK_CONTACT_WAIT_TIMEOUT_S,
-        )
-        openings_m = []
-        last_feedback_at = None
-        last_effort_nm = None
-        stability = None
-
-        while rclpy.ok() and time.monotonic() <= deadline:
-            feedback = self.get_fresh_gripper_feedback(
-                received_after=close_started_at,
-            )
-            if feedback is not None:
-                opening_m, effort_nm, received_at = feedback
-                if (
-                    last_feedback_at is None
-                    or float(received_at) > float(last_feedback_at)
-                ):
-                    last_feedback_at = float(received_at)
-                    last_effort_nm = effort_nm
-                    openings_m.append(float(opening_m))
-                    stability = evaluate_contact_stability(
-                        openings_m,
-                        min_samples=BLOCK_CONTACT_STABLE_SAMPLES,
-                        max_span_m=BLOCK_CONTACT_MAX_SPAN_M,
-                        min_contact_opening_m=(
-                            BLOCK_CONTACT_MIN_OPENING_M
-                        ),
-                    )
-                    if stability["stable"]:
-                        measured_opening_m = float(
-                            stability["median_opening_m"]
-                        )
-                        hold_gripper_m = choose_bottle_hold_position(
-                            commanded_closed_m,
-                            measured_opening_m,
-                            BLOCK_HOLD_PRELOAD_M,
-                        )
-                        self.get_logger().info(
-                            "方块夹爪接触稳定: "
-                            f"measured={measured_opening_m:.4f}m, "
-                            f"span={float(stability['span_m']):.4f}m, "
-                            f"samples={int(stability['sample_count'])}, "
-                            f"effort={last_effort_nm}, "
-                            f"preload={BLOCK_HOLD_PRELOAD_M:.4f}m, "
-                            f"hold={hold_gripper_m:.4f}m"
-                        )
-                        return hold_gripper_m
-            time.sleep(0.03)
-
-        details = stability or {
-            "sample_count": 0,
-            "median_opening_m": 0.0,
-            "span_m": math.inf,
-        }
-        raise RuntimeError(
-            "方块闭合后未确认稳定接触，禁止抬升: "
-            f"samples={int(details['sample_count'])}, "
-            f"median={float(details['median_opening_m']):.4f}m, "
-            f"span={float(details['span_m']):.4f}m, "
-            f"minimum_contact={BLOCK_CONTACT_MIN_OPENING_M:.4f}m, "
-            f"effort={last_effort_nm}"
-        )
-
     def authorize_gripper_release(self, reason):
         self.gripper_hold_guard.authorize_release(reason)
         self.get_logger().info(f"夹爪持物锁已授权释放: {reason}")
@@ -5312,7 +5226,10 @@ class PiperController(Node):
         msg.roll = float(position_dict["roll"])
         msg.pitch = float(position_dict["pitch"])
         msg.yaw = float(position_dict["yaw"])
-        msg.gripper = float(position_dict["gripper"])
+        msg.gripper = self.apply_gripper_hold(
+            position_dict["gripper"],
+            "Cartesian pose hold",
+        )
         msg.mode1 = 0x01
         msg.mode2 = 0x00
 
@@ -7750,18 +7667,17 @@ class PiperController(Node):
             )
             return False
 
-        close_started_at = time.monotonic()
         if self.publish_pose_for(
             grasp_closed,
             duration=GRASP_CLOSE_DWELL_S,
         ) is False:
             raise RuntimeError("方块夹爪闭合失败。")
-        closed_gripper = self.resolve_block_post_close_hold_gripper(
-            closed_gripper,
-            close_started_at,
-        )
-        grasp_closed["gripper"] = closed_gripper
         self.activate_gripper_hold_for_current_target(closed_gripper)
+        self.get_logger().info(
+            "方块夹爪强制闭合保持: "
+            f"target={closed_gripper:.4f}m；"
+            "放置释放前不根据反馈增大开度。"
+        )
         if self.publish_pose_for(
             grasp_closed,
             duration=BLOCK_POST_CLOSE_DWELL_S,
