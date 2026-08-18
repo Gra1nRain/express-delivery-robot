@@ -31,6 +31,23 @@ class BlockGraspPlannerTest(unittest.TestCase):
         self.assertAlmostEqual(candidates[0]["yaw_deg"], 41.339)
         self.assertAlmostEqual(candidates[1]["yaw_deg"], -138.661)
 
+    def test_builds_near_axis_fallback_yaws(self):
+        candidates = build_block_rpy_candidates(
+            roll_deg=-179.449,
+            fallback_yaw_deg=90.183,
+            object_yaw_deg=-26.665,
+            pitch_candidates_deg=(30.0,),
+            yaw_offset_candidates_deg=(0.0, -20.0, 20.0),
+        )
+
+        self.assertEqual(len(candidates), 6)
+        self.assertEqual(
+            [candidate["yaw_offset_deg"] for candidate in candidates],
+            [0.0, 0.0, -20.0, -20.0, 20.0, 20.0],
+        )
+        self.assertAlmostEqual(candidates[2]["yaw_deg"], -46.665)
+        self.assertAlmostEqual(candidates[3]["yaw_deg"], 133.335)
+
     def test_pregrasp_backs_away_along_tool_axis(self):
         grasp_pose = {
             "x": 0.0822,
@@ -106,6 +123,39 @@ class BlockGraspPlannerTest(unittest.TestCase):
                 ],
                 minimum_joint_margin_rad=0.15,
             )
+
+    def test_prefers_smallest_safe_yaw_offset_before_extra_margin(self):
+        selected = choose_reachable_block_candidate(
+            [
+                {
+                    "name": "axis_aligned_but_unsafe",
+                    "pitch_deg": 30.0,
+                    "yaw_offset_deg": 0.0,
+                    "minimum_joint_margin_rad": 0.10,
+                    "max_joint_step_rad": 0.010,
+                    "max_joint_travel_rad": 1.0,
+                },
+                {
+                    "name": "offset_20_safe",
+                    "pitch_deg": 30.0,
+                    "yaw_offset_deg": -20.0,
+                    "minimum_joint_margin_rad": 0.20,
+                    "max_joint_step_rad": 0.010,
+                    "max_joint_travel_rad": 1.2,
+                },
+                {
+                    "name": "offset_30_more_margin",
+                    "pitch_deg": 30.0,
+                    "yaw_offset_deg": -30.0,
+                    "minimum_joint_margin_rad": 0.40,
+                    "max_joint_step_rad": 0.008,
+                    "max_joint_travel_rad": 1.1,
+                },
+            ],
+            minimum_joint_margin_rad=0.15,
+        )
+
+        self.assertEqual(selected["name"], "offset_20_safe")
 
 
 if __name__ == "__main__":

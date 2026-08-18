@@ -547,6 +547,16 @@ if not BLOCK_TERMINAL_PITCH_CANDIDATES_DEG:
     raise RuntimeError(
         "WRIST_BLOCK_TERMINAL_PITCH_CANDIDATES_DEG 不能为空"
     )
+BLOCK_TERMINAL_YAW_OFFSETS_DEG = tuple(
+    parse_env_float_list(
+        "WRIST_BLOCK_TERMINAL_YAW_OFFSETS_DEG",
+        [0.0, -20.0, 20.0],
+    )
+)
+if not BLOCK_TERMINAL_YAW_OFFSETS_DEG:
+    raise RuntimeError(
+        "WRIST_BLOCK_TERMINAL_YAW_OFFSETS_DEG 不能为空"
+    )
 BLOCK_FINAL_APPROACH_M = float(
     os.getenv("WRIST_BLOCK_FINAL_APPROACH_M", "0.060")
 )
@@ -7169,6 +7179,9 @@ class PiperController(Node):
             pitch_candidates_deg=(
                 BLOCK_TERMINAL_PITCH_CANDIDATES_DEG
             ),
+            yaw_offset_candidates_deg=(
+                BLOCK_TERMINAL_YAW_OFFSETS_DEG
+            ),
         )
         evaluations = []
         failures = []
@@ -7328,6 +7341,7 @@ class PiperController(Node):
             f"{selected['pitch_deg']:.1f}, "
             f"{selected['yaw_deg']:.1f}), "
             f"yaw_source={selected['yaw_source']}, "
+            f"yaw_offset={selected['yaw_offset_deg']:.1f}deg, "
             f"joint_margin="
             f"{selected['minimum_joint_margin_rad']:.3f}rad, "
             f"move_j_travel="

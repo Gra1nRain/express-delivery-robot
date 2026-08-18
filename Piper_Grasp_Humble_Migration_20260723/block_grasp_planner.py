@@ -27,35 +27,39 @@ def build_block_rpy_candidates(
     fallback_yaw_deg,
     object_yaw_deg,
     pitch_candidates_deg,
+    yaw_offset_candidates_deg=(0.0,),
 ):
     primary_yaw = (
         float(fallback_yaw_deg)
         if object_yaw_deg is None
         else float(object_yaw_deg)
     )
-    yaw_candidates = (
-        _wrap_degrees(primary_yaw),
-        _wrap_degrees(primary_yaw + 180.0),
-    )
     candidates = []
     for pitch_deg in pitch_candidates_deg:
-        for yaw_deg in yaw_candidates:
-            candidates.append(
-                {
-                    "name": (
-                        f"pitch_{float(pitch_deg):.1f}_"
-                        f"yaw_{float(yaw_deg):.1f}"
-                    ),
-                    "roll_deg": float(roll_deg),
-                    "pitch_deg": float(pitch_deg),
-                    "yaw_deg": float(yaw_deg),
-                    "yaw_source": (
-                        "object_axis"
-                        if object_yaw_deg is not None
-                        else "calibrated_fallback"
-                    ),
-                }
+        for yaw_offset_deg in yaw_offset_candidates_deg:
+            offset_yaw = primary_yaw + float(yaw_offset_deg)
+            yaw_candidates = (
+                _wrap_degrees(offset_yaw),
+                _wrap_degrees(offset_yaw + 180.0),
             )
+            for yaw_deg in yaw_candidates:
+                candidates.append(
+                    {
+                        "name": (
+                            f"pitch_{float(pitch_deg):.1f}_"
+                            f"yaw_{float(yaw_deg):.1f}"
+                        ),
+                        "roll_deg": float(roll_deg),
+                        "pitch_deg": float(pitch_deg),
+                        "yaw_deg": float(yaw_deg),
+                        "yaw_offset_deg": float(yaw_offset_deg),
+                        "yaw_source": (
+                            "object_axis"
+                            if object_yaw_deg is not None
+                            else "calibrated_fallback"
+                        ),
+                    }
+                )
     return candidates
 
 
@@ -112,6 +116,7 @@ def choose_reachable_block_candidate(
     return min(
         accepted,
         key=lambda evaluation: (
+            abs(float(evaluation.get("yaw_offset_deg", 0.0))),
             abs(float(evaluation["pitch_deg"])),
             -float(evaluation["minimum_joint_margin_rad"]),
             float(evaluation["max_joint_step_rad"]),
