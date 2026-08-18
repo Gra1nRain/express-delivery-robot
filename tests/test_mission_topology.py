@@ -145,7 +145,7 @@ class MissionTopologyTest(unittest.TestCase):
         self.assertIn('"start_competition_mission": "true"', launch)
         self.assertIn('"start_wrist_traffic_perception": "true"', launch)
 
-    def test_manual_field_runbook_matches_motion_gates_and_trajectory_start(self) -> None:
+    def test_manual_field_runbook_uses_calibrated_physical_start_pose(self) -> None:
         runbook = (
             REPO_ROOT / "docs" / "competition_mission_manual_field_test.md"
         ).read_text(encoding="utf-8")
@@ -168,10 +168,24 @@ class MissionTopologyTest(unittest.TestCase):
             "arm_post_instruction_clear_delay_s:=10.0",
         ):
             self.assertIn(gate, runbook)
-        self.assertIn(f"x: {start['x']:.3f}", runbook)
-        self.assertIn(f"y: {start['y']:.3f}", runbook)
-        self.assertIn(f"z: {math.sin(start['yaw'] / 2.0):.7f}", runbook)
-        self.assertIn(f"w: {math.cos(start['yaw'] / 2.0):.5f}", runbook)
+        calibrated_start = {"x": -0.416, "y": 0.464, "yaw": 0.0}
+        self.assertIn(
+            "position: {x: -0.416, y: 0.464, z: 0.0}",
+            runbook,
+        )
+        self.assertIn(
+            "orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}",
+            runbook,
+        )
+        self.assertIn("固定物理起点", runbook)
+        self.assertIn("不是轨迹 YAML 的首点", runbook)
+        self.assertGreater(
+            math.hypot(
+                calibrated_start["x"] - start["x"],
+                calibrated_start["y"] - start["y"],
+            ),
+            0.30,
+        )
         self.assertIn("export CAN_NAME=can2", runbook)
         self.assertIn("export PIPER_CAN_NAME=can2", runbook)
         self.assertIn(
