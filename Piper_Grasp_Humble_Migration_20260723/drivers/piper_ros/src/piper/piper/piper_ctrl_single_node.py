@@ -20,6 +20,12 @@ from builtin_interfaces.msg import Time
 
 MAX_GRIPPER_POSITION_UM = 100000
 
+
+def update_gripper_command_latch(last_command, gripper_um, effort_milli_nm):
+    command = (int(abs(gripper_um)), int(effort_milli_nm))
+    return command != last_command, command
+
+
 class PiperRosNode(Node):
     """ROS2 node for the robotic arm"""
 
@@ -70,6 +76,7 @@ class PiperRosNode(Node):
         self.joint_ctrl.effort = [0.0] * 7
         # Enable flag
         self.__enable_flag = False
+        self._last_gripper_command = None
         # Create piper class and open CAN interface
         self.piper = C_PiperInterface(can_name=self.can_port)
         self.piper.ConnectPort()
@@ -90,6 +97,18 @@ class PiperRosNode(Node):
 
     def GetEnableFlag(self):
         return self.__enable_flag
+
+    def send_gripper_command_if_changed(self, gripper_um, effort_milli_nm):
+        should_send, command = update_gripper_command_latch(
+            self._last_gripper_command,
+            gripper_um,
+            effort_milli_nm,
+        )
+        if not should_send:
+            return False
+        self.piper.GripperCtrl(command[0], command[1], 0x01, 0)
+        self._last_gripper_command = command
+        return True
 
     def prepare_move_j_callback(self, request):
         """Exit drag-teach and enter CAN MOVE_J without sending a target."""
@@ -307,7 +326,7 @@ class PiperRosNode(Node):
                 )
             )
             if self.gripper_exist:
-                self.piper.GripperCtrl(abs(gripper), 1000, 0x01, 0)
+                self.send_gripper_command_if_changed(gripper, 1000)
 
     def joint_callback(self, joint_data):
         """Callback function for joint angles
@@ -376,9 +395,12 @@ class PiperRosNode(Node):
                     else:
                         # self.get_logger().warning("Gripper effort is NaN, using default value.")
                         gripper_effort = 1000  # 设置默认值
-                    self.piper.GripperCtrl(abs(joint_6), gripper_effort, 0x01, 0)
+                    self.send_gripper_command_if_changed(
+                        joint_6,
+                        gripper_effort,
+                    )
                 else:
-                    self.piper.GripperCtrl(abs(joint_6), 1000, 0x01, 0)
+                    self.send_gripper_command_if_changed(joint_6, 1000)
 
 
     def enable_callback(self, enable_flag: Bool):

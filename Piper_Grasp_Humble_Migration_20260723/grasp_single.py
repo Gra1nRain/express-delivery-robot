@@ -4726,33 +4726,7 @@ class PiperController(Node):
         防止只根据残留的话题名称误判相机在线。
         """
         try:
-            result = subprocess.run(
-                [
-                    "ros2",
-                    "topic",
-                    "info",
-                    topic_name,
-                    "--no-daemon",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=4.0,
-                check=False,
-            )
-
-            if result.returncode != 0:
-                return False
-
-            for line in result.stdout.splitlines():
-                stripped = line.strip()
-                if stripped.startswith("Publisher count:"):
-                    count_text = stripped.split(":", 1)[1].strip()
-                    try:
-                        return int(count_text) > 0
-                    except ValueError:
-                        return False
-
-            return False
+            return self.count_publishers(topic_name) > 0
 
         except Exception:
             return False
