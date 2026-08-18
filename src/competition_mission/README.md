@@ -28,3 +28,7 @@ ros2 launch competition_bringup indoor_competition.launch.py
 底盘或机械臂。真实机械臂联调时显式设置 `start_real_arm:=true`，且不得同时启动
 `start_arm_simulator`。实车联调必须继续遵守项目关于初始位姿、人工确认和运动许可的
 规则。
+
+红绿灯提前 `1.0 m` 的语义标记只开启视觉预热，小车继续驶向真实停止点；到达
+`traffic_light_stop_line` 后状态机才独立启用灯态停车约束。绿灯或 `15 s` 无结果
+放行时，状态机会先解除停车约束，再关闭红绿灯推理并放行到取货点。

@@ -66,8 +66,9 @@ stateDiagram-v2
 - 挥旗事件只在 `WAIT_START_FLAG` 有效，收到后启动路线。
 - 挥旗感知在首次确认后自行锁存 `DONE`，不再运行挥旗检测；相机节点保持共享常驻。
 - 距红绿灯停车点 `1.0 m` 时发布非停车标记
-  `traffic_light_vision_on`，仅开启算法，不改变规划或避障。
-- 红绿灯点满足位置、航向、速度和稳定时间后进入等待。稳定绿灯立即放行；
+  `traffic_light_vision_on`，仅预热识别算法；此时停车约束仍关闭，不改变规划或避障。
+- 红绿灯点满足位置、航向、速度和稳定时间后进入等待，并单独开启停车约束。
+  稳定绿灯立即放行；
   `RED/YELLOW` 重置连续无结果计时；`UNKNOWN/OFF` 连续 `15 s` 后降级放行。
 - `PICKUP` 先识别图片并锁定目标类型，再识别实物、抓取并确认持物。只有带目标类型
   的确认成功结果会设置 `has_cargo=true`。
@@ -90,6 +91,7 @@ stateDiagram-v2
 | 输出 | `/mission/route_enable` | `std_msgs/Bool` | 挥旗后的路线总使能 |
 | 输出 | `/mission/checkpoint_release` | `std_msgs/String` | 显式选择并放行下一停车点 |
 | 输出 | `/perception/traffic_light_enable` | `std_msgs/Bool` | 按阶段启停红绿灯推理 |
+| 输出 | `/perception/traffic_stop_enable` | `std_msgs/Bool` | 仅在真实红绿灯停止点启用灯态停车约束 |
 | 输出 | `/mission/status` | `std_msgs/String` JSON | 当前状态、货物和机械臂任务 |
 | 双向 | `/mission/arm_task` | `competition_interfaces/action/ArmTask` | 常驻机械臂任务 |
 

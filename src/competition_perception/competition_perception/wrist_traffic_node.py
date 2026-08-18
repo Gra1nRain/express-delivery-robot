@@ -45,6 +45,7 @@ class WristTrafficPerceptionNode(Node):
         self._last_light_observation: str | None = None
         self._last_light_bbox: tuple[int, int, int, int] | None = None
         self._traffic_active = False
+        self._traffic_stop_enabled = False
         self._bridge = CvBridge()
 
         self._flag_color = RedFlagColorDetector(
@@ -101,6 +102,11 @@ class WristTrafficPerceptionNode(Node):
                 "light_active_topic", "/perception/traffic_light_active"
             ).value
         )
+        stop_enable_topic = str(
+            self.declare_parameter(
+                "traffic_stop_enable_topic", "/perception/traffic_stop_enable"
+            ).value
+        )
         reset_topic = str(
             self.declare_parameter(
                 "flag_reset_topic", "/perception/flag_reset"
@@ -145,6 +151,12 @@ class WristTrafficPerceptionNode(Node):
             self._light_active_callback,
             _event_qos(),
         )
+        self.create_subscription(
+            Bool,
+            stop_enable_topic,
+            self._traffic_stop_enable_callback,
+            _event_qos(),
+        )
         self.create_subscription(Bool, reset_topic, self._flag_reset_callback, 10)
         self.create_timer(0.10, self._publish_state)
         self._flag_publisher.publish(Bool(data=False))
@@ -187,12 +199,17 @@ class WristTrafficPerceptionNode(Node):
         self._last_light_confidence = 0.0
         self._last_light_bbox = None
 
+    def _traffic_stop_enable_callback(self, message: Bool) -> None:
+        self._traffic_stop_enabled = bool(message.data)
+        self._rules.set_traffic_stop_enabled(self._traffic_stop_enabled)
+
     def _flag_reset_callback(self, message: Bool) -> None:
         if not message.data:
             return
         self._flag_wave.reset()
         self._rules.reset()
         self._traffic_active = False
+        self._traffic_stop_enabled = False
         self._last_light_observation = None
         self._last_light_confidence = 0.0
         self._last_light_bbox = None
@@ -332,6 +349,7 @@ class WristTrafficPerceptionNode(Node):
                         "started": decision.started,
                         "flag_active": not decision.started,
                         "traffic_active": self._traffic_active,
+                        "traffic_stop_enabled": self._traffic_stop_enabled,
                         "light": decision.light.value,
                         "light_confidence": round(self._last_light_confidence, 4),
                         "flag_state": self._flag_wave.state.value,

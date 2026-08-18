@@ -22,9 +22,10 @@ ros2 launch competition_perception wrist_traffic.launch.py
 对齐深度和 camera_info 是否都有发布者；三路健康时保留相机并直接复用。
 
 规则为：未识别到红色移动时停车；红色目标明显移动后允许发车。YOLO 默认关闭，
-到达红绿灯识别点后向 `/perception/traffic_light_enable` 发布 `true` 才开始推理；
-启用后在得到稳定结果前停车，红灯、黄灯和灭灯停车，连续确认绿灯后恢复。
-离开识别阶段发布 `false`。相机断流时停车。
+距红绿灯停止点 `1.0 m` 时向 `/perception/traffic_light_enable` 发布 `true` 预热推理，
+但不停车。到达真实停止点后再向 `/perception/traffic_stop_enable` 发布 `true`：此后
+稳定结果产生前停车，红灯、黄灯和灭灯停车，连续确认绿灯后恢复。离开识别阶段时
+两个开关都发布 `false`。相机断流时停车。
 
 现场独立测试可以复用一键脚本：
 

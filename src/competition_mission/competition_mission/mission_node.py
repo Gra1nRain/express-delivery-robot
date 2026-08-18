@@ -94,6 +94,16 @@ class CompetitionMissionNode(Node):
             ),
             10,
         )
+        self._traffic_stop_enable_publisher = self.create_publisher(
+            Bool,
+            str(
+                self.declare_parameter(
+                    "traffic_stop_enable_topic",
+                    "/perception/traffic_stop_enable",
+                ).value
+            ),
+            _state_qos(),
+        )
         self._status_publisher = self.create_publisher(
             String,
             str(
@@ -172,6 +182,7 @@ class CompetitionMissionNode(Node):
 
         self._route_enable_publisher.publish(Bool(data=False))
         self._traffic_enable_publisher.publish(Bool(data=False))
+        self._traffic_stop_enable_publisher.publish(Bool(data=False))
         self._publish_status(self._machine.snapshot)
         self.get_logger().info(
             f"Mission ready in {self._machine.snapshot.state.value}; "
@@ -249,6 +260,10 @@ class CompetitionMissionNode(Node):
                 self._traffic_enable_publisher.publish(
                     Bool(data=bool(command.enabled))
                 )
+            elif command.command_type == CommandType.SET_TRAFFIC_STOP_ENABLED:
+                self._traffic_stop_enable_publisher.publish(
+                    Bool(data=bool(command.enabled))
+                )
             elif command.command_type == CommandType.RELEASE_TO_CHECKPOINT:
                 assert command.checkpoint_ref is not None
                 self._checkpoint_release_publisher.publish(
@@ -263,6 +278,7 @@ class CompetitionMissionNode(Node):
             elif command.command_type == CommandType.MISSION_FINISHED:
                 self._route_enable_publisher.publish(Bool(data=False))
                 self._traffic_enable_publisher.publish(Bool(data=False))
+                self._traffic_stop_enable_publisher.publish(Bool(data=False))
 
     def _start_arm_task(self, request: ArmTaskRequest) -> None:
         if not self._arm_client.server_is_ready():
@@ -428,6 +444,7 @@ def main() -> None:
         if rclpy.ok():
             node._route_enable_publisher.publish(Bool(data=False))
             node._traffic_enable_publisher.publish(Bool(data=False))
+            node._traffic_stop_enable_publisher.publish(Bool(data=False))
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

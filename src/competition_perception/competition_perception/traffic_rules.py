@@ -119,6 +119,7 @@ class TrafficRuleController:
         self._candidate = LightState.UNKNOWN
         self._candidate_count = 0
         self._traffic_active = False
+        self._traffic_stop_enabled = False
         self._stop_required = True
         self._reason = "waiting_for_flag"
 
@@ -133,16 +134,19 @@ class TrafficRuleController:
 
     def observe_flag_wave(self) -> TrafficDecision:
         self._started = True
-        if self._traffic_active and self._light in (
+        if self._traffic_stop_enabled and self._light in (
             LightState.RED,
             LightState.YELLOW,
             LightState.OFF,
         ):
             self._stop_required = True
             self._reason = f"traffic_{self._light.value}"
-        elif self._traffic_active:
+        elif self._traffic_stop_enabled:
             self._stop_required = True
             self._reason = "traffic_pending"
+        elif self._traffic_active:
+            self._stop_required = False
+            self._reason = "traffic_preheating"
         else:
             self._stop_required = False
             self._reason = "flag_start"
@@ -153,15 +157,42 @@ class TrafficRuleController:
         self._light = LightState.UNKNOWN
         self._candidate = LightState.UNKNOWN
         self._candidate_count = 0
+        if not self._traffic_active:
+            self._traffic_stop_enabled = False
         if not self._started:
             self._stop_required = True
             self._reason = "waiting_for_flag"
-        elif self._traffic_active:
+        elif self._traffic_stop_enabled:
             self._stop_required = True
             self._reason = "traffic_pending"
+        elif self._traffic_active:
+            self._stop_required = False
+            self._reason = "traffic_preheating"
         else:
             self._stop_required = False
             self._reason = "traffic_inactive"
+        return self.decision
+
+    def set_traffic_stop_enabled(self, enabled: bool) -> TrafficDecision:
+        self._traffic_stop_enabled = bool(enabled)
+        if not self._started:
+            self._stop_required = True
+            self._reason = "waiting_for_flag"
+        elif not self._traffic_active:
+            self._stop_required = False
+            self._reason = "traffic_inactive"
+        elif not self._traffic_stop_enabled:
+            self._stop_required = False
+            self._reason = "traffic_preheating"
+        elif self._light == LightState.GREEN:
+            self._stop_required = False
+            self._reason = "traffic_green"
+        elif self._light in (LightState.RED, LightState.YELLOW, LightState.OFF):
+            self._stop_required = True
+            self._reason = f"traffic_{self._light.value}"
+        else:
+            self._stop_required = True
+            self._reason = "traffic_pending"
         return self.decision
 
     def observe_light(self, class_name: str | None) -> TrafficDecision:
@@ -184,6 +215,9 @@ class TrafficRuleController:
         if not self._started:
             self._stop_required = True
             self._reason = "waiting_for_flag"
+        elif not self._traffic_stop_enabled:
+            self._stop_required = False
+            self._reason = "traffic_preheating"
         elif observation == LightState.GREEN:
             self._stop_required = False
             self._reason = "traffic_green"

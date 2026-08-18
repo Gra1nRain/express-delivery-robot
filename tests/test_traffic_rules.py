@@ -109,7 +109,11 @@ class TrafficRuleControllerTest(unittest.TestCase):
         started = rules.observe_flag_wave()
         self.assertFalse(started.stop_required)
 
-        pending = rules.set_traffic_active(True)
+        preheating = rules.set_traffic_active(True)
+        self.assertFalse(preheating.stop_required)
+        self.assertEqual(preheating.reason, "traffic_preheating")
+
+        pending = rules.set_traffic_stop_enabled(True)
         self.assertTrue(pending.stop_required)
         self.assertEqual(pending.reason, "traffic_pending")
 
@@ -133,10 +137,22 @@ class TrafficRuleControllerTest(unittest.TestCase):
         self.assertFalse(decision.started)
         self.assertEqual(decision.reason, "waiting_for_flag")
 
+    def test_stop_enable_is_latched_if_it_arrives_before_vision_active(self) -> None:
+        rules = TrafficRuleController(confirm_frames=1)
+        rules.observe_flag_wave()
+
+        before_vision = rules.set_traffic_stop_enabled(True)
+        pending = rules.set_traffic_active(True)
+
+        self.assertFalse(before_vision.stop_required)
+        self.assertTrue(pending.stop_required)
+        self.assertEqual(pending.reason, "traffic_pending")
+
     def test_single_frame_false_positive_is_ignored(self) -> None:
         rules = TrafficRuleController(confirm_frames=3)
         rules.observe_flag_wave()
         rules.set_traffic_active(True)
+        rules.set_traffic_stop_enabled(True)
 
         rules.observe_light("red")
         decision = rules.observe_light(None)
@@ -151,6 +167,7 @@ class TrafficRuleControllerTest(unittest.TestCase):
                 rules = TrafficRuleController(confirm_frames=1)
                 rules.observe_flag_wave()
                 rules.set_traffic_active(True)
+                rules.set_traffic_stop_enabled(True)
                 decision = rules.observe_light(observation)
                 self.assertTrue(decision.stop_required)
 

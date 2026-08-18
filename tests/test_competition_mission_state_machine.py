@@ -59,11 +59,20 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
         )
         light = self.command(decision, CommandType.SET_TRAFFIC_LIGHT_ENABLED)
         self.assertTrue(light.enabled)
+        self.assertFalse(
+            any(
+                command.command_type
+                == CommandType.SET_TRAFFIC_STOP_ENABLED
+                for command in decision.commands
+            )
+        )
 
         decision = self.machine.handle(
             CheckpointReady(now_s=3.0, checkpoint_ref="traffic_light_stop_line")
         )
         self.assertEqual(decision.state, MissionState.WAIT_TRAFFIC_LIGHT)
+        stop = self.command(decision, CommandType.SET_TRAFFIC_STOP_ENABLED)
+        self.assertTrue(stop.enabled)
 
     def release_from_traffic(self, now_s: float = 4.0) -> None:
         decision = self.machine.handle(
@@ -74,6 +83,8 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
         self.assertEqual(release.checkpoint_ref, "pickup_front")
         light = self.command(decision, CommandType.SET_TRAFFIC_LIGHT_ENABLED)
         self.assertFalse(light.enabled)
+        stop = self.command(decision, CommandType.SET_TRAFFIC_STOP_ENABLED)
+        self.assertFalse(stop.enabled)
 
     def start_arm_at(self, checkpoint_ref: str, now_s: float):
         decision = self.machine.handle(
@@ -118,6 +129,30 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
             self.command(
                 decision, CommandType.SET_TRAFFIC_LIGHT_ENABLED
             ).enabled
+        )
+        self.assertFalse(
+            any(
+                command.command_type
+                == CommandType.SET_TRAFFIC_STOP_ENABLED
+                for command in decision.commands
+            )
+        )
+
+    def test_stop_checkpoint_enables_vision_and_stop_if_marker_was_missed(self) -> None:
+        self.machine.handle(FlagDetected(now_s=1.0))
+
+        decision = self.machine.handle(
+            CheckpointReady(now_s=3.0, checkpoint_ref="traffic_light_stop_line")
+        )
+
+        self.assertEqual(decision.state, MissionState.WAIT_TRAFFIC_LIGHT)
+        self.assertTrue(
+            self.command(
+                decision, CommandType.SET_TRAFFIC_LIGHT_ENABLED
+            ).enabled
+        )
+        self.assertTrue(
+            self.command(decision, CommandType.SET_TRAFFIC_STOP_ENABLED).enabled
         )
 
     def test_front_pickup_and_front_drop_success_skip_both_rear_stops(self) -> None:

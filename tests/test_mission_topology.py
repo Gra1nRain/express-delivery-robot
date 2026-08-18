@@ -47,6 +47,7 @@ class MissionTopologyTest(unittest.TestCase):
 
         self.assertIn('"/mission/checkpoint_release"', node)
         self.assertIn('"/perception/traffic_light_enable"', node)
+        self.assertIn('"/perception/traffic_stop_enable"', node)
         self.assertIn("ActionClient", node)
         self.assertIn("ArmTask", node)
 

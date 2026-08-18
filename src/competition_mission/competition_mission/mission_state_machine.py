@@ -54,6 +54,7 @@ class ArmOutcome(str, Enum):
 class CommandType(str, Enum):
     SET_ROUTE_ENABLED = "SET_ROUTE_ENABLED"
     SET_TRAFFIC_LIGHT_ENABLED = "SET_TRAFFIC_LIGHT_ENABLED"
+    SET_TRAFFIC_STOP_ENABLED = "SET_TRAFFIC_STOP_ENABLED"
     RELEASE_TO_CHECKPOINT = "RELEASE_TO_CHECKPOINT"
     START_ARM_TASK = "START_ARM_TASK"
     CANCEL_ARM_TASK = "CANCEL_ARM_TASK"
@@ -278,14 +279,25 @@ class CompetitionMissionStateMachine:
                 event.now_s + self.config.traffic_no_result_timeout_s
             )
             if self._traffic_enabled:
-                return self._decision()
+                return self._decision(
+                    MissionCommand(
+                        command_type=CommandType.SET_TRAFFIC_STOP_ENABLED,
+                        enabled=True,
+                        reason="traffic_stop_reached",
+                    )
+                )
             self._traffic_enabled = True
             return self._decision(
                 MissionCommand(
                     command_type=CommandType.SET_TRAFFIC_LIGHT_ENABLED,
                     enabled=True,
                     reason="traffic_stop_reached_before_marker",
-                )
+                ),
+                MissionCommand(
+                    command_type=CommandType.SET_TRAFFIC_STOP_ENABLED,
+                    enabled=True,
+                    reason="traffic_stop_reached",
+                ),
             )
         if (
             self._state == MissionState.RUN_TO_PICKUP_FRONT
@@ -521,6 +533,11 @@ class CompetitionMissionStateMachine:
         self._traffic_enabled = False
         self._transition(MissionState.RUN_TO_PICKUP_FRONT, now_s)
         return self._decision(
+            MissionCommand(
+                command_type=CommandType.SET_TRAFFIC_STOP_ENABLED,
+                enabled=False,
+                reason=reason,
+            ),
             MissionCommand(
                 command_type=CommandType.SET_TRAFFIC_LIGHT_ENABLED,
                 enabled=False,
