@@ -10,6 +10,7 @@ sys.path.insert(0, str(REPO_ROOT / "src" / "competition_mission"))
 
 from competition_mission.arm_recognition_visualizer import (
     compose_arm_recognition_frame,
+    describe_arm_recognition_stage,
     select_arm_recognition_source,
 )
 
@@ -53,6 +54,30 @@ class ArmRecognitionVisualizerTest(unittest.TestCase):
         self.assertIs(selected, self.raw)
         self.assertEqual(source, "LIVE_CAMERA")
 
+    def test_semantic_stage_distinguishes_image_and_object_recognition(self) -> None:
+        self.assertEqual(
+            describe_arm_recognition_stage(
+                "RECOGNIZING_INSTRUCTION", "PICKUP"
+            ),
+            "INSTRUCTION IMAGE RECOGNITION",
+        )
+        self.assertEqual(
+            describe_arm_recognition_stage(
+                "SEARCHING_TARGET_OBJECT", "PICKUP"
+            ),
+            "TARGET OBJECT RECOGNITION",
+        )
+
+    def test_semantic_stage_names_pickup_and_drop_execution(self) -> None:
+        self.assertEqual(
+            describe_arm_recognition_stage("OPERATING", "PICKUP"),
+            "PICKUP IN PROGRESS",
+        )
+        self.assertEqual(
+            describe_arm_recognition_stage("OPERATING", "DROP"),
+            "DROP IN PROGRESS",
+        )
+
     def test_composition_adds_status_banner_without_mutating_source(self) -> None:
         before = self.object.copy()
 
@@ -66,10 +91,10 @@ class ArmRecognitionVisualizerTest(unittest.TestCase):
             status="RUNNING",
         )
 
-        self.assertEqual(result.shape, (144, 64, 3))
+        self.assertEqual(result.shape, (172, 64, 3))
         np.testing.assert_array_equal(self.object, before)
-        self.assertGreater(int(result[:96].max()), 0)
-        np.testing.assert_array_equal(result[96:], self.object)
+        self.assertGreater(int(result[:124].max()), 0)
+        np.testing.assert_array_equal(result[124:], self.object)
 
 
 if __name__ == "__main__":

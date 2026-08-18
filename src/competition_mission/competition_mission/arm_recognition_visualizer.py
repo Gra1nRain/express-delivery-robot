@@ -12,7 +12,7 @@ except ImportError:  # Pure tests may run without the ROS/OpenCV runtime.
     cv2 = None
 
 
-_BANNER_HEIGHT_PX = 96
+_BANNER_HEIGHT_PX = 124
 _INSTRUCTION_PHASES = {
     "RECOGNIZING_INSTRUCTION",
     "TARGET_TYPE_LOCKED",
@@ -22,6 +22,29 @@ _OBJECT_PHASES = {
     "OPERATING",
     "VERIFYING_OPERATION",
 }
+
+
+def describe_arm_recognition_stage(phase: str, task_type: str) -> str:
+    """Return an operator-facing stage instead of a raw state-machine name."""
+    phase_name = str(phase).strip().upper()
+    task_name = str(task_type).strip().upper()
+    if phase_name == "STARTUP_TRANSIT":
+        return "MOVING TO STANDBY POSE"
+    if phase_name == "IDLE":
+        return "READY"
+    if phase_name == "MOVING_TO_INSTRUCTION_POSE":
+        return "MOVING TO IMAGE POSE"
+    if phase_name == "RECOGNIZING_INSTRUCTION":
+        return "INSTRUCTION IMAGE RECOGNITION"
+    if phase_name == "TARGET_TYPE_LOCKED":
+        return "INSTRUCTION TARGET LOCKED"
+    if phase_name == "SEARCHING_TARGET_OBJECT":
+        return "TARGET OBJECT RECOGNITION"
+    if phase_name == "OPERATING":
+        return f"{task_name or 'ARM'} IN PROGRESS"
+    if phase_name == "VERIFYING_OPERATION":
+        return f"VERIFYING {task_name or 'ARM'} RESULT"
+    return phase_name or "IDLE"
 
 
 def select_arm_recognition_source(
@@ -63,26 +86,40 @@ def compose_arm_recognition_frame(
         frame = frame.copy()
 
     banner = np.zeros((_BANNER_HEIGHT_PX, frame.shape[1], 3), dtype=np.uint8)
+    stage = describe_arm_recognition_stage(phase, task_type)
     lines = (
         f"ARM: {str(task_type).strip() or 'IDLE'}  STATUS: {str(status).strip() or 'IDLE'}",
+        f"STAGE: {stage}",
         f"PHASE: {str(phase).strip() or 'IDLE'}",
         (
             f"TARGET: {str(target_type).strip() or '-'}  "
             f"ATTEMPT: {max(0, int(attempt))}  VIEW: {str(source).strip()}"
         ),
     )
-    colors = ((255, 255, 255), (0, 255, 255), (0, 255, 0))
+    stage_color = (
+        (0, 255, 255)
+        if "IMAGE" in stage
+        else (0, 165, 255)
+        if "OBJECT" in stage
+        else (0, 255, 0)
+    )
+    colors = (
+        (255, 255, 255),
+        stage_color,
+        (200, 200, 200),
+        (0, 255, 0),
+    )
     if cv2 is None:
         for index, color in enumerate(colors):
-            banner[10 + index * 29 : 14 + index * 29, 5:-5] = color
+            banner[8 + index * 28 : 12 + index * 28, 5:-5] = color
     else:
         for index, (line, color) in enumerate(zip(lines, colors)):
             cv2.putText(
                 banner,
                 line,
-                (10, 25 + index * 29),
+                (10, 24 + index * 28),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.58,
+                0.65 if index == 1 else 0.52,
                 color,
                 2,
                 cv2.LINE_AA,

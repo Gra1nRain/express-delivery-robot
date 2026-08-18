@@ -91,8 +91,10 @@ ros2 run rqt_image_view rqt_image_view
 ```
 
 机械臂识别测试优先在下拉框选择
-`/perception/arm_recognition_annotated`。该画面顶部显示任务、阶段、目标类型、
-尝试次数和当前画面来源；下方复用机械臂已有的图纸 YOLO 或实物深度分割标注，
+`/perception/arm_recognition_annotated`。该画面顶部显示任务、目标类型、尝试次数、
+当前画面来源，以及醒目的语义阶段：`INSTRUCTION IMAGE RECOGNITION` 表示识别
+指令图片，`TARGET OBJECT RECOGNITION` 表示识别并定位实物；下方复用机械臂
+已有的图纸 YOLO 或实物深度分割标注，
 不会启动第二套相机或重复推理。原始彩色图像仍可选择
 `/left_wrist_camera/camera/color/image_raw`；
 `/perception/wrist_traffic_annotated` 只用于挥旗和红绿灯。普通 SSH 没有图形转发时不会显示窗口。
