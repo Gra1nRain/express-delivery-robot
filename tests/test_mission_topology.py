@@ -255,6 +255,15 @@ class MissionTopologyTest(unittest.TestCase):
         self.assertIn("/perception/arm_recognition_annotated", node)
         self.assertIn("compose_arm_recognition_frame", node)
 
+        runbook = (
+            REPO_ROOT / "docs" / "competition_mission_manual_field_test.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "ros2 run rqt_image_view rqt_image_view "
+            "/perception/arm_recognition_annotated",
+            runbook,
+        )
+
     def test_integrated_trajectory_matches_current_sources(self) -> None:
         trajectory_path = (
             REPO_ROOT

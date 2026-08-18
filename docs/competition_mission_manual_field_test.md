@@ -87,17 +87,18 @@ timeout 5s ros2 topic hz /left_wrist_camera/camera/color/image_raw
 conda deactivate 2>/dev/null || true
 cd /home/agilex/competition_ws
 source scripts/car_source_env.sh
-ros2 run rqt_image_view rqt_image_view
+ros2 run rqt_image_view rqt_image_view /perception/arm_recognition_annotated
 ```
 
-机械臂识别测试优先在下拉框选择
-`/perception/arm_recognition_annotated`。该画面顶部显示任务、目标类型、尝试次数、
-当前画面来源，以及醒目的语义阶段：`INSTRUCTION IMAGE RECOGNITION` 表示识别
+该命令会直接打开机械臂专用的
+`/perception/arm_recognition_annotated`，不要选择挥旗/红绿灯使用的
+`/perception/wrist_traffic_annotated`。机械臂画面顶部显示任务、运行状态、目标类型、
+尝试次数、当前画面来源，以及醒目的语义阶段：`INSTRUCTION IMAGE RECOGNITION` 表示识别
 指令图片，`TARGET OBJECT RECOGNITION` 表示识别并定位实物；下方复用机械臂
 已有的图纸 YOLO 或实物深度分割标注，
 不会启动第二套相机或重复推理。原始彩色图像仍可选择
 `/left_wrist_camera/camera/color/image_raw`；
-`/perception/wrist_traffic_annotated` 只用于挥旗和红绿灯。普通 SSH 没有图形转发时不会显示窗口。
+普通 SSH 没有图形转发时不会显示窗口。
 
 ### 3.2 手动执行一次前点抓取
 
@@ -240,6 +241,8 @@ FINISHED
 
 前点失败才会进入对应的 `RUN_TO_PICKUP_REAR` 或 `RUN_TO_DROP_REAR`。前后抓取都失败时进入 `BYPASS_DROP_TASKS`，不在卸货点停车而直接继续到终点。红绿灯连续 15 秒没有有效结果时会自动继续。
 
+当前每个抓取点只发送一次抓取尝试。该次尝试成功时，机械臂从实物定位直接进入预抓和抓取，夹紧并验证完成后才恢复统一行驶位姿；该次尝试失败后才恢复统一行驶位姿并由状态机决定是否前往后点，不会在同一抓取点自动开始第二轮。
+
 若 `/control/status` 短暂进入 `FAULT_HOLD`，小车应保持零速；状态、局部路径和停车请求
 连续正常 `0.5 s` 后应恢复 `SEGMENT_TRACKING`，并继续原检查点。若持续停留在
 `FAULT_HOLD`，不要手工发布绕过检查点的速度命令，应保留本轮日志并结束测试。
@@ -294,7 +297,7 @@ ros2 topic info /cmd_vel
 - 删除冗余 ROS 节点名重映射的修复已构建并同步；现场已确认 `/mission/arm_task` 只有一个 Action server。
 - 固定物理起点的当前校准位姿为 `(-0.416, 0.464, 0.000)`；它来自桌面单独导航测试的 RViz 对齐基线，不等同于轨迹首点。若起点标记或场地发生变化，必须重新校准。
 - 红绿灯提前 `1.0 m` 只预热识别、到真实停止点才停车的拆分逻辑已通过 PC
-  自动测试，仍需下一轮实车复核；抓取总超时 `180 s` 和放置总超时 `90 s` 是当前比赛参数。
+  自动测试，仍需下一轮实车复核；每个抓取点尝试 `1` 次，抓取总超时 `180 s`，放置仍尝试 `3` 次且总超时为 `90 s`。
 - `FAULT_HOLD` 稳定 `0.5 s` 后自动恢复当前检查点已通过 PC 自动测试，尚需下一轮实车
   复核预热点后的继续行驶。
 - 当前状态机按既定范围不处理导航不可达；终点停车后由人工接管。

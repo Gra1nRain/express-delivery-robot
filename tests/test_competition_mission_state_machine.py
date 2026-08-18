@@ -114,7 +114,7 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
             config = mission_config_from_dict(yaml.safe_load(stream))
 
         self.assertEqual(config.traffic_no_result_timeout_s, 15.0)
-        self.assertEqual(config.pickup_max_attempts, 3)
+        self.assertEqual(config.pickup_max_attempts, 1)
         self.assertEqual(config.pickup_timeout_s, 180.0)
         self.assertEqual(config.pickup_front_ref, "pickup_front")
 

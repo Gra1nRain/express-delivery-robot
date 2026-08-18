@@ -168,6 +168,33 @@ class PiperArmBackendTest(unittest.TestCase):
         )
         self.assertEqual(transit_move["gripper_m"], 0.0)
 
+    def test_pickup_does_not_return_to_transit_between_detection_and_grasp(self):
+        events = []
+
+        def detect_object():
+            events.append("object_detected")
+            return {"object": "detected"}
+
+        def execute_grasp(*, skip_instruction_confirmation):
+            self.assertTrue(skip_instruction_confirmation)
+            events.append("grasp")
+            self.controller.last_gripper_position_m = 0.020
+            self.controller.last_gripper_feedback_at = time.monotonic()
+
+        original_move = self.controller.move_to_joint_pose
+
+        def record_joint_move(*args, **kwargs):
+            events.append("transit")
+            return original_move(*args, **kwargs)
+
+        self.controller.estimate_wrist_object_with_observation_scan = detect_object
+        self.controller._execute_wrist_grasp_worker = execute_grasp
+        self.controller.move_to_joint_pose = record_joint_move
+
+        self.backend.pickup_once("green_bottle", lambda *_args: None)
+
+        self.assertEqual(events, ["object_detected", "grasp", "transit"])
+
     def test_pickup_preserves_detection_overlay_for_visualization(self):
         overlay = [["detected-object"]]
         self.controller.estimate_wrist_object_with_observation_scan = (

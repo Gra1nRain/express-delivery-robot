@@ -11,11 +11,11 @@ mission:
     # Starts only after ARRIVED_AND_STOPPED. Red/yellow samples reset it.
     no_result_timeout_s: 15.0
   arm:
-    # The integrated arm can spend more than 120 s across instruction retries,
-    # grasping, and the return-to-transit move. Keep a hard recovery deadline,
+    # The integrated arm can spend more than 120 s across instruction recognition,
+    # observation scans, grasping, and the return-to-transit move. Keep a hard deadline,
     # but do not cancel a physically successful pickup while it is returning.
     pickup:
-      max_attempts: 3
+      max_attempts: 1
       total_timeout_s: 180.0
     drop:
       max_attempts: 3
