@@ -8,7 +8,8 @@
 - 共用腕部 RGBD 相机由整车 launch 启动；机械臂适配器使用 `manage_camera=false`，不会再启动第二个相机节点。
 - 当前比赛轨迹的名义起点是 `x=-0.376 m`、`y=0.112 m`、`yaw=0.02 rad`。
 - 2026-08-18 已在车端完成无底盘、无真机械臂的成功主路径、红绿灯 15 秒无结果放行和装货最终失败继续比赛验证。
-- 尚未验证真 Piper 动作和整条实车运动路线，因此必须先执行第 3 节的静态机械臂测试，再执行第 4 节。
+- 2026-08-18 操作员已确认真 Piper 的静态“图片识别、实物识别、抓取、保持夹持、图片定位、放置”闭环成功。
+- 尚未验证持物行驶和整条实车运动路线；执行第 4 节前仍应确认第 3 节的软件版本和现场摆放没有变化。
 
 ## 2. 每个终端的环境准备
 
@@ -18,7 +19,11 @@
 conda deactivate 2>/dev/null || true
 cd /home/agilex/competition_ws
 source scripts/car_source_env.sh
+export CAN_NAME=can2
+export PIPER_CAN_NAME=can2
 ```
+
+Piper 使用 `can2`；Ranger 底盘仍由整车 launch 的控制参数使用 `can3`。不要把两个 CAN 口改成同一个。
 
 启动前确认没有上一轮残留：
 
@@ -53,12 +58,24 @@ ros2 launch competition_bringup indoor_competition.launch.py \
 
 ```bash
 ros2 action info /mission/arm_task
+ros2 node list | sort | grep -E '^/piper_(arm_task|controller)$'
 ros2 topic echo /mission/status --once --full-length
 ros2 topic info /cmd_vel -v
 timeout 5s ros2 topic hz /left_wrist_camera/camera/color/image_raw
 ```
 
-预期：Action 服务端是 `/piper_arm_task`，任务状态是 `WAIT_START_FLAG`，`/cmd_vel` 不存在，相机持续出图。
+预期：`ros2 action info` 显示 `Action servers: 1` 且服务端节点是 `/piper_arm_task`；节点列表中各有一个 `/piper_arm_task` 和 `/piper_controller`；任务状态是 `WAIT_START_FLAG`，`/cmd_vel` 不存在，相机持续出图。
+
+若需要观察目标是否在画面中央，在小车 Ubuntu 图形桌面的另一个终端运行：
+
+```bash
+conda deactivate 2>/dev/null || true
+cd /home/agilex/competition_ws
+source scripts/car_source_env.sh
+ros2 run rqt_image_view rqt_image_view
+```
+
+在下拉框选择原始彩色图像 `/left_wrist_camera/camera/color/image_raw`。不要选择 `/perception/wrist_traffic_annotated`，后者是挥旗和红绿灯的标注画面。普通 SSH 没有图形转发时不会显示窗口。
 
 ### 3.2 手动执行一次前点抓取
 
@@ -111,11 +128,12 @@ ros2 launch competition_bringup indoor_competition.launch.py \
   start_wrist_camera:=true \
   start_real_arm:=true \
   start_arm_simulator:=false \
+  arm_post_instruction_clear_delay_s:=10.0 \
   rviz:=false \
   2>&1 | tee "/home/agilex/competition_ws/log/competition_manual_$(date +%Y%m%d_%H%M%S).log"
 ```
 
-该命令显式打开了两道底盘运动门：Ranger 驱动和 `/cmd_vel_safe -> /cmd_vel` 适配器。此时状态机仍应等待挥旗，底盘命令应为零。
+该命令显式打开了两道底盘运动门：Ranger 驱动和 `/cmd_vel_safe -> /cmd_vel` 适配器。此时状态机仍应等待挥旗，底盘命令应为零。这里的 `10.0 s` 用于室内人工展示并移走抓取指令图片；正式自动比赛时若图片无需人工移走，可恢复默认 `0.0 s`。
 
 ### 4.2 发布名义初始位姿
 
@@ -146,7 +164,7 @@ timeout 3s ros2 run tf2_ros tf2_echo map body
 应看到：
 
 - 任务状态为 `WAIT_START_FLAG`；
-- Action 服务端为 `/piper_arm_task`；
+- `ros2 action info` 显示 `Action servers: 1`，服务端节点为 `/piper_arm_task`；
 - `state_valid=true`；
 - `map -> body` 可查询；
 - 挥旗前 `/cmd_vel` 的线速度和角速度均为零。
@@ -190,6 +208,13 @@ FINISHED
 
 前点失败才会进入对应的 `RUN_TO_PICKUP_REAR` 或 `RUN_TO_DROP_REAR`。前后抓取都失败时进入 `BYPASS_DROP_TASKS`，不在卸货点停车而直接继续到终点。红绿灯连续 15 秒没有有效结果时会自动继续。
 
+室内人工图片操作按 `/mission/status` 中的 `arm_feedback.phase` 执行：
+
+- `PICKUP_FRONT_TASK` 的 `phase=2` 时稳定展示抓取指令图片；`phase=3` 后立即移开，10 秒窗口结束后进入实物识别和抓取。
+- 只有前点抓取失败才会停车到 `PICKUP_REAR_TASK`；若前点已经锁定类型，后点直接复用该类型，不要再次发送 Action。
+- `DROP_FRONT_TASK` 的 `phase=2` 会识别对应卸货图片；保持卸货图片和放置区域固定，直到放置结果返回。
+- 只有前点放置失败才会停车到 `DROP_REAR_TASK`。不要手工发布第二点放行消息，分支完全由机械臂结果控制。
+
 ## 5. 正常结束判据
 
 `/mission/status` 同时满足以下内容才算状态机完成：
@@ -227,7 +252,8 @@ ros2 topic info /cmd_vel
 
 ## 7. 尚未验证的风险
 
-- 真机械臂的完整抓取、持物行驶和放置尚未按本手册验证。
+- 真机械臂静态抓取和放置已经成功；持物行驶及整车自动触发装卸尚未验证。
+- 删除冗余 ROS 节点名重映射的修复已构建并同步，但“一个 `/piper_arm_task`、一个 `/piper_controller`”仍需在下一次真机械臂启动时现场确认。
 - 名义初始位姿来自当前轨迹首点，仍需现场摆车或 RViz 校正。
 - 红绿灯预触发距离 `1.0 m`、抓取总超时 `120 s` 和放置总超时 `90 s` 是当前比赛参数，需根据首次实车日志判断是否调整。
 - 当前状态机按既定范围不处理导航不可达；终点停车后由人工接管。

@@ -187,6 +187,38 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
         self.assertEqual(rear.station, ArmStation.REAR)
         self.assertEqual(rear.target_type_hint, "red_bottle")
 
+    def test_rear_pickup_success_continues_to_front_drop(self) -> None:
+        self.start_and_reach_traffic_stop()
+        self.release_from_traffic()
+        _, front = self.start_arm_at("pickup_front", 5.0)
+        self.machine.handle(
+            ArmResult(
+                now_s=6.0,
+                task_id=front.task_id,
+                outcome=ArmOutcome.TARGET_NOT_FOUND,
+                target_type="red_bottle",
+            )
+        )
+        _, rear = self.start_arm_at("pickup_rear", 7.0)
+
+        decision = self.machine.handle(
+            ArmResult(
+                now_s=8.0,
+                task_id=rear.task_id,
+                outcome=ArmOutcome.SUCCESS,
+                target_type="red_bottle",
+            )
+        )
+
+        self.assertEqual(decision.state, MissionState.RUN_TO_DROP_FRONT)
+        self.assertTrue(decision.has_cargo)
+        self.assertEqual(
+            self.command(
+                decision, CommandType.RELEASE_TO_CHECKPOINT
+            ).checkpoint_ref,
+            "drop_front",
+        )
+
     def test_pickup_final_failure_bypasses_drop_tasks(self) -> None:
         self.start_and_reach_traffic_stop()
         self.release_from_traffic()
@@ -328,6 +360,9 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
             )
         )
         _, drop_rear = self.start_arm_at("drop_rear", 9.0)
+        self.assertEqual(drop_rear.task_type, ArmTaskType.DROP)
+        self.assertEqual(drop_rear.station, ArmStation.REAR)
+        self.assertEqual(drop_rear.target_type_hint, "blue_bottle")
 
         decision = self.machine.handle(
             ArmResult(
@@ -339,6 +374,45 @@ class CompetitionMissionStateMachineTest(unittest.TestCase):
 
         self.assertEqual(decision.state, MissionState.RUN_TO_FINISH)
         self.assertTrue(decision.has_cargo)
+        self.assertEqual(
+            self.command(
+                decision, CommandType.RELEASE_TO_CHECKPOINT
+            ).checkpoint_ref,
+            "finish_park",
+        )
+
+    def test_drop_rear_success_clears_cargo_and_continues_to_finish(self) -> None:
+        self.start_and_reach_traffic_stop()
+        self.release_from_traffic()
+        _, pickup = self.start_arm_at("pickup_front", 5.0)
+        self.machine.handle(
+            ArmResult(
+                now_s=6.0,
+                task_id=pickup.task_id,
+                outcome=ArmOutcome.SUCCESS,
+                target_type="blue_bottle",
+            )
+        )
+        _, drop_front = self.start_arm_at("drop_front", 7.0)
+        self.machine.handle(
+            ArmResult(
+                now_s=8.0,
+                task_id=drop_front.task_id,
+                outcome=ArmOutcome.OPERATION_FAILED,
+            )
+        )
+        _, drop_rear = self.start_arm_at("drop_rear", 9.0)
+
+        decision = self.machine.handle(
+            ArmResult(
+                now_s=10.0,
+                task_id=drop_rear.task_id,
+                outcome=ArmOutcome.SUCCESS,
+            )
+        )
+
+        self.assertEqual(decision.state, MissionState.RUN_TO_FINISH)
+        self.assertFalse(decision.has_cargo)
         self.assertEqual(
             self.command(
                 decision, CommandType.RELEASE_TO_CHECKPOINT

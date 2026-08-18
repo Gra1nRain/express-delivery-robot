@@ -171,6 +171,17 @@ class MissionTopologyTest(unittest.TestCase):
         self.assertIn(f"y: {start['y']:.3f}", runbook)
         self.assertIn(f"z: {math.sin(start['yaw'] / 2.0):.7f}", runbook)
         self.assertIn(f"w: {math.cos(start['yaw'] / 2.0):.5f}", runbook)
+        self.assertIn("export CAN_NAME=can2", runbook)
+        self.assertIn("export PIPER_CAN_NAME=can2", runbook)
+        self.assertIn(
+            "/left_wrist_camera/camera/color/image_raw",
+            runbook,
+        )
+        self.assertGreaterEqual(
+            runbook.count("arm_post_instruction_clear_delay_s:=10.0"),
+            2,
+        )
+        self.assertIn("Action servers: 1", runbook)
 
     def test_real_arm_adapter_is_persistent_and_reuses_shared_camera(self) -> None:
         launch = (
