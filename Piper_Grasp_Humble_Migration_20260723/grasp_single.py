@@ -361,14 +361,15 @@ GRASP_FINE_TUNE_BASE_M = np.array(
     dtype=np.float64,
 )
 
-# 正值表示让目标点往“夹爪右侧”偏。当前夹爪坐标约定里右侧对应局部 -Y。
+# 正值表示让目标点往“夹爪右侧”偏。默认不偏移，让夹爪中心对准点云中心；
+# 现场确认存在系统误差时再通过环境变量微调。
 GRASP_RIGHT_BIAS_M = float(
-    os.getenv("WRIST_GRASP_RIGHT_BIAS_M", "0.010")
+    os.getenv("WRIST_GRASP_RIGHT_BIAS_M", "0.0")
 )
 
-# 向左补偿量：正值表示沿夹爪局部 +Y 方向移动。
+# 向左补偿量：正值表示沿夹爪局部 +Y 方向移动。默认不补偿。
 GRASP_LEFT_COMPENSATION_M = float(
-    os.getenv("WRIST_GRASP_LEFT_COMPENSATION_M", "0.050")
+    os.getenv("WRIST_GRASP_LEFT_COMPENSATION_M", "0.0")
 )
 
 # 深度点云估计物体高度后，夹爪中心默认对准物体高度的中部。
@@ -835,11 +836,11 @@ USE_OBJECT_AXIS_YAW = os.getenv(
     "WRIST_USE_OBJECT_AXIS_YAW",
     "1",
 ).lower() in {"1", "true", "yes", "on"}
-# 抓取方向按物体短轴计算。实机观察中 yaw 直接跟随短轴角度时，
-# 夹爪本体与短轴垂直；默认加 90deg，让夹爪方向与短轴平行。
-# 如果现场实测正好相反，可设置 WRIST_GRASP_AXIS_YAW_OFFSET_DEG=0。
+# 抓取 yaw 按物体短轴计算。实机观察中 yaw 跟随短轴时，夹爪本体
+# 与短轴垂直，也就是与物体长轴平行；这样两指从短轴两侧居中夹紧。
+# 如果现场夹爪安装方向相差 90deg，可设置 WRIST_GRASP_AXIS_YAW_OFFSET_DEG=90。
 GRASP_CLOSING_AXIS = os.getenv("WRIST_GRASP_CLOSING_AXIS", "short").lower()
-GRASP_AXIS_YAW_OFFSET_DEG = float(os.getenv("WRIST_GRASP_AXIS_YAW_OFFSET_DEG", "90.0"))
+GRASP_AXIS_YAW_OFFSET_DEG = float(os.getenv("WRIST_GRASP_AXIS_YAW_OFFSET_DEG", "0.0"))
 MIN_OBJECT_AXIS_RATIO = float(os.getenv("WRIST_MIN_OBJECT_AXIS_RATIO", "1.03"))
 REQUIRE_OBJECT_AXIS_YAW = os.getenv(
     "WRIST_REQUIRE_OBJECT_AXIS_YAW",
